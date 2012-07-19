@@ -1,0 +1,4 @@
+#! /usr/bin/env ruby
+
+require File.expand_path("../../lib/hirefire/cli", __FILE__)
+

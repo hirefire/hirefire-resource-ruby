@@ -10,13 +10,13 @@ module HireFire
         # Once determined, it will build the appropriate query criteria in order
         # to count the amount of jobs in a given queue and return the result.
         #
-        # Example:
-        #
-        #  HireFire::Macro::Delayed::Job.queue # all queues
-        #  HireFire::Macro::Delayed::Job.queue("email") # only email queue
-        #  HireFire::Macro::Delayed::Job.queue("audio", "video") # audio and video queues
+        # @example Delayed::Job Macro Usage
+        #   HireFire::Macro::Delayed::Job.queue # all queues
+        #   HireFire::Macro::Delayed::Job.queue("email") # only email queue
+        #   HireFire::Macro::Delayed::Job.queue("audio", "video") # audio and video queues
         #
         # @param [Array] queues provide one or more queue names, or none for "all".
+        #
         # @return [Integer] the number of jobs in the queue(s).
         def queue(*queues)
           queues.flatten!

@@ -7,13 +7,13 @@ module HireFire
 
       # Counts the amount of jobs in the (provided) Resque queue(s).
       #
-      # Example:
-      #
-      #  HireFire::Macro::Resque.queue # all queues
-      #  HireFire::Macro::Resque.queue("email") # only email queue
-      #  HireFire::Macro::Resque.queue("audio", "video") # audio and video queues
+      # @example Resque Macro Usage
+      #   HireFire::Macro::Resque.queue # all queues
+      #   HireFire::Macro::Resque.queue("email") # only email queue
+      #   HireFire::Macro::Resque.queue("audio", "video") # audio and video queues
       #
       # @param [Array] queues provide one or more queue names, or none for "all".
+      #
       # @return [Integer] the number of jobs in the queue(s).
       def queue(*queues)
         return ::Resque.info[:pending].to_i if queues.empty?

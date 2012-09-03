@@ -3,19 +3,20 @@
 module HireFire
   module Resource
     extend self
+
+    # @return [Array] The configured dynos.
     attr_accessor :dynos
 
     # Sets the `@dynos` instance variable to an empty Array to hold all the dyno configuration.
     #
-    # Example:
+    # @example Resource Configuration
+    #   HireFire::Resource.configure do |config|
+    #     config.dyno(:worker) do
+    #       # Macro or Custom logic for the :worker dyno here..
+    #     end
+    #   end
     #
-    #  HireFire::Resource.configure do |config|
-    #    config.dyno(:worker) do
-    #      # Macro or Custom logic for the :worker dyno here..
-    #    end
-    #  end
-    #
-    # @yields [HireFire::Resource] to allow for block-style configuration.
+    # @yield [HireFire::Resource] to allow for block-style configuration.
     def configure
       @dynos ||= []
       yield self

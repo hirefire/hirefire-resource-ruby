@@ -20,9 +20,7 @@ module HireFire
         queues.
           flatten.
           inject(0) { |memo, queue|
-            memo += ::Sidekiq.redis do |conn|
-              conn.llen("queue:#{queue}")
-            end
+            memo += ::Sidekiq.redis { |conn| conn.llen("queue:#{queue}") }
             memo
           }
       end

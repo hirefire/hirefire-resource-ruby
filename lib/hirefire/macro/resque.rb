@@ -18,7 +18,10 @@ module HireFire
       def queue(*queues)
         return ::Resque.info[:pending].to_i if queues.empty?
         queues = queues.flatten.map(&:to_s)
-        queues.inject(0) { |memo, queue| memo += ::Resque.size(queue); memo }
+        in_queues = queues.inject(0) { |memo, queue| memo += ::Resque.size(queue); memo }
+        in_progress = ::Resque::Worker.all.select{|worker| queues.include?(worker.job['queue']) }.count
+        
+        in_queues + in_progress
       end
     end
   end

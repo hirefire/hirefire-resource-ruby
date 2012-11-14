@@ -1,6 +1,6 @@
 # [HireFire](http://hirefireapp.com/) - The Heroku Dyno Manager
 
-*Note: This gem currently only applies to users that are using the new HireFire beta program.
+*Note: This gem currently only applies to users that are using the [new HireFire beta](https://manager.hirefireapp.com/) program.
 Once out of beta, this will become the default gem for new users.*
 
 HireFire is a hosted service that manages / autoscales your [Heroku](http://heroku.com/) dynos.

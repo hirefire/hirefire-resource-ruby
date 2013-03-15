@@ -1,7 +1,4 @@
-# [HireFire](http://hirefireapp.com/) - The Heroku Dyno Manager
-
-*Note: This gem currently only applies to users that are using the [new HireFire beta](https://manager.hirefireapp.com/) program.
-Once out of beta, this will become the default gem for new users.*
+# [HireFire](http://hirefire.io/) - The Heroku Dyno Manager
 
 HireFire is a hosted service that manages / autoscales your [Heroku](http://heroku.com/) dynos.
 
@@ -77,5 +74,5 @@ dj_worker: QUEUES=encode,compress bundle exec rake jobs:work
 
 Now that HireFire will scale both of the these dyno types based on their individual queue sizes. To customize how they scale, log in to the HireFire web interface.
 
-Visit the [official website](http://hirefireapp.com/) for more information!
+Visit the [official website](http://hirefire.io/) for more information!
 

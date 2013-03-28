@@ -16,13 +16,20 @@ module HireFire
       #
       # @return [Integer] the number of jobs in the queue(s).
       def queue(*queues)
-        queues = ::Sidekiq.redis { |conn| conn.smembers("queues") } if queues.empty?
-        queues.
-          flatten.
-          inject(0) { |memo, queue|
-            memo += ::Sidekiq.redis { |conn| conn.llen("queue:#{queue}") }
-            memo
-          }
+        queues = queues.flatten.map(&:to_s)
+        queues = ::Sidekiq::Stats.new.queues.map { |name, _| name } if queues.empty?
+
+        in_queues = queues.inject(0) do |memo, name|
+          memo += ::Sidekiq::Queue.new(name).size
+          memo
+        end
+
+        in_progress = ::Sidekiq::Workers.new.inject(0) do |memo, job|
+          memo += 1 if queues.include?(job[1]["queue"]) && job[1]["run_at"] <= Time.now.to_i
+          memo
+        end
+
+        in_queues + in_progress
       end
     end
   end

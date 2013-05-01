@@ -5,8 +5,8 @@ Gem::Specification.new do |gem|
   gem.version     = "0.0.2"
   gem.platform    = Gem::Platform::RUBY
   gem.authors     = "Michael van Rooijen"
-  gem.email       = "michael@hirefireapp.com"
-  gem.homepage    = "http://hirefireapp.com/"
+  gem.email       = "michael@hirefire.io"
+  gem.homepage    = "http://hirefire.io/"
   gem.summary     = "HireFire - The Heroku Dyno Manager"
   gem.description = "HireFire - The Heroku Dyno Manager"
 

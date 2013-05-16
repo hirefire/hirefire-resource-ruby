@@ -21,17 +21,17 @@ module HireFire
         def queue(*queues)
           queues.flatten!
 
-          if defined?(ActiveRecord)
-            c = ::Delayed::Job
-            c = c.where(:failed_at => nil)
-            c = c.where("run_at <= ?", Time.now.utc)
-            c = c.where(:queue => queues) unless queues.empty?
-            c.count
-          elsif defined?(Mongoid)
+          if defined?(Mongoid)
             c = ::Delayed::Job
             c = c.where(:failed_at => nil)
             c = c.where(:run_at.lte => Time.now.utc)
             c = c.where(:queue.in => queues) unless queues.empty?
+            c.count
+          elsif defined?(ActiveRecord)
+            c = ::Delayed::Job
+            c = c.where(:failed_at => nil)
+            c = c.where("run_at <= ?", Time.now.utc)
+            c = c.where(:queue => queues) unless queues.empty?
             c.count
           else
             raise "HireFire could not detect ActiveRecord or Mongoid for HireFire::Macro::Delayed::Job."

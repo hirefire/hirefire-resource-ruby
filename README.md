@@ -76,3 +76,7 @@ Now that HireFire will scale both of the these dyno types based on their individ
 
 Visit the [official website](http://hirefire.io/) for more information!
 
+### License
+
+hirefire-resource is released under the Apache 2.0 license. See LICENSE.
+

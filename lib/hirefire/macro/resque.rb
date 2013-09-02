@@ -13,8 +13,8 @@ module HireFire
       #   HireFire::Macro::Resque.queue("audio", "video") # audio and video queues
       #
       # @param [Array] queues provide one or more queue names, or none for "all".
-      #
       # @return [Integer] the number of jobs in the queue(s).
+      #
       def queue(*queues)
         queues = queues.flatten.map(&:to_s)
         queues = ::Resque.queues if queues.empty?

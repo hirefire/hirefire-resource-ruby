@@ -21,8 +21,8 @@ module HireFire
         #
         # @param [Array] queues provide one or more queue names, or none for "all".
         #   Last argument can pass in a Hash containing :mapper => :active_record or :mapper => :mongoid
-        #
         # @return [Integer] the number of jobs in the queue(s).
+        #
         def queue(*queues)
           queues.flatten!
 

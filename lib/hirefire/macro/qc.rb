@@ -13,8 +13,8 @@ module HireFire
       #   HireFire::Macro::QC.queue("email") # counts the `email` queue.
       #
       # @param [String, Symbol, nil] queue the queue name to count. (default: `default`)
-      #
       # @return [Integer] the number of jobs in the queue(s).
+      #
       def queue(queue = "default")
         ::QC::Worker.new(:q_name => queue.to_s).queue.count
       end

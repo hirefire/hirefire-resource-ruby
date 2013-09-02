@@ -5,6 +5,7 @@ module HireFire
     extend self
 
     # @return [Array] The configured dynos.
+    #
     attr_accessor :dynos
 
     # Sets the `@dynos` instance variable to an empty Array to hold all the dyno configuration.
@@ -17,6 +18,7 @@ module HireFire
     #   end
     #
     # @yield [HireFire::Resource] to allow for block-style configuration.
+    #
     def configure
       @dynos ||= []
       yield self
@@ -26,6 +28,7 @@ module HireFire
     #
     # @param [Symbol, String] name the name of the dyno as defined in the Procfile.
     # @param [Proc] block an Integer containing the quantity calculation logic.
+    #
     def dyno(name, &block)
       @dynos << { :name => name, :quantity => block }
     end

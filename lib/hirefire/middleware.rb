@@ -7,6 +7,7 @@ module HireFire
     # and `ENV["HIREFIRE_TOKEN"]` in `@token` for convenience.
     #
     # @param [ActionDispatch::Routing::RouteSet] app.
+    #
     def initialize(app)
       @app   = app
       @token = ENV["HIREFIRE_TOKEN"]
@@ -16,6 +17,7 @@ module HireFire
     # Otherwise, fall through to the rest of the middleware below HireFire::Middleware.
     #
     # @param [Hash] env containing request information.
+    #
     def call(env)
       @env = env
 
@@ -35,6 +37,7 @@ module HireFire
     # This url will be requested every minute by HireFire in order to fetch dyno data.
     #
     # @return [text/html, application/json] based on whether the `test` or `info` url was requested.
+    #
     def each(&block)
       if test?
         block.call "HireFire Middleware Found!"
@@ -48,6 +51,7 @@ module HireFire
     # Generates a JSON string based on the dyno data.
     #
     # @return [String] in JSON format.
+    #
     def dynos
       dyno_data = HireFire::Resource.dynos.inject(String.new) do |json, dyno|
         json << %|,{"name":"#{dyno[:name]}","quantity":#{dyno[:quantity].call || "null"}}|; json
@@ -59,6 +63,7 @@ module HireFire
     # Returns true if the PATH_INFO matches the test url.
     #
     # @return [Boolean] true if the requested url matches the test url.
+    #
     def test?
       @env["PATH_INFO"] == "/hirefire/test"
     end
@@ -66,6 +71,7 @@ module HireFire
     # Returns true if the PATH_INFO matches the info url.
     #
     # @return [Boolean] true if the requested url matches the info url.
+    #
     def info?
       @env["PATH_INFO"] == "/hirefire/#{@token || "development"}/info"
     end

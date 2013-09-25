@@ -13,6 +13,9 @@ module HireFire
         #   # all queues using ActiveRecord mapper.
         #   HireFire::Macro::Delayed::Job.queue(:mapper => :active_record)
         #
+        #   # all queues using ActiveRecord <= 2.3.x mapper.
+        #   HireFire::Macro::Delayed::Job.queue(:mapper => :active_record_2)
+        #
         #   # only "email" queue with Mongoid mapper.
         #   HireFire::Macro::Delayed::Job.queue("email", :mapper => :mongoid)
         #
@@ -39,6 +42,11 @@ module HireFire
             c = c.where("run_at <= ?", Time.now.utc)
             c = c.where(:queue => queues) unless queues.empty?
             c.count
+           when :active_record_2
+             conditions = ["run_at <= ? AND failed_at is NULL", Time.now.utc]
+             # There is no queue column in delayed_job <= 2.x
+             c = Delayed::Job.all(:conditions => conditions)
+             c.count
           when :mongoid
             c = ::Delayed::Job
             c = c.where(:failed_at => nil)

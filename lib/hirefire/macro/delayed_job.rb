@@ -45,7 +45,7 @@ module HireFire
           when :active_record_2
             conditions = ["run_at <= ? AND failed_at is NULL", Time.now.utc]
             # There is no queue column in delayed_job <= 2.x
-            c = Delayed::Job.all(:conditions => conditions)
+            c = ::Delayed::Job.all(:conditions => conditions)
             c.count
           when :mongoid
             c = ::Delayed::Job

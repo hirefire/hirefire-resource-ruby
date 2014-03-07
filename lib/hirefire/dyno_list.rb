@@ -34,11 +34,7 @@ module HireFire
     # @return [String] the json representation of data from {#to_hash}
     #
     def to_json
-      dyno_data = to_hash.inject(String.new) do |json, (name, quantity)|
-        json << %|,{"name":"#{name}","quantity":#{quantity || "null"}}|; json
-      end
-
-      "[#{dyno_data.sub(",","")}]"
+      HireFire::JsonFormatter.to_json(to_hash)
     end
   end
 end

@@ -17,30 +17,37 @@ module HireFire
       #
       def queue(*queues)
         queues = queues.flatten.map(&:to_s)
-        queues = ::Sidekiq::Stats.new.queues.map { |name, _| name } if queues.empty?
-
-        in_queues = queues.inject(0) do |memo, name|
-          memo += ::Sidekiq::Queue.new(name).size
+        queues = ::Sidekiq::Stats.new.queues.map { |name, _| name.to_s } if queues.empty?
+        list = queue_list
+        queues.inject(0) do |memo, name|
+          memo += (list[name.to_s] || 0)
           memo
         end
-
-        in_schedule = ::Sidekiq::ScheduledSet.new.inject(0) do |memo, job|
-          memo += 1 if queues.include?(job["queue"]) && job.at <= Time.now
-          memo
-        end
-
-        in_retry = ::Sidekiq::RetrySet.new.inject(0) do |memo, job|
-          memo += 1 if queues.include?(job["queue"]) && job.at <= Time.now
-          memo
-        end
-
-        in_progress = ::Sidekiq::Workers.new.inject(0) do |memo, job|
-          memo += 1 if queues.include?(job[1]["queue"]) && job[1]["run_at"] <= Time.now.to_i
-          memo
-        end
-
-        in_queues + in_schedule + in_retry + in_progress
       end
+
+
+      def queue_list
+        all_queues = Hash.new(0)
+        queues = ::Sidekiq::Stats.new.queues.map { |name, _| name.to_s }
+        queues.each do |name|
+          all_queues[name] += ::Sidekiq::Queue.new(name).size
+        end
+
+        ::Sidekiq::ScheduledSet.new.each do |job|
+          all_queues[job["queue"].to_s] += 1 if job.at <= Time.now
+        end
+
+        ::Sidekiq::RetrySet.new.each do |job|
+          all_queues[job["queue"].to_s] += 1 if job.at <= Time.now
+        end
+
+        ::Sidekiq::Workers.new.each do |job|
+          job_info = job[1]
+          all_queues[job_info["queue"].to_s] += 1 if job_info["run_at"] <= Time.now.to_i
+        end
+        all_queues
+      end
+
     end
   end
 end

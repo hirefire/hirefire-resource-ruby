@@ -16,7 +16,7 @@ describe HireFire::DynoList do
     subject.add(:queue3){  }
     subject.should_receive(:to_hash).and_call_original
     json = subject.to_json
-    json.should match(/{"name":"queue2","quantity":1}/)
+    json.should match(/{"name":"queue1","quantity":1}/)
     json.should match(/{"name":"queue3","quantity":null}/)
     json.should match(/^\[.+\]$/)
   end

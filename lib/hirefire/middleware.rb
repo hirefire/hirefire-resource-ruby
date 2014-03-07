@@ -7,8 +7,11 @@ module HireFire
     # and `ENV["HIREFIRE_TOKEN"]` in `@token` for convenience.
     #
     # @param [ActionDispatch::Routing::RouteSet] app.
+    # @param [HireFire::JsonFormatter,#to_json] formatter anything that can turn format a hash
+    #   into expected HireFire json format
     #
-    def initialize(app)
+    def initialize(app, formatter = HireFire::JsonFormatter)
+      @formatter = formatter
       @app   = app
       @token = ENV["HIREFIRE_TOKEN"]
     end
@@ -53,7 +56,7 @@ module HireFire
     # @return [String] in JSON format.
     #
     def dynos
-      HireFire::Resource.dynos.to_json
+      @formatter.to_json(HireFire::Resource.dynos.to_hash)
     end
 
     # Returns true if the PATH_INFO matches the test url.

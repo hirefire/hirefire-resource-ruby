@@ -10,6 +10,9 @@ Gem::Specification.new do |gem|
   gem.summary     = "HireFire - The Heroku Dyno Manager"
   gem.description = "HireFire - The Heroku Dyno Manager"
 
+  gem.add_development_dependency 'rspec'
+  gem.add_development_dependency 'rack'
+
   gem.files         = %x[git ls-files].split("\n")
   gem.executables   = ["hirefire", "hirefireapp"]
   gem.require_path  = "lib"

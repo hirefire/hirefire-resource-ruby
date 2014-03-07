@@ -4,9 +4,6 @@ module HireFire
   module Resource
     extend self
 
-    # @return [Array] The configured dynos.
-    #
-    attr_accessor :dynos
 
     # Sets the `@dynos` instance variable to an empty Array to hold all the dyno configuration.
     #
@@ -20,8 +17,14 @@ module HireFire
     # @yield [HireFire::Resource] to allow for block-style configuration.
     #
     def configure
-      @dynos ||= []
+      @dynos ||= DynoList.new
       yield self
+    end
+
+    # @return [HireFire::DynoList] The configured dyno list
+    #
+    def dynos
+      @dynos ||= DynoList.new
     end
 
     # Will be used through block-style configuration with the `configure` method.
@@ -30,7 +33,7 @@ module HireFire
     # @param [Proc] block an Integer containing the quantity calculation logic.
     #
     def dyno(name, &block)
-      @dynos << { :name => name, :quantity => block }
+      dynos.add(name, &block)
     end
   end
 end

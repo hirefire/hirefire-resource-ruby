@@ -48,16 +48,12 @@ module HireFire
 
     private
 
-    # Generates a JSON string based on the dyno data.
+    # Generates a JSON string by calling dynos.to_json
     #
     # @return [String] in JSON format.
     #
     def dynos
-      dyno_data = HireFire::Resource.dynos.inject(String.new) do |json, dyno|
-        json << %|,{"name":"#{dyno[:name]}","quantity":#{dyno[:quantity].call || "null"}}|; json
-      end
-
-      "[#{dyno_data.sub(",","")}]"
+      HireFire::Resource.dynos.to_json
     end
 
     # Returns true if the PATH_INFO matches the test url.

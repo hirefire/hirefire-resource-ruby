@@ -43,7 +43,10 @@ module HireFire
 
         ::Sidekiq::Workers.new.each do |job|
           job_info = job[1]
-          all_queues[job_info["queue"].to_s] += 1 if job_info["run_at"] <= Time.now.to_i
+          # As long as this is still a valid job
+          if job_info && job_info["run_at"]
+            all_queues[job_info["queue"].to_s] += 1 if job_info["run_at"] <= Time.now.to_i
+          end
         end
         all_queues
       end

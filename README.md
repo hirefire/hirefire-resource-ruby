@@ -74,6 +74,35 @@ dj_worker: QUEUES=encode,compress bundle exec rake jobs:work
 
 Now that HireFire will scale both of the these dyno types based on their individual queue sizes. To customize how they scale, log in to the HireFire web interface.
 
+
+## DynoList configuration
+
+If you have a bunch of dynos with the same worker, you can set them up more
+conveniently (and performantly) by configuring the list of dynos with
+your chosen worker library. Currently this is supported by:
+
+* Sidekiq (:sidekiq)
+
+It works like this:
+
+```ruby
+HireFire::Resource.configure do |config|
+  # Tell the HireFire resource you're using the sidekiq shorthand
+  config.dynos = :sidekiq
+
+  # With these calls, we'll only pull the stats from sidekiq once for all
+  # queues, then match them up to the configured dyno names
+  config.dyno(:fast => ['mailers', 'metrics'])
+  config.dyno(:slow => [/generate_.+_report/, 'do_hard_work'])
+
+  # Note you can still configure jobs for other libraries if necessary:
+  config.dyno(:dj_worker) do
+    HireFire::Macro::Delayed::Job.queue(:encode, :compress)
+  end
+end
+```
+
+
 Visit the [official website](http://hirefire.io/) for more information!
 
 ### License

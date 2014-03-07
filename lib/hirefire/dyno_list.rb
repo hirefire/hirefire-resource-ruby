@@ -14,7 +14,7 @@ module HireFire
     # @param [Symbol, String] name the name of the dyno as defined in the Procfile.
     # @param [Proc] block an Integer containing the quantity calculation logic.
     #
-    def add(name, &block)
+    def add(name, *args, &block)
       @dynos[name] = block
     end
 

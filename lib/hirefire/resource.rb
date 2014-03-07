@@ -30,13 +30,9 @@ module HireFire
     # @param [HireFire::DynoList,Object] dyno_list the DynoList class or an instance of it. You can
     #   use anything instance that responds to {#to_hash}
     def dynos=(dyno_list)
-      dyno_list = dyno_list.new if dyno_list.is_a?(Class)
-      if dyno_list.respond_to?(:to_hash)
-        @dynos = dyno_list
-      else
-        raise ArgumentError.new('Must be a class/instance of HireFire::DynoList or another class that responds to #to_hash')
-      end
+      @dynos = coerce_dyno_list(dyno_list)
     end
+
 
     # Will be used through block-style configuration with the `configure` method.
     #
@@ -47,6 +43,29 @@ module HireFire
     def dyno(name, *args, &block)
       dynos.add(name, *args, &block)
     end
+
+    private
+    # @private
+    # Converts a symbol or class to a dyno list and verifies we can call
+    # #to_hash on it
+    #
+    # @param [HireFire::DynoList,Object] dyno_list the DynoList class or an instance of it. You can
+    #   use anything instance that responds to {#to_hash}
+    def coerce_dyno_list(dyno_list)
+      return_val = case dyno_list
+                   when Class
+                     dyno_list.new
+                   when :sidekiq
+                     HireFire::DynoLists::Sidekiq.new
+                   else
+                     dyno_list
+                   end
+      unless return_val.respond_to?(:to_hash)
+        raise ArgumentError.new('Must be a class/instance of HireFire::DynoList or another class that responds to #to_hash')
+      end
+      return return_val
+    end
+
   end
 end
 

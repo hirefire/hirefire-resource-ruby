@@ -22,6 +22,12 @@ module HireFire
         #   # "audio" and "video" queues with ActiveRecord mapper.
         #   HireFire::Macro::Delayed::Job.queue("audio", "video", :mapper => :active_record)
         #
+        #   # all queues with a maximum priority of 20
+        #   HireFire::Macro::Delayed::Job.queue(:max_priority => 20, :mapper => :active_record)
+        #
+        #   # all queues with a minimum priority of 5
+        #   HireFire::Macro::Delayed::Job.queue(:min_priority => 5, :mapper => :active_record)
+        #
         # @param [Array] queues provide one or more queue names, or none for "all".
         #   Last argument can pass in a Hash containing :mapper => :active_record or :mapper => :mongoid
         # @return [Integer] the number of jobs in the queue(s).
@@ -40,17 +46,23 @@ module HireFire
             c = ::Delayed::Job
             c = c.where(:failed_at => nil)
             c = c.where("run_at <= ?", Time.now.utc)
+            c = c.where("priority >= ?", options[:min_priority]) if options.key?(:min_priority)
+            c = c.where("priority <= ?", options[:max_priority]) if options.key?(:max_priority)
             c = c.where(:queue => queues) unless queues.empty?
             c.count
           when :active_record_2
-            conditions = ["run_at <= ? AND failed_at is NULL", Time.now.utc]
+            c = ::Delayed::Job
+            c = c.scoped(:conditions => ["run_at <= ? AND failed_at is NULL", Time.now.utc])
+            c = c.scoped(:conditions => ["priority >= ?", options[:min_priority]]) if options.key?(:min_priority)
+            c = c.scoped(:conditions => ["priority <= ?", options[:max_priority]]) if options.key?(:max_priority)
             # There is no queue column in delayed_job <= 2.x
-            c = ::Delayed::Job.all(:conditions => conditions)
             c.count
           when :mongoid
             c = ::Delayed::Job
             c = c.where(:failed_at => nil)
             c = c.where(:run_at.lte => Time.now.utc)
+            c = c.where(:priority.gte => options[:min_priority]) if options.key?(:min_priority)
+            c = c.where(:priority.lte => options[:max_priority]) if options.key?(:max_priority)
             c = c.where(:queue.in => queues) unless queues.empty?
             c.count
           else

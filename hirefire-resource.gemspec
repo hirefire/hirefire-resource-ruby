@@ -7,8 +7,8 @@ Gem::Specification.new do |gem|
   gem.authors = "Michael van Rooijen"
   gem.email = "michael@hirefire.io"
   gem.homepage = "http://hirefire.io/"
-  gem.summary = "HireFire - The Heroku Dyno Manager"
-  gem.description = "HireFire - The Heroku Dyno Manager"
+  gem.summary = "Dyno management for Heroku"
+  gem.description = "HireFire enables you to auto-scale your dynos, schedule capacity during specific times of the week, and recover crashed processes."
   gem.licenses = ["Apache License"]
 
   gem.files = %x[git ls-files].split("\n")

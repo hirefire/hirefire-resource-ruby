@@ -1,4 +1,4 @@
-# [HireFire](http://hirefire.io/) - The Heroku Dyno Manager
+# [HireFire](http://hirefire.io/) - Dyno management for Heroku
 
 HireFire is a hosted service that manages / autoscales your [Heroku](http://heroku.com/) dynos.
 

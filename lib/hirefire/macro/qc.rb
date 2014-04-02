@@ -16,7 +16,7 @@ module HireFire
       # @return [Integer] the number of jobs in the queue(s).
       #
       def queue(queue = "default")
-        ::QC::Worker.new(:q_name => queue.to_s).queue.count
+        ::QC::Queue.new(queue).count
       end
     end
   end

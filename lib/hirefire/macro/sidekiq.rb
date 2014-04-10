@@ -16,6 +16,8 @@ module HireFire
       # @return [Integer] the number of jobs in the queue(s).
       #
       def queue(*queues)
+        require "sidekiq/api"
+
         queues = queues.flatten.map(&:to_s)
         queues = ::Sidekiq::Stats.new.queues.map { |name, _| name } if queues.empty?
 

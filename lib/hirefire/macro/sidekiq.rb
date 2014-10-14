@@ -32,15 +32,7 @@ module HireFire
         queues.each do |name|
           all_queues[name] += ::Sidekiq::Queue.new(name).size
         end
-
-        ::Sidekiq::ScheduledSet.new.each do |job|
-          all_queues[job["queue"].to_s] += 1 if job.at <= Time.now
-        end
-
-        ::Sidekiq::RetrySet.new.each do |job|
-          all_queues[job["queue"].to_s] += 1 if job.at <= Time.now
-        end
-
+        
         ::Sidekiq::Workers.new.each do |job|
           job_info = job[1]
           # As long as this is still a valid job

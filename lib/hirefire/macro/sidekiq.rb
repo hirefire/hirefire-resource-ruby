@@ -37,7 +37,8 @@ module HireFire
         end
 
         in_progress = ::Sidekiq::Workers.new.inject(0) do |memo, job|
-          memo += 1 if queues.include?(job[2]["queue"]) && job[2]["run_at"] <= Time.now.to_i
+          pos = (::Sidekiq::VERSION.to_i > 2) ? 2 : 1
+          memo += 1 if queues.include?(job[pos]["queue"]) && job[pos]["run_at"] <= Time.now.to_i
           memo
         end
 

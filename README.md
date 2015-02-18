@@ -1,12 +1,8 @@
-# [HireFire](http://hirefire.io/) - Dyno management for Heroku
+## [HireFire](http://hirefire.io/) - Autoscaling for your Heroku dynos
 
-HireFire is a hosted service that manages / autoscales your [Heroku](http://heroku.com/) dynos.
+Load-based scaling, schedule-based scaling, dyno crash recovery, for [Heroku](http://heroku.com/) web- and worker dynos.
 
-It supports the following stacks:
-
-* Celadon Cedar
-* Badious Bamboo
-* Argent Aspen
+---
 
 It supports practically any worker library. We provide out-of-the-box support for:
 
@@ -74,9 +70,8 @@ dj_worker: QUEUES=encode,compress bundle exec rake jobs:work
 
 Now that HireFire will scale both of the these dyno types based on their individual queue sizes. To customize how they scale, log in to the HireFire web interface.
 
-Visit the [official website](http://hirefire.io/) for more information!
+Visit the [official website](http://www.hirefire.io/) for more information!
 
 ### License
 
 hirefire-resource is released under the Apache 2.0 license. See LICENSE.
-

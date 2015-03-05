@@ -20,11 +20,9 @@ module HireFire
         queues = ::Resque.queues if queues.empty?
 
         redis = ::Resque.redis
-        decoder = ::Resque::Worker.new(:noop)
-
         ids = Array(redis.smembers(:workers)).compact
         raw_jobs = redis.pipelined { ids.map { |id| redis.get("worker:#{id}") } }
-        jobs = raw_jobs.map { |raw_job| decoder.decode(raw_job) || {} }
+        jobs = raw_jobs.map { |raw_job| ::Resque.decode(raw_job) || {} }
 
         in_queues = redis.pipelined do
           queues.map { |queue| redis.llen("queue:#{queue}") }

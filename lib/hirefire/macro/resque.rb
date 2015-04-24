@@ -19,13 +19,17 @@ module HireFire
         queues = queues.flatten.map(&:to_s)
         queues = ::Resque.queues if queues.empty?
 
-        in_queues = queues.inject(0) do |memo, queue|
-          memo += ::Resque.size(queue)
-          memo
-        end
+        redis = ::Resque.redis
+        ids = Array(redis.smembers(:workers)).compact
+        raw_jobs = redis.pipelined { ids.map { |id| redis.get("worker:#{id}") } }
+        jobs = raw_jobs.map { |raw_job| ::Resque.decode(raw_job) || {} }
 
-        in_progress = ::Resque::Worker.all.inject(0) do |memo, worker|
-          memo += 1 if queues.include?(worker.job["queue"])
+        in_queues = redis.pipelined do
+          queues.map { |queue| redis.llen("queue:#{queue}") }
+        end.map(&:to_i).inject(&:+)
+
+        in_progress = jobs.inject(0) do |memo, job|
+          memo += 1 if queues.include?(job["queue"])
           memo
         end
 
@@ -34,4 +38,3 @@ module HireFire
     end
   end
 end
-

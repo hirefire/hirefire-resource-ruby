@@ -6,7 +6,7 @@ HIREFIRE_PATH = File.expand_path("../hirefire", __FILE__)
   require "#{HIREFIRE_PATH}/#{file}"
 end
 
-%w[delayed_job resque sidekiq qu qc].each do |file|
+%w[delayed_job resque sidekiq qu qc bunny].each do |file|
   require "#{HIREFIRE_PATH}/macro/#{file}"
 end
 

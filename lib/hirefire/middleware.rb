@@ -2,6 +2,15 @@
 
 module HireFire
   class Middleware
+    
+    # Frozen headers to save some memory
+    TEST_HEADERS = {
+      'Content-Type' => 'text/html'
+    }.freeze
+    INFO_HEADERS = {
+        'Content-Type' => 'application/json',
+        'Cache-Control' => 'must-revalidate, private, max-age=0'
+    }.freeze
 
     # Initialize the HireFire::Middleware and store the `app` in `@app`
     # and `ENV["HIREFIRE_TOKEN"]` in `@token` for convenience.
@@ -22,9 +31,9 @@ module HireFire
       @env = env
 
       if test?
-        [ 200, {"Content-Type" => "text/html"}, self ]
+        [ 200, TEST_HEADERS, self ]
       elsif info?
-        [ 200, {"Content-Type" => "application/json"}, self ]
+        [ 200, INFO_HEADERS, self ]
       else
         @app.call(env)
       end

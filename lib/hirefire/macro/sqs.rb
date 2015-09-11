@@ -18,7 +18,7 @@ module HireFire
       def queue(*queues)
         queues = queues.flatten.map(&:to_s)
         length = 0
-        client = Aws::SQS::Client.net
+        client = Aws::SQS::Client.new
         queue_urls = client.list_queues.queue_urls
         sample_url = queue_urls.first
         suffix = sample_url.split('/').last

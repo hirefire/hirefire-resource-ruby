@@ -16,6 +16,7 @@ module HireFire
       # @return [Integer] the number of jobs in the queue(s).
       #
       def queue(*queues)
+        queues = queues.flatten.map(&:to_s)
         length = 0
         client = Aws::SQS::Client.net
         queue_urls = client.list_queues.queue_urls

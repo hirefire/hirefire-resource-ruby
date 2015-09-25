@@ -20,7 +20,7 @@ module HireFire
     def initialize(app)
       @app   = app
       @token = ENV["HIREFIRE_TOKEN"]
-      if Rails.application.config.relative_url_root
+      if defined?(Rails) && Rails.application.config.relative_url_root
         @path_prefix = Regexp.new("^" + Regexp.escape(Rails.application.config.relative_url_root))
       end
     end

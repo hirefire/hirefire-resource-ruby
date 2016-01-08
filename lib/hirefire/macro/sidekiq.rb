@@ -11,6 +11,8 @@ module HireFire
       #   HireFire::Macro::Sidekiq.queue # all queues
       #   HireFire::Macro::Sidekiq.queue("email") # only email queue
       #   HireFire::Macro::Sidekiq.queue("audio", "video") # audio and video queues
+      #   HireFire::Macro::Sidekiq.queue("email", skip_scheduled: true) # only email, will not count scheduled queue
+      #   HireFire::Macro::Sidekiq.queue("audio", skip_retries: true) # only audio, will not count the retries queue
       #
       # @param [Array] queues provide one or more queue names, or none for "all".
       # @return [Integer] the number of jobs in the queue(s).
@@ -18,7 +20,15 @@ module HireFire
       def queue(*queues)
         require "sidekiq/api"
 
-        queues = queues.flatten.map(&:to_s)
+        queues.flatten!
+
+        if queues.last.is_a?(Hash)
+          options = queues.pop
+        else
+          options = {}
+        end
+
+        queues = queues.map(&:to_s)
         queues = ::Sidekiq::Stats.new.queues.map { |name, _| name } if queues.empty?
 
         in_queues = queues.inject(0) do |memo, name|
@@ -26,14 +36,18 @@ module HireFire
           memo
         end
 
-        in_schedule = ::Sidekiq::ScheduledSet.new.inject(0) do |memo, job|
-          memo += 1 if queues.include?(job["queue"]) && job.at <= Time.now
-          memo
+        if !options[:skip_scheduled]
+          in_schedule = ::Sidekiq::ScheduledSet.new.inject(0) do |memo, job|
+            memo += 1 if queues.include?(job["queue"]) && job.at <= Time.now
+            memo
+          end
         end
 
-        in_retry = ::Sidekiq::RetrySet.new.inject(0) do |memo, job|
-          memo += 1 if queues.include?(job["queue"]) && job.at <= Time.now
-          memo
+        if !options[:skip_retries]
+          in_retry = ::Sidekiq::RetrySet.new.inject(0) do |memo, job|
+            memo += 1 if queues.include?(job["queue"]) && job.at <= Time.now
+            memo
+          end
         end
 
         i = ::Sidekiq::VERSION >= "3.0.0" ? 2 : 1
@@ -42,7 +56,7 @@ module HireFire
           memo
         end
 
-        in_queues + in_schedule + in_retry + in_progress
+        [in_queues, in_schedule, in_retry, in_progress].compact.inject(&:+)
       end
     end
   end

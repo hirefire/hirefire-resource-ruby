@@ -5,20 +5,14 @@ module HireFire
     module Sidekiq
       extend self
 
-      # @return [Boolean] Determines whether scheduled jobs should be counted.
-      #
-      attr_accessor :skip_scheduled
-
-      # @return [Boolean] Determines whether retries should be counted.
-      #
-      attr_accessor :skip_retries
-
       # Counts the amount of jobs in the (provided) Sidekiq queue(s).
       #
       # @example Sidekiq Macro Usage
       #   HireFire::Macro::Sidekiq.queue # all queues
       #   HireFire::Macro::Sidekiq.queue("email") # only email queue
       #   HireFire::Macro::Sidekiq.queue("audio", "video") # audio and video queues
+      #   HireFire::Macro::Sidekiq.queue("email", skip_scheduled: true) # only email, will not count scheduled queue
+      #   HireFire::Macro::Sidekiq.queue("audio", skip_retries: true) # only audio, will not count the retries queue
       #
       # @param [Array] queues provide one or more queue names, or none for "all".
       # @return [Integer] the number of jobs in the queue(s).
@@ -42,14 +36,14 @@ module HireFire
           memo
         end
 
-        if !skip_scheduled
+        if !options[:skip_scheduled]
           in_schedule = ::Sidekiq::ScheduledSet.new.inject(0) do |memo, job|
             memo += 1 if queues.include?(job["queue"]) && job.at <= Time.now
             memo
           end
         end
 
-        if !skip_retries
+        if !options[:skip_retries]
           in_retry = ::Sidekiq::RetrySet.new.inject(0) do |memo, job|
             memo += 1 if queues.include?(job["queue"]) && job.at <= Time.now
             memo

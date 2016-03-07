@@ -2,7 +2,7 @@
 
 module HireFire
   class Middleware
-    
+
     # Frozen headers to save some memory
     TEST_HEADERS = {
       'Content-Type' => 'text/html'
@@ -20,6 +20,9 @@ module HireFire
     def initialize(app)
       @app   = app
       @token = ENV["HIREFIRE_TOKEN"]
+      if defined?(Rails) && Rails.application.config.relative_url_root
+        @path_prefix = Regexp.new("^" + Regexp.escape(Rails.application.config.relative_url_root))
+      end
     end
 
     # Will respond to the request here if either the `test` or the `info` url was requested.
@@ -69,12 +72,22 @@ module HireFire
       "[#{dyno_data.sub(",","")}]"
     end
 
+
+    # Rack PATH_INFO with any RAILS_RELATIVE_URL_ROOT stripped off
+    def path
+      if @path_prefix
+        @env["PATH_INFO"].gsub(@path_prefix, "")
+      else
+        @env["PATH_INFO"]
+      end
+    end
+
     # Returns true if the PATH_INFO matches the test url.
     #
     # @return [Boolean] true if the requested url matches the test url.
     #
     def test?
-      @env["PATH_INFO"] == "/hirefire/test"
+      path == "/hirefire/test"
     end
 
     # Returns true if the PATH_INFO matches the info url.
@@ -82,7 +95,7 @@ module HireFire
     # @return [Boolean] true if the requested url matches the info url.
     #
     def info?
-      @env["PATH_INFO"] == "/hirefire/#{@token || "development"}/info"
+      path == "/hirefire/#{@token || "development"}/info"
     end
   end
 end

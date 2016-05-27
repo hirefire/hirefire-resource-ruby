@@ -1,3 +1,6 @@
+[![Gem Version](https://badge.fury.io/rb/hirefire-resource.svg)](http://badge.fury.io/rb/hirefire-resource)
+[![Downloads](https://img.shields.io/gem/dt/hirefire-resource.svg?style=flat)](https://rubygems.org/gems/hirefire-resource)
+
 ## [HireFire](http://hirefire.io/) - Autoscaling for your Heroku dynos
 
 Load-based scaling, schedule-based scaling, dyno crash recovery, for [Heroku](http://heroku.com/) web- and worker dynos.

@@ -3,3 +3,4 @@
 *.swo
 *.gem
 .yardoc
+Gemfile.lock

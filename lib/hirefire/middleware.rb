@@ -3,13 +3,13 @@
 module HireFire
   class Middleware
 
-    TEST_HEADERS = {
-      'Content-Type' => 'text/html'
+    INFO_HEADERS = {
+      "Content-Type" => "application/json",
+      "Cache-Control" => "must-revalidate, private, max-age=0"
     }
 
-    INFO_HEADERS = {
-        'Content-Type' => 'application/json',
-        'Cache-Control' => 'must-revalidate, private, max-age=0'
+    TEST_HEADERS = {
+      "Content-Type" => "text/html"
     }
 
     # Initialize the HireFire::Middleware and store the `app` in `@app`

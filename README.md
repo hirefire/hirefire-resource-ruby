@@ -56,7 +56,8 @@ HireFire::Resource.configure do |config|
   end
 
   config.dyno(:dj_worker) do
-    HireFire::Macro::Delayed::Job.queue(:encode, :compress)
+    HireFire::Macro::Delayed::Job
+      .queue(:encode, :compress, mapper: :active_record)
   end
 end
 ```

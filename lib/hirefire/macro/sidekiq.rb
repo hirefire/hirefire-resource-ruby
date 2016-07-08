@@ -37,8 +37,10 @@ module HireFire
         end
 
         if !options[:skip_scheduled]
+          max = options[:max_scheduled]
           in_schedule = ::Sidekiq::ScheduledSet.new.inject(0) do |memo, job|
             memo += 1 if queues.include?(job["queue"]) && job.at <= Time.now
+            break memo if max && memo >= max
             memo
           end
         end

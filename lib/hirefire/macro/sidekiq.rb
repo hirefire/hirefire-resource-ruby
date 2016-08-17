@@ -58,6 +58,35 @@ module HireFire
 
         [in_queues, in_schedule, in_retry, in_progress].compact.inject(&:+)
       end
+
+      # Reports the latency (in seconds) for the provided Sidekiq queue(s).
+      #
+      # @example Sidekiq Macro Usage
+      #   HireFire::Macro::Sidekiq.latency # average latency of all queues
+      #   HireFire::Macro::Sidekiq.queue("email") # only email queue
+      #   HireFire::Macro::Sidekiq.queue("audio", "video") # average of audio and video queue latencies
+      #   HireFire::Macro::Sidekiq.queue("email", "video", weighted: true) # weighted average of latencies
+      def latency(*queues)
+        require "sidekiq/api"
+
+        queues.flatten!
+
+        if queues.last.is_a?(Hash)
+          options = queues.pop
+        else
+          options = {}
+        end
+
+        queues = queues.map(&:to_s)
+        queues = ::Sidekiq::Stats.new.queues.map { |name, _| name } if queues.empty?
+
+        latencies = if options[:weighted]
+          queues.map {|queue| q = ::Sidekiq::Queue.new(queue); q.latency * q.size }
+        else
+          queues.map {|queue| ::Sidekiq::Queue.new(queue).latency }
+        end
+        latencies.sum / queues.length
+      end
     end
   end
 end

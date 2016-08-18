@@ -66,6 +66,10 @@ module HireFire
       #   HireFire::Macro::Sidekiq.latency("email") # only email queue
       #   HireFire::Macro::Sidekiq.latency("audio", "video") # average of audio and video queue latencies
       #   HireFire::Macro::Sidekiq.latency("email", "video", weighted: true) # weighted average of latencies
+      #
+      # @param [Array] queues provide one or more queue names, or none for "all".
+      # @return [Float] job latency (Time.now - oldest_job.enqueued_at) in seconds.
+      #
       def latency(*queues)
         require "sidekiq/api"
 

@@ -63,9 +63,9 @@ module HireFire
       #
       # @example Sidekiq Macro Usage
       #   HireFire::Macro::Sidekiq.latency # average latency of all queues
-      #   HireFire::Macro::Sidekiq.queue("email") # only email queue
-      #   HireFire::Macro::Sidekiq.queue("audio", "video") # average of audio and video queue latencies
-      #   HireFire::Macro::Sidekiq.queue("email", "video", weighted: true) # weighted average of latencies
+      #   HireFire::Macro::Sidekiq.latency("email") # only email queue
+      #   HireFire::Macro::Sidekiq.latency("audio", "video") # average of audio and video queue latencies
+      #   HireFire::Macro::Sidekiq.latency("email", "video", weighted: true) # weighted average of latencies
       def latency(*queues)
         require "sidekiq/api"
 

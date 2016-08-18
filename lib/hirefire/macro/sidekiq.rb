@@ -80,14 +80,14 @@ module HireFire
         queues = queues.map(&:to_s)
         queues = ::Sidekiq::Stats.new.queues.map { |name, _| name } if queues.empty?
 
-        latencies = if options[:weighted]
-          queues.map {|queue| q = ::Sidekiq::Queue.new(queue); q.latency * q.size }
+        if options[:weighted]
+          in_queues = queues.map { |queue| q = ::Sidekiq::Queue.new(queue); [q.latency, q.size] }
+          denominator = in_queues.map { |_, size| size }.sum
+          (denominator == 0) ? 0.0 : (in_queues.map { |latency, size| latency * size }.sum / denominator)
         else
-          queues.map {|queue| ::Sidekiq::Queue.new(queue).latency }
+          queues.map { |queue| ::Sidekiq::Queue.new(queue).latency }.sum / queues.length
         end
-        latencies.sum / queues.length
       end
     end
   end
 end
-

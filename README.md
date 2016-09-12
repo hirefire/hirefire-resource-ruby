@@ -26,13 +26,15 @@ It supports practically any Rack-based application or framework, such as:
 We provide convenient macros for the above mentioned worker libraries to calculate the queue size for each of them.
 If you wish to conribute more macros for other existing worker libraries feel free to send us a pull request.
 
-Here is an example with Ruby on Rails 3. First, add the gem to your `Gemfile`:
+Here is an example with Ruby on Rails 3. 
+
+First, add the gem to your `Gemfile`:
 
 ```ruby
 gem "hirefire-resource"
 ```
 
-Then, all you have to do is create an initializer in `config/initializers/hirefire.rb` and add the following:
+Then, create an initializer in `config/initializers/hirefire.rb` and add the following:
 
 ```ruby
 HireFire::Resource.configure do |config|
@@ -45,6 +47,14 @@ HireFire::Resource.configure do |config|
   end
 end
 ```
+
+Finally, set your `HIREFIRE_TOKEN` environment variable on Heroku. To retrieve your token, visit the [HireFire dashboard](https://manager.hirefire.io/applications) and click your application name.
+```
+heroku config:set HIREFIRE_TOKEN=token --app application_name
+```
+To check that everything is working, you can visit:
+- In development: `localhost:3000/hirefire/development/info`
+- In production: `yourdomain.com/hirefire/your_token/info`
 
 This will allow HireFire to read out the queues for both Resque and Delayed Job. By default these macros will count all the queues combined if you are using multiple
 different queues for each worker library. You can also pass in specific queues to count, like so:

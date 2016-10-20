@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |gem|
   gem.name = "hirefire-resource"
-  gem.version = "0.3.11"
+  gem.version = "0.3.12"
   gem.platform = Gem::Platform::RUBY
   gem.authors = "Michael van Rooijen"
   gem.email = "michael@hirefire.io"
@@ -15,4 +15,3 @@ Gem::Specification.new do |gem|
   gem.executables = ["hirefire", "hirefireapp"]
   gem.require_path = "lib"
 end
-

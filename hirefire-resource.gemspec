@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |gem|
   gem.name = "hirefire-resource"
-  gem.version = "0.3.12"
+  gem.version = "0.3.13"
   gem.platform = Gem::Platform::RUBY
   gem.authors = "Michael van Rooijen"
   gem.email = "michael@hirefire.io"

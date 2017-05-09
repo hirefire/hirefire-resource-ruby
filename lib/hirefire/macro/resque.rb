@@ -19,6 +19,8 @@ module HireFire
         queues = queues.flatten.map(&:to_s)
         queues = ::Resque.queues if queues.empty?
 
+        return 0 if queues.empty?
+
         redis = ::Resque.redis
         ids = Array(redis.smembers(:workers)).compact
         raw_jobs = redis.pipelined { ids.map { |id| redis.get("worker:#{id}") } }

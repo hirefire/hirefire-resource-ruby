@@ -6,7 +6,7 @@ Gem::Specification.new do |gem|
   gem.platform = Gem::Platform::RUBY
   gem.authors = "Michael van Rooijen"
   gem.email = "michael@hirefire.io"
-  gem.homepage = "http://www.hirefire.io"
+  gem.homepage = "https://www.hirefire.io"
   gem.summary = "Autoscaling for your Heroku dynos"
   gem.description = "Load- and schedule-based scaling for web- and worker dynos"
   gem.licenses = ["Apache License"]

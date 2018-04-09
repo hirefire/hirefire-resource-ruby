@@ -66,7 +66,8 @@ module HireFire
     #
     def dynos
       dyno_data = HireFire::Resource.dynos.inject(String.new) do |json, dyno|
-        json << %|,{"name":"#{dyno[:name]}","quantity":#{dyno[:quantity].call || "null"}}|; json
+        json << %(,{"name":"#{dyno[:name]}","quantity":#{dyno[:quantity].call || "null"}})
+        json
       end
 
       "[#{dyno_data.sub(",","")}]"

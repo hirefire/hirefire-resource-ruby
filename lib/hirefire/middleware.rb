@@ -75,6 +75,9 @@ module HireFire
 
 
     # Rack PATH_INFO with any RAILS_RELATIVE_URL_ROOT stripped off
+    #
+    # @return [String]
+    #
     def path
       if @path_prefix
         @env["PATH_INFO"].gsub(@path_prefix, "")

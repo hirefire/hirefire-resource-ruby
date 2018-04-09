@@ -33,6 +33,8 @@ module HireFire
     def call(env)
       @env = env
 
+      handle_queue(env["HTTP_X_REQUEST_START"])
+
       if test?
         [ 200, TEST_HEADERS, self ]
       elsif info?
@@ -73,7 +75,6 @@ module HireFire
       "[#{dyno_data.sub(",","")}]"
     end
 
-
     # Rack PATH_INFO with any RAILS_RELATIVE_URL_ROOT stripped off
     #
     # @return [String]
@@ -100,6 +101,32 @@ module HireFire
     #
     def info?
       path == "/hirefire/#{@token || "development"}/info"
+    end
+
+    # Writes the Heroku Router queue time to STDOUT if a String was provided.
+    #
+    # @param [String] the timestamp from HTTP_X_REQUEST_START.
+    #
+    def handle_queue(value)
+      log_queue(value) if value
+    end
+
+    # Writes the Heroku Router queue time to STDOUT.
+    #
+    # @param [String] the timestamp from HTTP_X_REQUEST_START.
+    #
+    def log_queue(value)
+      STDOUT.puts("[hirefire:router] queue=#{get_queue(value)}ms")
+    end
+
+    # Calculates the difference, in milliseconds, between the
+    # HTTP_X_REQUEST_START time and the current time.
+    #
+    # @param [String] the timestamp from HTTP_X_REQUEST_START.
+    # @return [Integer] the queue time in milliseconds.
+    #
+    def get_queue(value)
+      (Time.now.to_f * 1000).to_i - value.to_i
     end
   end
 end

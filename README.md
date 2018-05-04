@@ -1,6 +1,6 @@
-## [HireFire](http://hirefire.io/) - Autoscaling for your Heroku dynos
+## [HireFire](https://www.hirefire.io/) - Autoscaling for your Heroku dynos
 
-Load-based scaling, schedule-based scaling, dyno crash recovery, for [Heroku](http://heroku.com/) web- and worker dynos.
+Load-based scaling, schedule-based scaling, dyno crash recovery, for [Heroku](https://www.heroku.com/) web- and worker dynos.
 
 ---
 
@@ -27,7 +27,7 @@ It supports practically any Rack-based application or framework, such as:
 We provide convenient macros for the above mentioned worker libraries to calculate the queue size for each of them.
 If you wish to conribute more macros for other existing worker libraries feel free to send us a pull request.
 
-Here is an example with Ruby on Rails 3. 
+Here is an example with Rails 3+
 
 First, add the gem to your `Gemfile`:
 
@@ -83,7 +83,7 @@ dj_worker: QUEUES=encode,compress bundle exec rake jobs:work
 
 Now that HireFire will scale both of the these dyno types based on their individual queue sizes. To customize how they scale, log in to the HireFire web interface.
 
-Visit the [official website](http://www.hirefire.io/) for more information!
+Visit the [official website](https://www.hirefire.io/) for more information!
 
 ### License
 

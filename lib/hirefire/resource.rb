@@ -4,14 +4,30 @@ module HireFire
   module Resource
     extend self
 
+    # This option, when enabled, will write queue metrics to STDOUT,
+    # and is only required when using the Web.Logplex.QueueTime strategy.
+    #
+    # @param [Boolean] Whether or not the queue metrics should be logged.
+    #
+    attr_writer :log_queue_metrics
+
+    # @return [Boolean] True if the queue metrics option is enabled.
+    #
+    def log_queue_metrics
+      @log_queue_metrics ||= false
+    end
+
     # @return [Array] The configured dynos.
     #
-    attr_accessor :dynos
+    def dynos
+      @dynos ||= []
+    end
 
-    # Sets the `@dynos` instance variable to an empty Array to hold all the dyno configuration.
+    # Configures HireFire::Resource.
     #
     # @example Resource Configuration
     #   HireFire::Resource.configure do |config|
+    #     config.log_queue_metrics = true # disabled by default
     #     config.dyno(:worker) do
     #       # Macro or Custom logic for the :worker dyno here..
     #     end
@@ -20,7 +36,6 @@ module HireFire
     # @yield [HireFire::Resource] to allow for block-style configuration.
     #
     def configure
-      @dynos ||= []
       yield self
     end
 
@@ -30,8 +45,7 @@ module HireFire
     # @param [Proc] block an Integer containing the quantity calculation logic.
     #
     def dyno(name, &block)
-      @dynos << { :name => name, :quantity => block }
+      dynos << { :name => name, :quantity => block }
     end
   end
 end
-

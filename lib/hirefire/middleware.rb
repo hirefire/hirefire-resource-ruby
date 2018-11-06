@@ -108,7 +108,7 @@ module HireFire
     # @param [String] the timestamp from HTTP_X_REQUEST_START.
     #
     def handle_queue(value)
-      log_queue(value) if value
+      HireFire::Resource.log_queue_metrics && value && log_queue(value)
     end
 
     # Writes the Heroku Router queue time to STDOUT.

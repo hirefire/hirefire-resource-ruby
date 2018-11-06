@@ -126,7 +126,8 @@ module HireFire
     # @return [Integer] the queue time in milliseconds.
     #
     def get_queue(value)
-      (Time.now.to_f * 1000).to_i - value.to_i
+      ms = (Time.now.to_f * 1000).to_i - value.to_i
+      ms < 0 ? 0 : ms
     end
   end
 end

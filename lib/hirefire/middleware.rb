@@ -25,12 +25,17 @@ module HireFire
       end
     end
 
+    # We must duplicate the call the ensure thread safety when working in mult-threaded env
+    def call(env)
+      dup._call(env)
+    end
+
     # Will respond to the request here if either the `test` or the `info` url was requested.
     # Otherwise, fall through to the rest of the middleware below HireFire::Middleware.
     #
     # @param [Hash] env containing request information.
     #
-    def call(env)
+    def _call(env)
       @env = env
 
       handle_queue(env["HTTP_X_REQUEST_START"])

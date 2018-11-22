@@ -90,12 +90,8 @@ module HireFire
     # @return [String] in application/json format.
     #
     def build_info_response
-      entry_builder = lambda do |config|
+      entries = HireFire::Resource.dynos.map do |config|
         %({"name":"#{config[:name]}","quantity":#{config[:quantity].call || "null"}})
-      end
-
-      entries = HireFire::Resource.dynos.inject([]) do |buffer, config|
-        buffer << entry_builder.call(config)
       end
 
       status                   = 200

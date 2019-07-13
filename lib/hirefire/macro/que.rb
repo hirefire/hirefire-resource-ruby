@@ -4,14 +4,8 @@ module HireFire
   module Macro
     module Que
       QUERY =  %{
-SELECT count(*)                                                          AS total,
-       count(locks.job_id)                                               AS running,
-       coalesce(sum((error_count > 0 AND locks.job_id IS NULL)::int), 0) AS failing,
-       coalesce(sum((error_count = 0 AND locks.job_id IS NULL)::int), 0) AS scheduled
-FROM que_jobs LEFT JOIN (
-  SELECT (classid::bigint << 32) + objid::bigint AS job_id
-  FROM pg_locks WHERE locktype = 'advisory'
-) locks USING (job_id) }.freeze
+SELECT count(*) AS total
+FROM que_jobs WHERE run_at < now() }.freeze
 
       extend self
 
@@ -26,9 +20,9 @@ FROM que_jobs LEFT JOIN (
       # @return [Integer] the number of jobs in the queue(s).
       #
       def queue(queue = nil)
-        query = queue ? "#{QUERY} WHERE queue = '#{queue}'" : QUERY
+        query = queue ? "#{QUERY} AND queue = '#{queue}'" : QUERY
         results = ::Que.execute(query).first
-        results["total"].to_i - results["failing"].to_i
+        results["total"].to_i
       end
     end
   end

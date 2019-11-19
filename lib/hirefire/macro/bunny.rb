@@ -70,11 +70,15 @@ module HireFire
 
       def count_messages(channel, queue_names, options)
         queue_names.inject(0) do |sum, queue_name|
-          queue = channel.queue(queue_name, :durable => options[:durable])
+          if options.key?("x-max-priority")
+            queue = channel.queue(queue_name, :durable   => options[:durable],
+                                              :arguments => {"x-max-priority" => options["x-max-priority"]})
+          else
+            queue = channel.queue(queue_name, :durable => options[:durable])
+          end
           sum + queue.message_count
         end
       end
     end
   end
 end
-

@@ -1,4 +1,9 @@
-## v0.7.3/Master
+## v0.7.4/Master
+
+* Attempt to fix an issue where the STDOUT IO Stream has been closed for an unknown reason.
+  * This resulted in errors in an application with `log_queue_metrics` enabled after a random period of time.
+
+## v0.7.3
 
 * Added priority queue support for bunny message count.
   * Allows for passing in the `x-max-priority` option when opening up a queue to check the messages remaining.

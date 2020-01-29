@@ -19,7 +19,7 @@ module HireFire
     #
     # When HireFire::Resource.log_queue_metrics is enabled, and the HTTP_X_REQUEST_START
     # header has been injected at the Heroku Router layer, queue time information will be
-    # logged to STDOUT. This data can be used by the HireFire Logdrain with the
+    # logged to $stdout. This data can be used by the HireFire Logdrain with the
     # Web.Logplex.QueueTime autoscaling strategy.
     #
     # Important: Don't set/update instance variables within this- or any underlying methods.
@@ -103,7 +103,7 @@ module HireFire
       [status, headers, [body]]
     end
 
-    # Writes the Heroku Router queue time to STDOUT if a String was provided.
+    # Writes the Heroku Router queue time to $stdout if a String was provided.
     #
     # @param [String] the timestamp from HTTP_X_REQUEST_START.
     #
@@ -111,12 +111,12 @@ module HireFire
       HireFire::Resource.log_queue_metrics && value && log_queue(value)
     end
 
-    # Writes the Heroku Router queue time to STDOUT.
+    # Writes the Heroku Router queue time to $stdout.
     #
     # @param [String] the timestamp from HTTP_X_REQUEST_START.
     #
     def log_queue(value)
-      STDOUT.puts("[hirefire:router] queue=#{get_queue(value)}ms")
+      puts("[hirefire:router] queue=#{get_queue(value)}ms")
     end
 
     # Calculates the difference, in milliseconds, between the

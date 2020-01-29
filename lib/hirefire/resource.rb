@@ -4,7 +4,7 @@ module HireFire
   module Resource
     extend self
 
-    # This option, when enabled, will write queue metrics to STDOUT,
+    # This option, when enabled, will write queue metrics to $stdout,
     # and is only required when using the Web.Logplex.QueueTime strategy.
     #
     # @param [Boolean] Whether or not the queue metrics should be logged.

@@ -22,7 +22,7 @@ FROM que_jobs WHERE run_at < now() }.freeze
       def queue(queue = nil)
         query = queue ? "#{QUERY} AND queue = '#{queue}'" : QUERY
         results = ::Que.execute(query).first
-        results["total"].to_i
+        (results[:total] || results["total"]).to_i
       end
     end
   end

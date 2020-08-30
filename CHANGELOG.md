@@ -1,4 +1,8 @@
-## v0.7.4/Master
+## v0.7.5/Master
+
+* Fix compatibility issue with Que 1.x (backwards-compatible with Que 0.x).
+
+## v0.7.4
 
 * Attempt to fix an issue where the STDOUT IO Stream has been closed for an unknown reason.
   * This resulted in errors in an application with `log_queue_metrics` enabled after a random period of time.

@@ -6,13 +6,14 @@ Load-based scaling, schedule-based scaling, dyno crash recovery, for [Heroku](ht
 
 It supports practically any worker library. We provide out-of-the-box support for:
 
+* Sidekiq
 * Delayed Job
 * Resque
+* GoodJob
 * Qu
-* QueueClassic
-* Sidekiq
-* Bunny
 * Que
+* QueueClassic
+* Bunny
 
 *Note that you can write your own worker queue logic for almost any other worker library as well.
 HireFire can scale multiple individual worker libraries at the same time, as well as multiple individual queues for any worker library.*

@@ -1,4 +1,8 @@
-## v0.7.5/Master
+## Master
+
+* Add GoodJob macro for `good_job` adapter. https://github.com/bensheldon/good_job
+
+## v0.7.5
 
 * Fix compatibility issue with Que 1.x (backwards-compatible with Que 0.x).
 

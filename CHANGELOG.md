@@ -1,4 +1,4 @@
-## Master
+## v0.8.0/Master
 
 * Add GoodJob macro for `good_job` adapter. https://github.com/bensheldon/good_job
 

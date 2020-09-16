@@ -1,4 +1,8 @@
-## v0.8.0/Master
+## Master
+
+* Correct GoodJob macro to not count finished jobs.
+
+## v0.8.0
 
 * Add GoodJob macro for `good_job` adapter. https://github.com/bensheldon/good_job
 

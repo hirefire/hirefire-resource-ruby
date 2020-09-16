@@ -16,7 +16,7 @@ module HireFire
       # @return [Integer] the number of jobs in the queue(s).
       #
       def queue(*queues)
-        scope = ::GoodJob::Job.only_scheduled
+        scope = ::GoodJob::Job.only_scheduled.unfinished
         scope = scope.where(queue_name: queues) if queues.any?
         scope.count
       end

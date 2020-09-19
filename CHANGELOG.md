@@ -1,4 +1,4 @@
-## Master
+## v0.8.1/Master
 
 * Correct GoodJob macro to not count finished jobs.
 

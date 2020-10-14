@@ -1,12 +1,9 @@
 # encoding: utf-8
+require 'que/active_record/model'
 
 module HireFire
   module Macro
     module Que
-      QUERY =  %{
-SELECT count(*) AS total
-FROM que_jobs WHERE run_at < now() }.freeze
-
       extend self
 
       # Queries the PostgreSQL database through Que in order to
@@ -20,16 +17,13 @@ FROM que_jobs WHERE run_at < now() }.freeze
       # @return [Integer] the number of jobs in the queue(s).
       #
       def queue(*queues)
-        query = case
-        when queues.none? then QUERY
-        when queues.one? then "#{QUERY} AND queue = '#{queues.first}'"
-        else
-          queue_names = queues.map { |queue| "'#{queue}'" }.join(', ')
-          %Q{#{QUERY} AND queue IN (#{queue_names})}
-        end
+        jobs = ::Que::ActiveRecord::Model.not_finished.not_expired.not_scheduled
 
-        results = ::Que.execute(query).first
-        (results[:total] || results["total"]).to_i
+        if queues.none?
+          jobs.count
+        else
+          jobs.where(queue: queues).count
+        end
       end
     end
   end

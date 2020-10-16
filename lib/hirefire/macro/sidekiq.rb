@@ -13,7 +13,7 @@ module HireFire
       #   HireFire::Macro::Sidekiq.queue("audio", "video") # audio and video queues
       #   HireFire::Macro::Sidekiq.queue("email", skip_scheduled: true) # only email, will not count scheduled queue
       #   HireFire::Macro::Sidekiq.queue("audio", skip_retries: true) # only audio, will not count the retries queue
-      #   HireFire::Macro::Sidekiq.queue("audio", skip_queued: true) # only audio, will not count already queued
+      #   HireFire::Macro::Sidekiq.queue("audio", skip_working: true) # only audio, will not count already queued
       #
       # @param [Array] queues provide one or more queue names, or none for "all".
       # @return [Integer] the number of jobs in the queue(s).
@@ -61,7 +61,7 @@ module HireFire
           in_retry = ::Sidekiq.redis { |c| c.zcount('retry', '-inf', Time.now.to_f) }
         end
 
-        if !options[:skip_queued]
+        if !options[:skip_working]
           in_progress = stats.workers_size
         end
 
@@ -99,7 +99,7 @@ module HireFire
 
         now = Time.now.to_i
 
-        if !options[:skip_queued]
+        if !options[:skip_working]
           # Objects yielded to Workers#each:
           # https://github.com/mperham/sidekiq/blob/305ab8eedc362325da2e218b2a0e20e510668a42/lib/sidekiq/api.rb#L912
           in_progress = ::Sidekiq::Workers.new.select do |key, tid, job|

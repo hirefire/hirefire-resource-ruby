@@ -3,10 +3,6 @@
 module HireFire
   module Macro
     module Que
-      QUERY =  %{
-SELECT count(*) AS total
-FROM que_jobs WHERE run_at < now() }.freeze
-
       extend self
 
       # Queries the PostgreSQL database through Que in order to
@@ -20,17 +16,40 @@ FROM que_jobs WHERE run_at < now() }.freeze
       # @return [Integer] the number of jobs in the queue(s).
       #
       def queue(*queues)
-        query = case
-        when queues.none? then QUERY
-        when queues.one? then "#{QUERY} AND queue = '#{queues.first}'"
-        else
-          queue_names = queues.map { |queue| "'#{queue}'" }.join(', ')
-          %Q{#{QUERY} AND queue IN (#{queue_names})}
-        end
-
+        query   = queues.empty? && base_query || base_query + " AND queue IN (#{names(queues)})"
         results = ::Que.execute(query).first
         (results[:total] || results["total"]).to_i
       end
+
+      private
+
+      def base_query
+        return QUE_V0_QUERY if defined?(::Que::Version)
+        return QUE_V1_QUERY if defined?(::Que::VERSION)
+        raise "Couldn't find Que version"
+      end
+
+      def names(queues)
+        queues.map { |queue| "'#{queue}'" }.join(",")
+      end
+
+      def query_const(query)
+        query.gsub(/\s+/, " ").strip.freeze
+      end
+
+      QUE_V0_QUERY = query_const(<<-QUERY)
+        SELECT count(*) AS total
+        FROM que_jobs
+        WHERE run_at < NOW()
+      QUERY
+
+      QUE_V1_QUERY = query_const(<<-QUERY)
+        SELECT COUNT(*)
+        FROM que_jobs
+        WHERE finished_at IS NULL
+        AND expired_at IS NULL
+        AND run_at <= NOW()
+      QUERY
     end
   end
 end

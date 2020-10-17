@@ -44,7 +44,7 @@ module HireFire
       QUERY
 
       QUE_V1_QUERY = query_const(<<-QUERY)
-        SELECT COUNT(*)
+        SELECT COUNT(*) AS total
         FROM que_jobs
         WHERE finished_at IS NULL
         AND expired_at IS NULL

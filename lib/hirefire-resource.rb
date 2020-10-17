@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 HIREFIRE_PATH = File.expand_path("../hirefire", __FILE__)
 
 %w[middleware resource].each do |file|

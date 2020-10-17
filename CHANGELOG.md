@@ -3,6 +3,7 @@
 * Add `skip_working` to Sidekiq macro
 * Use separate queries for Que 0.x and 1.x
 * Remove `# encoding: utf-8` magic comments
+* Add `# frozen_string_literal: true` magic comments
 
 ## v0.8.1
 

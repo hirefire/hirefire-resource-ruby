@@ -1,4 +1,4 @@
-## master
+## v0.9.0/master
 
 * Add `skip_working` to Sidekiq macro
 * Use separate queries for Que 0.x and 1.x

@@ -1,5 +1,3 @@
-# encoding: utf-8
-
 module HireFire
   module Macro
     module Qu
@@ -22,4 +20,3 @@ module HireFire
     end
   end
 end
-

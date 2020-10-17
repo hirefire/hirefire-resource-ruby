@@ -1,5 +1,3 @@
-# encoding: utf-8
-
 require "open-uri"
 require "openssl"
 
@@ -45,4 +43,3 @@ else
     exit 1
   end
 end
-

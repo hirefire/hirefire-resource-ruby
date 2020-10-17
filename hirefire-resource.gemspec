@@ -1,5 +1,3 @@
-# encoding: utf-8
-
 Gem::Specification.new do |gem|
   gem.name = "hirefire-resource"
   gem.version = "0.8.1"

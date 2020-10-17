@@ -38,7 +38,7 @@ module HireFire
       end
 
       QUE_V0_QUERY = query_const(<<-QUERY)
-        SELECT count(*) AS total
+        SELECT COUNT(*) AS total
         FROM que_jobs
         WHERE run_at < NOW()
       QUERY

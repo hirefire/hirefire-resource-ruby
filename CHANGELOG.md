@@ -1,4 +1,9 @@
-## v0.8.1/Master
+## master
+
+* Add `skip_working` to Sidekiq macro
+* Use separate queries for Que 0.x and 1.x
+
+## v0.8.1
 
 * Correct GoodJob macro to not count finished jobs.
 

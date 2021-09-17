@@ -1,4 +1,4 @@
-## master
+## v0.9.1
 
 * Support GoodJob > 2.2 where Job class is renamed to Execution
 

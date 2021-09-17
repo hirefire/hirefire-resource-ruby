@@ -1,6 +1,6 @@
-## [HireFire](https://www.hirefire.io/) - Autoscaling for your Heroku dynos
+## [HireFire] - Autoscaling for [Heroku]
 
-Load-based scaling, schedule-based scaling, dyno crash recovery, for [Heroku](https://www.heroku.com/) web- and worker dynos.
+Response times, queue times, job queues, load and schedule-based autoscaling for web and worker dynos on [Heroku].
 
 ---
 
@@ -84,8 +84,12 @@ dj_worker: QUEUES=encode,compress bundle exec rake jobs:work
 
 Now that HireFire will scale both of the these dyno types based on their individual queue sizes. To customize how they scale, log in to the HireFire web interface.
 
-Visit the [official website](https://www.hirefire.io/) for more information!
+Visit the [official website] for more information!
 
 ### License
 
 hirefire-resource is released under the Apache 2.0 license. See LICENSE.
+
+[HireFire]: https://www.hirefire.io/
+[official website]: https://www.hirefire.io/
+[Heroku]: https://www.heroku.com/

@@ -1,4 +1,8 @@
-## v0.9.0/master
+## master
+
+* Support GoodJob > 2.2 where Job class is renamed to Execution
+
+## v0.9.0
 
 * Add `skip_working` to Sidekiq macro
 * Use separate queries for Que 0.x and 1.x

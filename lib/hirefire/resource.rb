@@ -42,10 +42,10 @@ module HireFire
     # Will be used through block-style configuration with the `configure` method.
     #
     # @param [Symbol, String] name the name of the dyno as defined in the Procfile.
-    # @param [Proc] block an Integer containing the quantity calculation logic.
+    # @param [Proc] block an Integer containing the value calculation logic.
     #
     def dyno(name, &block)
-      dynos << { :name => name, :quantity => block }
+      dynos << { :name => name, :value => block }
     end
   end
 end

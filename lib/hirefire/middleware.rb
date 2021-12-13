@@ -91,7 +91,7 @@ module HireFire
     #
     def build_info_response
       entries = HireFire::Resource.dynos.map do |config|
-        %({"name":"#{config[:name]}","quantity":#{config[:quantity].call || "null"}})
+        %({"name":"#{config[:name]}","value":#{config[:value].call || "null"}})
       end
 
       status                   = 200

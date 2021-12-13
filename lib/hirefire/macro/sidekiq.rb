@@ -5,9 +5,19 @@ module HireFire
     module Sidekiq
       extend self
 
+      # The latency in seconds for the provided queue.
+      #
+      # @example Sidekiq Queue Latency Macro Usage
+      #   HireFire::Macro::Sidekiq.queue # default queue
+      #   HireFire::Macro::Sidekiq.queue("email") # email queue
+      #
+      def latency(queue = "default")
+        ::Sidekiq::Queue.new(queue).latency
+      end
+
       # Counts the amount of jobs in the (provided) Sidekiq queue(s).
       #
-      # @example Sidekiq Macro Usage
+      # @example Sidekiq Queue Size Macro Usage
       #   HireFire::Macro::Sidekiq.queue # all queues
       #   HireFire::Macro::Sidekiq.queue("email") # only email queue
       #   HireFire::Macro::Sidekiq.queue("audio", "video") # audio and video queues

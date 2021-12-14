@@ -45,7 +45,7 @@ module HireFire
     # @param [Proc] block an Integer containing the value calculation logic.
     #
     def dyno(name, &block)
-      dynos << { :name => name, :value => block }
+      dynos << {name: name, value: block}
     end
   end
 end

@@ -35,26 +35,26 @@ module HireFire
         def queue(*queues)
           queues.flatten!
 
-          if queues.last.is_a?(Hash)
-            options = queues.pop
+          options = if queues.last.is_a?(Hash)
+            queues.pop
           else
-            options = {}
+            {}
           end
 
           case options[:mapper]
           when :active_record
             c = ::Delayed::Job
-            c = c.where(:failed_at => nil)
+            c = c.where(failed_at: nil)
             c = c.where("run_at <= ?", Time.now.utc)
             c = c.where("priority >= ?", options[:min_priority]) if options.key?(:min_priority)
             c = c.where("priority <= ?", options[:max_priority]) if options.key?(:max_priority)
-            c = c.where(:queue => queues) unless queues.empty?
+            c = c.where(queue: queues) unless queues.empty?
             c.count.tap { ActiveRecord::Base.clear_active_connections! }
           when :active_record_2
             c = ::Delayed::Job
-            c = c.scoped(:conditions => ["run_at <= ? AND failed_at is NULL", Time.now.utc])
-            c = c.scoped(:conditions => ["priority >= ?", options[:min_priority]]) if options.key?(:min_priority)
-            c = c.scoped(:conditions => ["priority <= ?", options[:max_priority]]) if options.key?(:max_priority)
+            c = c.scoped(conditions: ["run_at <= ? AND failed_at is NULL", Time.now.utc])
+            c = c.scoped(conditions: ["priority >= ?", options[:min_priority]]) if options.key?(:min_priority)
+            c = c.scoped(conditions: ["priority <= ?", options[:max_priority]]) if options.key?(:max_priority)
             # There is no queue column in delayed_job <= 2.x
             c.count.tap do
               if ActiveRecord::Base.respond_to?(:clear_active_connections!)
@@ -63,14 +63,14 @@ module HireFire
             end
           when :mongoid
             c = ::Delayed::Job
-            c = c.where(:failed_at => nil)
+            c = c.where(failed_at: nil)
             c = c.where(:run_at.lte => Time.now.utc)
             c = c.where(:priority.gte => options[:min_priority]) if options.key?(:min_priority)
             c = c.where(:priority.lte => options[:max_priority]) if options.key?(:max_priority)
             c = c.where(:queue.in => queues) unless queues.empty?
             c.count
           else
-            raise %{Must pass in :mapper => :active_record or :mapper => :mongoid\n} +
+            raise %(Must pass in :mapper => :active_record or :mapper => :mongoid\n) +
               %{For example: HireFire::Macro::Delayed::Job.queue("worker", :mapper => :active_record)}
           end
         end

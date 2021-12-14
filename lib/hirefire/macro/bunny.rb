@@ -27,10 +27,10 @@ module HireFire
 
         queues.flatten!
 
-        if queues.last.is_a?(Hash)
-          options = queues.pop
+        options = if queues.last.is_a?(Hash)
+          queues.pop
         else
-          options = {}
+          {}
         end
 
         if options[:durable].nil?
@@ -43,38 +43,33 @@ module HireFire
           channel = nil
           begin
             channel = connection.create_channel
-            return count_messages(channel, queues, options)
+            count_messages(channel, queues, options)
           ensure
-            if channel
-              channel.close
-            end
+            channel&.close
           end
         elsif options[:amqp_url]
           connection = ::Bunny.new(options[:amqp_url])
           begin
             connection.start
             channel = connection.create_channel
-            return count_messages(channel, queues, options)
+            count_messages(channel, queues, options)
           ensure
-            if channel
-              channel.close
-            end
-
+            channel&.close
             connection.close
           end
         else
-          raise %{Must pass in :connection => rabbitmq_connection or :amqp_url => url\n} +
-                  %{For example: HireFire::Macro::Bunny.queue("queue1", :connection => rabbitmq_connection}
+          raise %(Must pass in :connection => rabbitmq_connection or :amqp_url => url\n) +
+            %{For example: HireFire::Macro::Bunny.queue("queue1", :connection => rabbitmq_connection}
         end
       end
 
       def count_messages(channel, queue_names, options)
         queue_names.inject(0) do |sum, queue_name|
-          if options.key?(:'x-max-priority')
-            queue = channel.queue(queue_name, :durable   => options[:durable],
-                                              :arguments => {"x-max-priority" => options[:'x-max-priority']})
+          queue = if options.key?(:'x-max-priority')
+            channel.queue(queue_name, durable: options[:durable],
+                                              arguments: {"x-max-priority" => options[:'x-max-priority']})
           else
-            queue = channel.queue(queue_name, :durable => options[:durable])
+            channel.queue(queue_name, durable: options[:durable])
           end
           sum + queue.message_count
         end

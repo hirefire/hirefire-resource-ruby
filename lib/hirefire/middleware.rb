@@ -2,14 +2,13 @@
 
 module HireFire
   class Middleware
-
     # Initializes HireFire::Middleware.
     #
     # @param [Proc] app call with `env` to continue down the middleware stack.
     #
     def initialize(app)
-      @app         = app
-      @token       = ENV["HIREFIRE_TOKEN"]
+      @app = app
+      @token = ENV["HIREFIRE_TOKEN"]
       @path_prefix = get_path_prefix
     end
 
@@ -77,9 +76,9 @@ module HireFire
     # @return [String] in text/html format.
     #
     def build_test_response
-      status  = 200
+      status = 200
       headers = {"Content-Type" => "text/html"}
-      body    = "HireFire Middleware Found!"
+      body = "HireFire Middleware Found!"
 
       [status, headers, [body]]
     end
@@ -94,11 +93,11 @@ module HireFire
         %({"name":"#{config[:name]}","value":#{config[:value].call || "null"}})
       end
 
-      status                   = 200
-      headers                  = Hash.new
-      headers["Content-Type"]  = "application/json"
+      status = 200
+      headers = {}
+      headers["Content-Type"] = "application/json"
       headers["Cache-Control"] = "must-revalidate, private, max-age=0"
-      body                     = "[" + entries.join(",") + "]"
+      body = "[" + entries.join(",") + "]"
 
       [status, headers, [body]]
     end

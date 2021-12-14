@@ -33,10 +33,10 @@ module HireFire
 
         queues.flatten!
 
-        if queues.last.is_a?(Hash)
-          options = queues.pop
+        options = if queues.last.is_a?(Hash)
+          queues.pop
         else
-          options = {}
+          {}
         end
 
         queues.map!(&:to_s)
@@ -64,11 +64,11 @@ module HireFire
         in_queues = stats.enqueued
 
         if !options[:skip_scheduled]
-          in_schedule = ::Sidekiq.redis { |c| c.zcount('schedule', '-inf', Time.now.to_f) }
+          in_schedule = ::Sidekiq.redis { |c| c.zcount("schedule", "-inf", Time.now.to_f) }
         end
 
         if !options[:skip_retries]
-          in_retry = ::Sidekiq.redis { |c| c.zcount('retry', '-inf', Time.now.to_f) }
+          in_retry = ::Sidekiq.redis { |c| c.zcount("retry", "-inf", Time.now.to_f) }
         end
 
         if !options[:skip_working]
@@ -112,9 +112,9 @@ module HireFire
         if !options[:skip_working]
           # Objects yielded to Workers#each:
           # https://github.com/mperham/sidekiq/blob/305ab8eedc362325da2e218b2a0e20e510668a42/lib/sidekiq/api.rb#L912
-          in_progress = ::Sidekiq::Workers.new.select do |key, tid, job|
-            queues.include?(job['queue']) && job['run_at'] <= now
-          end.size
+          in_progress = ::Sidekiq::Workers.new.count do |key, tid, job|
+            queues.include?(job["queue"]) && job["run_at"] <= now
+          end
         end
 
         [in_queues, in_schedule, in_retry, in_progress].compact.inject(&:+)

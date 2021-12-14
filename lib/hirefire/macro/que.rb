@@ -16,7 +16,7 @@ module HireFire
       # @return [Integer] the number of jobs in the queue(s).
       #
       def queue(*queues)
-        query   = queues.empty? && base_query || base_query + " AND queue IN (#{names(queues)})"
+        query = queues.empty? && base_query || base_query + " AND queue IN (#{names(queues)})"
         results = ::Que.execute(query).first
         (results[:total] || results["total"]).to_i
       end

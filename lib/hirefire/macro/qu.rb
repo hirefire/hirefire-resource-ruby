@@ -17,7 +17,10 @@ module HireFire
       #
       def queue(*queues)
         queues = ::Qu.backend.queues if queues.empty?
-        queues.flatten.inject(0) { |memo, queue| memo += ::Qu.backend.length(queue); memo }
+        queues.flatten.inject(0) { |memo, queue|
+          memo += ::Qu.backend.length(queue)
+          memo
+        }
       end
     end
   end

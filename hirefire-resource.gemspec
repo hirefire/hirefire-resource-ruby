@@ -12,9 +12,8 @@ Gem::Specification.new do |spec|
     "homepage_uri" => "https://www.hirefire.io",
     "changelog_uri" => "https://github.com/hirefire/hirefire-resource/blob/master/CHANGELOG.md",
     "source_code_uri" => "https://github.com/hirefire/hirefire-resource/",
-    "bug_tracker_uri" => "https://github.com/hirefire/hirefire-resource/issues",
+    "bug_tracker_uri" => "https://github.com/hirefire/hirefire-resource/issues"
   }
-
-  spec.files = %x[git ls-files].split("\n")
+  spec.files = `git ls-files`.split("\n")
   spec.require_path = "lib"
 end

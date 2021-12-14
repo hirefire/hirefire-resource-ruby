@@ -1,21 +1,21 @@
-Gem::Specification.new do |gem|
-  gem.name = "hirefire-resource"
-  gem.version = "0.9.1"
-  gem.platform = Gem::Platform::RUBY
-  gem.authors = "Michael van Rooijen"
-  gem.email = "michael@hirefire.io"
-  gem.homepage = "https://www.hirefire.io"
-  gem.summary = "Autoscaling for your Heroku dynos"
-  gem.description = "Load- and schedule-based scaling for web- and worker dynos"
-  gem.licenses = ["Apache License"]
-  gem.metadata = {
+Gem::Specification.new do |spec|
+  spec.name = "hirefire-resource"
+  spec.version = "0.9.1"
+  spec.platform = Gem::Platform::RUBY
+  spec.authors = "Michael van Rooijen"
+  spec.email = "michael@hirefire.io"
+  spec.homepage = "https://www.hirefire.io"
+  spec.summary = "Autoscaling for your Heroku dynos"
+  spec.description = "Load- and schedule-based scaling for web- and worker dynos"
+  spec.licenses = ["Apache License"]
+  spec.metadata = {
     "homepage_uri" => "https://www.hirefire.io",
     "changelog_uri" => "https://github.com/hirefire/hirefire-resource/blob/master/CHANGELOG.md",
     "source_code_uri" => "https://github.com/hirefire/hirefire-resource/",
     "bug_tracker_uri" => "https://github.com/hirefire/hirefire-resource/issues",
   }
 
-  gem.files = %x[git ls-files].split("\n")
-  gem.executables = ["hirefire", "hirefireapp"]
-  gem.require_path = "lib"
+  spec.files = %x[git ls-files].split("\n")
+  spec.executables = ["hirefire", "hirefireapp"]
+  spec.require_path = "lib"
 end

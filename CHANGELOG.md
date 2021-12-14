@@ -1,3 +1,8 @@
+## v0.10.0
+
+* Support Latency (Sidekiq)
+* Rename the "quantity" property to "value" in JSON response ("quantity" is still supported)
+
 ## v0.9.1
 
 * Support GoodJob > 2.2 where Job class is renamed to Execution

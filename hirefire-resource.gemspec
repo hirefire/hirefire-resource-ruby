@@ -1,6 +1,6 @@
 Gem::Specification.new do |spec|
   spec.name = "hirefire-resource"
-  spec.version = "0.9.1"
+  spec.version = "0.10.0"
   spec.platform = Gem::Platform::RUBY
   spec.authors = "Michael van Rooijen"
   spec.email = "michael@hirefire.io"

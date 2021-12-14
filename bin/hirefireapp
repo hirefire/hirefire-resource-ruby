@@ -1,5 +1,0 @@
-#! /usr/bin/env ruby
-
-puts "Please use the `hirefire` utility instead of the `hirefireapp` utility."
-exit 1
-

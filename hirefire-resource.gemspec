@@ -16,6 +16,5 @@ Gem::Specification.new do |spec|
   }
 
   spec.files = %x[git ls-files].split("\n")
-  spec.executables = ["hirefire", "hirefireapp"]
   spec.require_path = "lib"
 end

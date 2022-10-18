@@ -23,10 +23,12 @@ module HireFire
 
         redis = ::Resque.redis
         ids = Array(redis.smembers(:workers)).compact
-        raw_jobs = redis.pipelined { ids.map { |id| redis.get("worker:#{id}") } }
+        raw_jobs = redis.pipelined do |redis|
+          ids.map { |id| redis.get("worker:#{id}") }
+        end
         jobs = raw_jobs.map { |raw_job| ::Resque.decode(raw_job) || {} }
 
-        in_queues = redis.pipelined do
+        in_queues = redis.pipelined do |redis|
           queues.map { |queue| redis.llen("queue:#{queue}") }
         end.map(&:to_i).inject(&:+)
 

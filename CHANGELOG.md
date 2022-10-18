@@ -1,3 +1,7 @@
+## v0.10.1
+
+* Add redis 5 (gem) support to HireFire::Macro::Resque
+
 ## v0.10.0
 
 * Support Latency (Sidekiq)

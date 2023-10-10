@@ -126,7 +126,7 @@ module HireFire
     #
     def get_queue(value)
       ms = (Time.now.to_f * 1000).to_i - value.to_i
-      ms < 0 ? 0 : ms
+      (ms < 0) ? 0 : ms
     end
 
     # Configures the @path_prefix in order to handle apps

@@ -1,0 +1,6 @@
+test:
+  adapter: postgresql
+  host: localhost
+  database: rails_solid_queue_0_test_database
+  username: <%= ENV["POSTGRES_USER"] %>
+  password: <%= ENV["POSTGRES_PASSWORD"] %>

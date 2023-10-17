@@ -1,78 +1,78 @@
 # frozen_string_literal: true
 
+require_relative "deprecated/bunny"
+
 module HireFire
   module Macro
     module Bunny
+      extend HireFire::Macro::Deprecated::Bunny
+      extend HireFire::Errors::JobQueueLatencyUnsupported
+      extend HireFire::Utility
       extend self
 
-      # Returns the job quantity for the provided queue(s).
+      class ConnectionError < StandardError; end
+
+      # Calculates the total job queue size using Bunny.
       #
-      # @example Bunny Macro Usage
+      # If an `amqp_url` is not provided, the method attempts to establish a connection using a
+      # hierarchy of environment variables for the RabbitMQ URL. It checks the following environment
+      # variables in order: `AMQP_URL`, `RABBITMQ_URL`, `RABBITMQ_BIGWIG_URL`, `CLOUDAMQP_URL`. If
+      # none of these variables are set, it defaults to a local RabbitMQ instance at
+      # "amqp://guest:guest@localhost:5672".
       #
-      #   # all queues using existing RabbitMQ connection.
-      #   HireFire::Macro::Bunny.queue("queue1", "queue2", :connection => connection)
-      #
-      #   # all queues using new RabbitMQ connection.
-      #   HireFire::Macro::Bunny.queue("queue1", "queue2", :amqp_url => url)
-      #
-      #   # all non-durable queues using new RabbitMQ connection.
-      #   HireFire::Macro::Bunny.queue("queue1", "queue2", :amqp_url => url, :durable => false)
-      #
-      # @param [Array] queues provide one or more queue names, or none for "all".
-      #   Last argument can pass in a Hash containing :connection => rabbitmq_connection or :amqp => :rabbitmq_url
-      # @return [Integer] the number of jobs in the queue(s).
-      #
-      def queue(*queues)
+      # @note It's important to separate jobs scheduled for future execution into a different queue
+      #   from the regular queue. This is because including them in the regular queue can interfere
+      #   with the accurate counting of jobs that are currently scheduled to run, leading to
+      #   premature upscaling. If you want to be able to schedule jobs to run in the future,
+      #   consider using the Delayed Message Plugin for RabbitMQ.
+      # @param queues [Array<String, Symbol>] Names of the queues for size measurement.
+      # @param amqp_url [String, nil] (optional) RabbitMQ URL for establishing a new connection.
+      # @return [Integer] Total job queue size.
+      # @raise [HireFire::Errors::MissingQueueError] If no queue names are specified.
+      # @example Retrieve job queue size for the "default" queue
+      #   HireFire::Macro::Bunny.job_queue_size(:default)
+      # @example Retrieve job queue size across "default" and "mailer" queues
+      #   HireFire::Macro::Bunny.job_queue_size(:default, :mailer)
+      # @example Use a new connection on each call using a AMQP URL
+      #   HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url)
+      def job_queue_size(*queues, amqp_url: nil)
         require "bunny"
 
-        queues.flatten!
+        queues = normalize_queues(queues, allow_empty: false)
+        channel, connection = setup_channel(amqp_url)
 
-        options = if queues.last.is_a?(Hash)
-          queues.pop
-        else
-          {}
-        end
-
-        if options[:durable].nil?
-          options[:durable] = true
-        end
-
-        if options[:connection]
-          connection = options[:connection]
-
-          channel = nil
-          begin
-            channel = connection.create_channel
-            count_messages(channel, queues, options)
-          ensure
-            channel&.close
-          end
-        elsif options[:amqp_url]
-          connection = ::Bunny.new(options[:amqp_url])
-          begin
-            connection.start
-            channel = connection.create_channel
-            count_messages(channel, queues, options)
-          ensure
-            channel&.close
-            connection.close
-          end
-        else
-          raise %(Must pass in :connection => rabbitmq_connection or :amqp_url => url\n) +
-            %{For example: HireFire::Macro::Bunny.queue("queue1", :connection => rabbitmq_connection}
+        begin
+          queues.sum { |name| channel.queue(name, passive: true).message_count }
+        ensure
+          channel&.close
+          connection&.close
         end
       end
 
-      def count_messages(channel, queue_names, options)
-        queue_names.inject(0) do |sum, queue_name|
-          queue = if options.key?(:"x-max-priority")
-            channel.queue(queue_name, durable: options[:durable],
-              arguments: {"x-max-priority" => options[:"x-max-priority"]})
-          else
-            channel.queue(queue_name, durable: options[:durable])
-          end
-          sum + queue.message_count
+      private
+
+      def setup_channel(amqp_url)
+        connection = acquire_connection(amqp_url)
+
+        if connection
+          [connection.create_channel, connection]
+        else
+          raise ConnectionError, <<~ERROR_MSG
+            Unable to establish connection with RabbitMQ.
+            Ensure that a valid AMQP URL is provided.
+          ERROR_MSG
         end
+      end
+
+      def acquire_connection(amqp_url)
+        url = amqp_url ||
+          ENV["AMQP_URL"] ||
+          ENV["RABBITMQ_URL"] ||
+          ENV["RABBITMQ_BIGWIG_URL"] ||
+          ENV["CLOUDAMQP_URL"] ||
+          "amqp://guest:guest@localhost:5672"
+
+        ::Bunny.new(url).tap(&:start)
       end
     end
   end

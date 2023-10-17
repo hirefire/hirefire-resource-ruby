@@ -1,0 +1,6 @@
+test:
+  adapter: postgresql
+  host: localhost
+  database: rails_good_job_3_test_database
+  username: <%= ENV["POSTGRES_USER"] %>
+  password: <%= ENV["POSTGRES_PASSWORD"] %>

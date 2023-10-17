@@ -1,13 +1,8 @@
 # frozen_string_literal: true
 
-HIREFIRE_PATH = File.expand_path("../hirefire", __FILE__)
+require_relative "hirefire/utility"
 
-%w[middleware resource].each do |file|
-  require "#{HIREFIRE_PATH}/#{file}"
+Dir[File.expand_path("../hirefire/**/*.rb", __FILE__)].sort.each do |file|
+  next if file.include?("railtie.rb") && !defined?(Rails::Railtie)
+  require file
 end
-
-%w[delayed_job resque sidekiq qu qc bunny que good_job].each do |file|
-  require "#{HIREFIRE_PATH}/macro/#{file}"
-end
-
-require "#{HIREFIRE_PATH}/railtie" if defined?(Rails::Railtie)

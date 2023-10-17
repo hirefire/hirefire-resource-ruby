@@ -1,5 +1,9 @@
 .DS_Store
-*.swp
-*.swo
-*.gem
-.yardoc
+*.log
+.bundle/
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/tmp/

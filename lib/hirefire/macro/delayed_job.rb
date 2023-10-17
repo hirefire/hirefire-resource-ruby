@@ -1,78 +1,98 @@
 # frozen_string_literal: true
 
+require_relative "deprecated/delayed_job"
+
 module HireFire
   module Macro
     module Delayed
       module Job
+        extend HireFire::Macro::Deprecated::Delayed::Job
+        extend HireFire::Utility
         extend self
 
-        # Returns the job quantity for the provided queue(s).
-        #
-        # @example Delayed::Job Macro Usage
-        #
-        #   # all queues using ActiveRecord mapper.
-        #   HireFire::Macro::Delayed::Job.queue(:mapper => :active_record)
-        #
-        #   # all queues using ActiveRecord <= 2.3.x mapper.
-        #   HireFire::Macro::Delayed::Job.queue(:mapper => :active_record_2)
-        #
-        #   # only "email" queue with Mongoid mapper.
-        #   HireFire::Macro::Delayed::Job.queue("email", :mapper => :mongoid)
-        #
-        #   # "audio" and "video" queues with ActiveRecord mapper.
-        #   HireFire::Macro::Delayed::Job.queue("audio", "video", :mapper => :active_record)
-        #
-        #   # all queues with a maximum priority of 20
-        #   HireFire::Macro::Delayed::Job.queue(:max_priority => 20, :mapper => :active_record)
-        #
-        #   # all queues with a minimum priority of 5
-        #   HireFire::Macro::Delayed::Job.queue(:min_priority => 5, :mapper => :active_record)
-        #
-        # @param [Array] queues provide one or more queue names, or none for "all".
-        #   Last argument can pass in a Hash containing :mapper => :active_record or :mapper => :mongoid
-        # @return [Integer] the number of jobs in the queue(s).
-        #
-        def queue(*queues)
-          queues.flatten!
+        class MapperNotDetectedError < StandardError; end
 
-          options = if queues.last.is_a?(Hash)
-            queues.pop
-          else
-            {}
-          end
+        # Calculates the maximum job queue latency using Delayed::Job. If no queues are specified,
+        # it measures latency across all available queues. This method supports both ActiveRecord
+        # and Mongoid mappers.
+        #
+        # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
+        #   measurement. If not provided, latency is measured across all queues.
+        # @return [Float] Maximum job queue latency in seconds.
+        # @example Calculate latency across all queues
+        #   HireFire::Macro::Delayed::Job.job_queue_latency
+        # @example Calculate latency for the "default" queue
+        #   HireFire::Macro::Delayed::Job.job_queue_latency(:default)
+        # @example Calculate latency across "default" and "mailer" queues
+        #   HireFire::Macro::Delayed::Job.job_queue_latency(:default, :mailer)
+        def job_queue_latency(*queues)
+          queues = normalize_queues(queues, allow_empty: true)
 
-          case options[:mapper]
-          when :active_record
-            c = ::Delayed::Job
-            c = c.where(failed_at: nil)
-            c = c.where("run_at <= ?", Time.now.utc)
-            c = c.where("priority >= ?", options[:min_priority]) if options.key?(:min_priority)
-            c = c.where("priority <= ?", options[:max_priority]) if options.key?(:max_priority)
-            c = c.where(queue: queues) unless queues.empty?
-            c.count.tap { ActiveRecord::Base.clear_active_connections! }
-          when :active_record_2
-            c = ::Delayed::Job
-            c = c.scoped(conditions: ["run_at <= ? AND failed_at is NULL", Time.now.utc])
-            c = c.scoped(conditions: ["priority >= ?", options[:min_priority]]) if options.key?(:min_priority)
-            c = c.scoped(conditions: ["priority <= ?", options[:max_priority]]) if options.key?(:max_priority)
-            # There is no queue column in delayed_job <= 2.x
-            c.count.tap do
-              if ActiveRecord::Base.respond_to?(:clear_active_connections!)
-                ActiveRecord::Base.clear_active_connections!
-              end
+          query =
+            ::Delayed::Job
+              .where(run_at: ..Time.now)
+              .where(failed_at: nil)
+              .order(run_at: :asc)
+
+          if queues.any?
+            case mapper
+            when :active_record
+              query = query.where(queue: queues)
+            when :mongoid
+              query = query.in(queue: queues.to_a)
             end
-          when :mongoid
-            c = ::Delayed::Job
-            c = c.where(failed_at: nil)
-            c = c.where(:run_at.lte => Time.now.utc)
-            c = c.where(:priority.gte => options[:min_priority]) if options.key?(:min_priority)
-            c = c.where(:priority.lte => options[:max_priority]) if options.key?(:max_priority)
-            c = c.where(:queue.in => queues) unless queues.empty?
-            c.count
-          else
-            raise %(Must pass in :mapper => :active_record or :mapper => :mongoid\n) +
-              %{For example: HireFire::Macro::Delayed::Job.queue("worker", :mapper => :active_record)}
           end
+
+          if (job = query.first)
+            Time.now - job.run_at
+          else
+            0.0
+          end
+        end
+
+        # Calculates the total job queue size using Delayed::Job. If no queues are specified, it
+        # measures size across all available queues. This method supports both ActiveRecord and
+        # Mongoid mappers.
+        #
+        # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
+        #   If not provided, size is measured across all queues.
+        # @return [Integer] Total job queue size.
+        # @example Calculate size across all queues
+        #   HireFire::Macro::Delayed::Job.job_queue_size
+        # @example Calculate size of the "default" queue
+        #   HireFire::Macro::Delayed::Job.job_queue_size(:default)
+        # @example Calculate size across "default" and "mailer" queues
+        #   HireFire::Macro::Delayed::Job.job_queue_size(:default, :mailer)
+        def job_queue_size(*queues)
+          queues = normalize_queues(queues, allow_empty: true)
+
+          query =
+            ::Delayed::Job
+              .where(run_at: ..Time.now)
+              .where(failed_at: nil)
+
+          if queues.any?
+            case mapper
+            when :active_record
+              query = query.where(queue: queues)
+            when :mongoid
+              query = query.in(queue: queues.to_a)
+            end
+          end
+
+          query.count
+        end
+
+        private
+
+        def mapper
+          return :active_record if defined?(::ActiveRecord::Base) &&
+            ::Delayed::Job.ancestors.include?(::ActiveRecord::Base)
+
+          return :mongoid if defined?(::Mongoid::Document) &&
+            ::Delayed::Job.ancestors.include?(::Mongoid::Document)
+
+          raise MapperNotDetectedError, "Unable to detect the appropriate mapper."
         end
       end
     end

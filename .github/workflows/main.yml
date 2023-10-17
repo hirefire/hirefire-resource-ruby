@@ -1,26 +1,97 @@
-name: Ruby
+name: Main
 
 on:
-  - push
-  - pull_request
+  push:
+    branches:
+      - "*"
+    tags:
+      - "*"
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref }}
 
 jobs:
-  build:
+  validate:
     runs-on: ubuntu-latest
-    name: Ruby ${{ matrix.ruby }}
+    env:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    services:
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:latest
+        ports:
+          - 6379:6379
+      rabbitmq:
+        image: rabbitmq:latest
+        ports:
+          - 5672:5672
     strategy:
       matrix:
-        ruby:
+        ruby-version:
           - 2.7
           - 3.0
           - 3.1
           - 3.2
+          - 3.3
+        appraisal:
+          - default
+          - bunny_2
+          - delayed_job_active_record_4
+          - delayed_job_mongoid_3
+          - good_job_2
+          - good_job_3
+          - queue_classic_4
+          - que_2
+          - rack_2
+          - rack_3
+          - resque_2
+          - sidekiq_6
+          - sidekiq_7
+          - solid_queue_0
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: ${{ matrix.ruby }}
-        bundler-cache: true
-    - name: Run standard
-      run: bundle exec rake standard
+      - name: Check out repository
+        uses: actions/checkout@v3
+      - name: Set up Ruby ${{ matrix.ruby-version }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+      - name: Appraisal setup
+        run: bundle install
+        env:
+          BUNDLE_GEMFILE: gemfiles/${{ matrix.appraisal }}.gemfile
+      - name: Run standard
+        run: bundle exec rake standard
+      - name: Run tests
+        run: bundle exec rake test:${{ matrix.appraisal }}
+      - name: Run build
+        run: bundle exec rake build
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.3
+          bundler-cache: true
+      - name: Release Gem
+        uses: rubygems/release-gem@v1

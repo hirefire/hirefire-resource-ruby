@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
+set -vx
+
+brew bundle
+brew services start postgresql
+brew services start mongodb/brew/mongodb-community
+brew services start redis
+brew services start rabbitmq
+
+bundle install
+bundle exec appraisal install

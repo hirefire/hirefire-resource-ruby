@@ -1,283 +1,372 @@
 # frozen_string_literal: true
 
 require "digest/sha1"
+require_relative "deprecated/sidekiq"
 
 module HireFire
   module Macro
     module Sidekiq
+      extend HireFire::Macro::Deprecated::Sidekiq
       extend self
 
-      # The latency in seconds for the provided queue.
+      # Calculates the maximum job queue latency using Sidekiq. If no queues are specified, it
+      # measures latency across all available queues.
       #
-      # @example Sidekiq Queue Latency Macro Usage
-      #   HireFire::Macro::Sidekiq.queue # default queue
-      #   HireFire::Macro::Sidekiq.queue("email") # email queue
-      #
-      def latency(queue = "default")
-        ::Sidekiq::Queue.new(queue).latency
+      # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
+      #   measurement. If not provided, latency is measured across all queues.
+      # @param options [Hash] Options to control and filter the latency calculation.
+      # @option options [Boolean] :skip_retries (false) If true, skips the RetrySet in latency calculation.
+      # @option options [Boolean] :skip_scheduled (false) If true, skips the ScheduledSet in latency calculation.
+      # @return [Float] Maximum job queue latency in seconds.
+      # @example Calculate latency across all queues
+      #   HireFire::Macro::Sidekiq.job_queue_latency
+      # @example Calculate latency for the "default" queue
+      #   HireFire::Macro::Sidekiq.job_queue_latency(:default)
+      # @example Calculate maximum latency across "default" and "mailer" queues
+      #   HireFire::Macro::Sidekiq.job_queue_latency(:default, :mailer)
+      # @example Calculate latency for the "default" queue, excluding scheduled jobs
+      #   HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true)
+      # @example Calculate latency for the "default" queue, excluding retries
+      #   HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
+      def job_queue_latency(*queues, **options)
+        JobQueueLatency.call(*queues, **options)
       end
 
-      # Counts the amount of jobs in the (provided) Sidekiq queue(s).
+      # Calculates the total job queue size using Sidekiq. If no queues are specified, it measures
+      # size across all available queues.
       #
-      # @example Sidekiq Queue Size Macro Usage
-      #   HireFire::Macro::Sidekiq.queue # all queues
-      #   HireFire::Macro::Sidekiq.queue("email") # only email queue
-      #   HireFire::Macro::Sidekiq.queue("audio", "video") # audio and video queues
-      #   HireFire::Macro::Sidekiq.queue("email", skip_scheduled: true) # only email, will not count scheduled queue
-      #   HireFire::Macro::Sidekiq.queue("audio", skip_retries: true) # only audio, will not count the retries queue
-      #   HireFire::Macro::Sidekiq.queue("audio", skip_working: true) # only audio, will not count already queued
-      #   HireFire::Macro::Sidekiq.queue("audio", server: true) # Executes the count on the server side using Lua
-      #
-      # @param [Array] queues provide one or more queue names, or none for "all".
-      # @return [Integer] the number of jobs in the queue(s).
-      #
-      def queue(*queues)
-        require "sidekiq/api"
-
-        queues.flatten!
-
-        options = if queues.last.is_a?(Hash)
-          queues.pop
-        else
-          {}
-        end
-
-        queues.map!(&:to_s)
-        all_queues = ::Sidekiq::Queue.all.map(&:name)
-        queues = all_queues if queues.empty?
-
-        if options[:server]
-          count_server_side(queues, options)
-        elsif fast_lookup_capable?(queues, all_queues)
-          fast_lookup(options)
-        else
-          dynamic_lookup(queues, options)
-        end
+      # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
+      #   If not provided, size is measured across all queues.
+      # @param options [Hash] Options to control and filter the count.
+      # @option options [Boolean] :server (false) If true, counts jobs server-side using Lua scripting.
+      # @option options [Boolean] :skip_retries (false) If true, skips counting jobs in retry queues.
+      # @option options [Boolean] :skip_scheduled (false) If true, skips counting jobs in scheduled queues.
+      # @option options [Boolean] :skip_working (false) If true, skips counting running jobs.
+      # @option options [Integer, nil] :max_scheduled (nil) Max number of scheduled jobs to consider; nil for no limit.
+      # @return [Integer] Total job queue size.
+      # @example Calculate size across all queues
+      #   HireFire::Macro::Sidekiq.job_queue_size
+      # @example Calculate size for the "default" queue
+      #   HireFire::Macro::Sidekiq.job_queue_size(:default)
+      # @example Calculate size across "default" and "mailer" queues
+      #   HireFire::Macro::Sidekiq.job_queue_size(:default, :mailer)
+      # @example Calculate size for the "default" queue, excluding scheduled jobs
+      #   HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true)
+      # @example Calculate size for the "default" queue, excluding retries
+      #   HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true)
+      # @example Calculate size for the "default" queue, excluding running jobs
+      #   HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: true)
+      # @example Calculate size for the "default" queue using server-side aggregation
+      #   HireFire::Macro::Sidekiq.job_queue_size(:default, server: true)
+      # @example Calculate size for the "default" queue, limiting counting of scheduled jobs to 100_000
+      #   HireFire::Macro::Sidekiq.job_queue_size(:default, max_scheduled: 100_000)
+      def job_queue_size(*queues, **options)
+        JobQueueSize.call(*queues, **options)
       end
 
-      private
+      # @!visibility private
+      module Common
+        private
 
-      def fast_lookup_capable?(queues, all_queues)
-        # When no queue names are provided (or all of them are), we know we
-        # can peform much faster counts using Sidekiq::Stats and Redis
-        queues.sort == all_queues.sort
-      end
+        def find_each_in_set(set)
+          cursor = 0
+          batch = 1000
 
-      def fast_lookup(options)
-        stats = ::Sidekiq::Stats.new
-
-        in_queues = stats.enqueued
-
-        if !options[:skip_scheduled]
-          in_schedule = ::Sidekiq.redis { |c| c.zcount("schedule", "-inf", Time.now.to_f) }
-        end
-
-        if !options[:skip_retries]
-          in_retry = ::Sidekiq.redis { |c| c.zcount("retry", "-inf", Time.now.to_f) }
-        end
-
-        if !options[:skip_working]
-          in_progress = stats.workers_size
-        end
-
-        [in_queues, in_schedule, in_retry, in_progress].compact.inject(&:+)
-      end
-
-      def dynamic_lookup(queues, options)
-        in_queues = queues.inject(0) do |memo, name|
-          memo += ::Sidekiq::Queue.new(name).size
-          memo
-        end
-
-        if !options[:skip_scheduled]
-          max = options[:max_scheduled]
-
-          # For potentially long-running loops, compare all jobs against
-          # time when the set snapshot was taken to avoid incorrect counts.
-          now = Time.now
-
-          in_schedule = ::Sidekiq::ScheduledSet.new.inject(0) do |memo, job|
-            memo += 1 if queues.include?(job["queue"]) && job.at <= now
-            break memo if max && memo >= max
-            memo
-          end
-        end
-
-        if !options[:skip_retries]
-          now = Time.now
-
-          in_retry = ::Sidekiq::RetrySet.new.inject(0) do |memo, job|
-            memo += 1 if queues.include?(job["queue"]) && job.at <= now
-            memo
-          end
-        end
-
-        now = Time.now.to_i
-
-        if !options[:skip_working]
-          # Objects yielded to Workers#each:
-          # https://github.com/mperham/sidekiq/blob/305ab8eedc362325da2e218b2a0e20e510668a42/lib/sidekiq/api.rb#L912
-          in_progress = ::Sidekiq::Workers.new.count do |key, tid, job|
-            queues.include?(job["queue"]) && job["run_at"] <= now
-          end
-        end
-
-        [in_queues, in_schedule, in_retry, in_progress].compact.inject(&:+)
-      end
-
-      SERVER_SIDE_SCRIPT = <<~LUA
-        local tonumber = tonumber
-        local cjson_decode = cjson.decode
-
-        -- Counts the total number of jobs in the given queues
-        local function count_in_queues(queues)
-           local count = 0
-
-           for name, _ in pairs(queues) do
-              count = count + redis.call('llen', 'queue:' .. name)
-           end
-
-           return count
-        end
-
-        -- Counts the number of jobs in a sorted set up to an optional maximum limit
-        local function count_in_sorted_set(queues, key, run_at, max)
-            local count = 0
-            local max_count = 0
-            local cursor = '0'
-
-            repeat
-                if max > 0 and max_count >= max then
-                    return count
-                end
-
-                local response = redis.call('zscan', key, cursor)
-                cursor = response[1]
-                local elements = response[2]
-
-                for i = 1, #elements, 2 do
-                    if max > 0 and max_count >= max then
-                        return count
-                    end
-
-                    max_count = max_count + 1
-
-                    local job_data = elements[i]
-                    local job_run_at = tonumber(elements[i + 1])
-                    local job = cjson.decode(job_data)
-
-                    if job and queues[job.queue] and job_run_at <= run_at then
-                       count = count + 1
-                    end
-                end
-            until cursor == '0'
-
-            return count
-        end
-
-        -- Counts the number of jobs currently in progress
-        local function count_in_progress(queues)
-           local count = 0
-           local cursor = '0'
-
-           repeat
-              local process_sets = redis.call('SSCAN', 'processes', cursor)
-              cursor = process_sets[1]
-
-              for _, process_key in ipairs(process_sets[2]) do
-                 local worker_key = process_key .. ':work'
-                 local worker_data = redis.call('HGETALL', worker_key)
-
-                 for i = 2, #worker_data, 2 do
-                    local worker = cjson_decode(worker_data[i])
-
-                    if queues[worker.queue] then
-                       count = count + 1
-                    end
-                 end
+          loop do
+            entries = ::Sidekiq.redis do |connection|
+              if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("7.0.0")
+                connection.zrange set.name, cursor, cursor + batch - 1, "WITHSCORES"
+              else
+                connection.zrange set.name, cursor, cursor + batch - 1, withscores: true
               end
-           until cursor == '0'
+            end
 
-           return count
-        end
+            break if entries.empty?
 
-        -- Set initial variables using ARGV input and initial values
-        local now            = tonumber(ARGV[1])
-        local max_scheduled  = tonumber(ARGV[2])
-        local skip_scheduled = tonumber(ARGV[3]) == 1
-        local skip_retries   = tonumber(ARGV[4]) == 1
-        local skip_working   = tonumber(ARGV[5]) == 1
+            entries.each do |entry, score|
+              yield ::Sidekiq::SortedEntry.new(self, score, entry)
+            end
 
-        -- Set the list of queues to count
-        local queues = {}
-        for i = 6, #ARGV do
-           queues[ARGV[i]] = true
-        end
-
-        -- Count the total number of jobs across all queues
-        local in_queues_counts = count_in_queues(queues)
-
-        -- Count the jobs in all schedule queues, if requested
-        local in_schedule_counts = 0
-        if not skip_scheduled then
-            in_schedule_counts = count_in_sorted_set(queues, 'schedule', now, max_scheduled)
-        end
-
-        -- Count the jobs in all retry queues, if requested
-        local in_retry_counts = 0
-        if not skip_retries then
-            in_retry_counts = count_in_sorted_set(queues, 'retry', now, 0)
-        end
-
-        -- Count the jobs in all working queues, if requested
-        local in_progress_counts = 0
-        if not skip_working then
-            in_progress_counts = count_in_progress(queues)
-        end
-
-        -- Return the aggregated result
-        return in_queues_counts + in_schedule_counts + in_retry_counts + in_progress_counts
-      LUA
-
-      SERVER_SIDE_SCRIPT_SHA = Digest::SHA1.hexdigest(SERVER_SIDE_SCRIPT).freeze
-
-      def count_server_side(queues, options)
-        ::Sidekiq.redis do |conn|
-          now = Time.now.to_i
-          max_scheduled = options[:max_scheduled] || 0
-          skip_scheduled = options[:skip_scheduled] ? 1 : 0
-          skip_retries = options[:skip_retries] ? 1 : 0
-          skip_working = options[:skip_working] ? 1 : 0
-
-          if defined?(::Sidekiq::RedisClientAdapter::CompatClient) && conn.is_a?(::Sidekiq::RedisClientAdapter::CompatClient)
-            count_with_redis_client(conn, now, max_scheduled, skip_scheduled, skip_retries, skip_working, *queues)
-          elsif defined?(::Redis) && conn.is_a?(::Redis)
-            count_with_redis(conn, now, max_scheduled, skip_scheduled, skip_retries, skip_working, *queues)
-          else
-            raise "Unsupported Redis connection type: #{conn.class}"
+            cursor += batch
           end
         end
-      end
 
-      def count_with_redis(conn, *args)
-        conn.evalsha(SERVER_SIDE_SCRIPT_SHA, argv: args)
-      rescue Redis::CommandError => e
-        if e.message.include?("NOSCRIPT")
-          conn.script(:load, SERVER_SIDE_SCRIPT)
-          retry
-        else
-          raise
+        def registered_queues
+          ::Sidekiq::Queue.all.map(&:name).to_set
         end
       end
 
-      def count_with_redis_client(conn, *args)
-        conn.call("evalsha", SERVER_SIDE_SCRIPT_SHA, 0, *args)
-      rescue RedisClient::CommandError => e
-        if e.message.include?("NOSCRIPT")
-          conn.call("script", "load", SERVER_SIDE_SCRIPT)
-          retry
-        else
-          raise
+      # @!visibility private
+      module JobQueueLatency
+        extend Common
+        extend HireFire::Utility
+        extend self
+
+        def call(*queues, skip_retries: false, skip_scheduled: false)
+          require "sidekiq/api"
+
+          queues = normalize_queues(queues, allow_empty: true)
+          latencies = []
+          latencies << enqueued_latency(queues)
+          latencies << set_latency(::Sidekiq::RetrySet.new, queues) unless skip_retries
+          latencies << set_latency(::Sidekiq::ScheduledSet.new, queues) unless skip_scheduled
+          latencies.max
+        end
+
+        private
+
+        def enqueued_latency(queues)
+          queues = registered_queues if queues.empty?
+
+          oldest_jobs = ::Sidekiq.redis do |conn|
+            conn.pipelined do |pipeline|
+              queues.each do |queue|
+                pipeline.lindex("queue:#{queue}", -1)
+              end
+            end
+          end
+
+          max_latencies = oldest_jobs.map do |job_payload|
+            job = job_payload ? JSON.parse(job_payload) : {}
+            job["enqueued_at"] ? Time.now.to_f - job["enqueued_at"] : 0.0
+          end
+
+          max_latencies.max || 0.0
+        end
+
+        def set_latency(set, queues)
+          max_latency = 0.0
+          now = Time.now
+
+          find_each_in_set(set) do |job|
+            if job.at > now
+              break
+            elsif queues.empty? || queues.include?(job.queue)
+              max_latency = now - job.at
+              break
+            end
+          end
+
+          max_latency
+        end
+      end
+
+      # @!visibility private
+      module JobQueueSize
+        extend Common
+        extend HireFire::Utility
+        extend self
+
+        def call(*queues, server: false, **options)
+          require "sidekiq/api"
+
+          queues = normalize_queues(queues, allow_empty: true)
+
+          if server
+            server_lookup(queues, **options)
+          else
+            client_lookup(queues, **options)
+          end
+        end
+
+        private
+
+        def client_lookup(queues, skip_retries: false, skip_scheduled: false, skip_working: false, max_scheduled: nil)
+          size = enqueued_size(queues)
+          size += scheduled_size(queues, max_scheduled) unless skip_scheduled
+          size += retry_size(queues) unless skip_retries
+          size += working_size(queues) unless skip_working
+          size
+        end
+
+        def enqueued_size(queues)
+          queues = registered_queues if queues.empty?
+
+          ::Sidekiq.redis do |conn|
+            conn.pipelined do |pipeline|
+              queues.each { |name| pipeline.llen("queue:#{name}") }
+            end
+          end.sum
+        end
+
+        def scheduled_size(queues, max = nil)
+          size, now = 0, Time.now
+
+          find_each_in_set(::Sidekiq::ScheduledSet.new) do |job|
+            if job.at > now || max && size >= max
+              break
+            elsif queues.empty? || queues.include?(job["queue"])
+              size += 1
+            end
+          end
+
+          size
+        end
+
+        def retry_size(queues)
+          size = 0
+          now = Time.now
+
+          find_each_in_set(::Sidekiq::RetrySet.new) do |job|
+            if job.at > now
+              break
+            elsif queues.empty? || queues.include?(job["queue"])
+              size += 1
+            end
+          end
+
+          size
+        end
+
+        def working_size(queues)
+          now = Time.now
+          now_as_i = now.to_i
+
+          ::Sidekiq::Workers.new.count do |key, tid, job|
+            if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("7.0.0")
+              (queues.empty? || queues.include?(job.queue)) && job.run_at <= now
+            else
+              (queues.empty? || queues.include?(job["queue"])) && job["run_at"] <= now_as_i
+            end
+          end
+        end
+
+        SERVER_SIDE_SCRIPT = <<~LUA
+          local tonumber = tonumber
+          local cjson_decode = cjson.decode
+
+          local function enqueued_size(queues)
+             local size = 0
+
+             if next(queues) == nil then
+                queues = redis.call("keys", "queue:*")
+
+                for _, name in ipairs(queues) do
+                   queues[string.sub(name, 7)] = true
+                end
+             end
+
+             for queue, _ in pairs(queues) do
+                size = size + redis.call("llen", "queue:" .. queue)
+             end
+
+             return size
+          end
+
+          local function set_size(queues, set, now, max)
+             local size = 0
+             local limit = 100
+             local offset = 0
+             local jobs
+
+             repeat
+                jobs = redis.call("zrangebyscore", set, "-inf", now, "LIMIT", offset, limit)
+                offset = offset + limit
+
+                for i = 1, #jobs do
+                   local job = cjson_decode(jobs[i])
+
+                   if job and (next(queues) == nil or queues[job.queue]) then
+                      size = size + 1
+                   end
+                end
+             until #jobs == 0 or (max > 0 and size >= max)
+
+             return size
+          end
+
+          local function working_size(queues)
+             local size = 0
+             local cursor = "0"
+
+             repeat
+                local process_sets = redis.call("SSCAN", "processes", cursor)
+                cursor = process_sets[1]
+
+                for _, process_key in ipairs(process_sets[2]) do
+                   local worker_key = process_key .. ":work"
+                   local worker_data = redis.call("HGETALL", worker_key)
+
+                   for i = 2, #worker_data, 2 do
+                      local worker = cjson_decode(worker_data[i])
+
+                      if next(queues) == nil or queues[worker.queue] then
+                         size = size + 1
+                      end
+                   end
+                end
+             until cursor == "0"
+
+             return size
+          end
+
+          local now            = tonumber(ARGV[1])
+          local max_scheduled  = tonumber(ARGV[2])
+          local skip_scheduled = tonumber(ARGV[3]) == 1
+          local skip_retries   = tonumber(ARGV[4]) == 1
+          local skip_working   = tonumber(ARGV[5]) == 1
+
+          local queues = {}
+          for i = 6, #ARGV do
+             queues[ARGV[i]] = true
+          end
+
+          local size = enqueued_size(queues)
+
+          if not skip_scheduled then
+             size = size + set_size(queues, "schedule", now, max_scheduled)
+          end
+
+          if not skip_retries then
+             size = size + set_size(queues, "retry", now, 0)
+          end
+
+          if not skip_working then
+             size = size + working_size(queues)
+          end
+
+          return size
+        LUA
+
+        SERVER_SIDE_SCRIPT_SHA = Digest::SHA1.hexdigest(SERVER_SIDE_SCRIPT).freeze
+
+        def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: false, max_scheduled: 0)
+          ::Sidekiq.redis do |connection|
+            now = Time.now.to_i
+            skip_scheduled = skip_scheduled ? 1 : 0
+            skip_retries = skip_retries ? 1 : 0
+            skip_working = skip_working ? 1 : 0
+
+            if defined?(::Sidekiq::RedisClientAdapter::CompatClient) && connection.is_a?(::Sidekiq::RedisClientAdapter::CompatClient)
+              count_with_redis_client(connection, now, max_scheduled, skip_scheduled, skip_retries, skip_working, *queues)
+            elsif defined?(::Redis) && connection.is_a?(::Redis)
+              count_with_redis(connection, now, max_scheduled, skip_scheduled, skip_retries, skip_working, *queues)
+            else
+              raise "Unsupported Redis connection type: #{connection.class}"
+            end
+          end
+        end
+
+        def count_with_redis(connection, *args)
+          connection.evalsha(SERVER_SIDE_SCRIPT_SHA, argv: args)
+        rescue Redis::CommandError => e
+          if e.message.include?("NOSCRIPT")
+            connection.script(:load, SERVER_SIDE_SCRIPT)
+            retry
+          else
+            raise
+          end
+        end
+
+        def count_with_redis_client(connection, *args)
+          connection.call("evalsha", SERVER_SIDE_SCRIPT_SHA, 0, *args)
+        rescue RedisClient::CommandError => e
+          if e.message.include?("NOSCRIPT")
+            connection.call("script", "load", SERVER_SIDE_SCRIPT)
+            retry
+          else
+            raise
+          end
         end
       end
     end

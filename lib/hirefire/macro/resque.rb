@@ -3,41 +3,107 @@
 module HireFire
   module Macro
     module Resque
+      extend HireFire::Errors::QueueMethodRenamed
+      extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
 
-      # Counts the amount of jobs in the (provided) Resque queue(s).
+      # Calculates the total job queue size across the specified queues.
       #
-      # @example Resque Macro Usage
-      #   HireFire::Macro::Resque.queue # all queues
-      #   HireFire::Macro::Resque.queue("email") # only email queue
-      #   HireFire::Macro::Resque.queue("audio", "video") # audio and video queues
-      #
-      # @param [Array] queues provide one or more queue names, or none for "all".
-      # @return [Integer] the number of jobs in the queue(s).
-      #
-      def queue(*queues)
-        queues = queues.flatten.map(&:to_s)
-        queues = ::Resque.queues if queues.empty?
+      # @param queues [Array<String, Symbol>] the list of queues to count.
+      # @return [Integer] Cumulative queue size across the specified queues.
+      # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
+      # @example Job Queue Size in the default queue
+      #   HireFire::Macro::Resque.job_queue_size(:default)
+      # @example Job Queue Size across the default and mailer queues
+      #   HireFire::Macro::Resque.job_queue_size(:default, :mailer)
+      def job_queue_size(*queues)
+        queues = Utility.construct_queues(queues)
+        count_enqueued(queues) + count_working(queues) + count_scheduled(queues)
+      end
 
-        return 0 if queues.empty?
+      private
 
-        redis = ::Resque.redis
-        ids = Array(redis.smembers(:workers)).compact
-        raw_jobs = redis.pipelined do |redis|
-          ids.map { |id| redis.get("worker:#{id}") }
+      # Counts the number of enqueued jobs in the specified queues.
+      #
+      # @param queues [Array<String, Symbol>] the list of queues to count enqueued jobs from.
+      # @return [Integer] the number of enqueued jobs.
+      def count_enqueued(queues)
+        ::Resque.redis.pipelined do |pipeline|
+          queues.each do |queue|
+            pipeline.llen("queue:#{queue}")
+          end
+        end.sum
+      end
+
+      # Counts the number of workers currently processing jobs from the specified queues.
+      #
+      # @param queues [Array<String, Symbol>] the list of queues to count working jobs from.
+      # @return [Integer] the number of jobs currently being processed by workers.
+      def count_working(queues)
+        ids = ::Resque.redis.smembers(:workers).compact
+
+        workers = ::Resque.redis.pipelined do |pipeline|
+          ids.each do |id|
+            pipeline.get("worker:#{id}")
+          end
+        end.compact
+
+        workers.count do |worker|
+          queues.include?(::Resque.decode(worker)["queue"])
         end
-        jobs = raw_jobs.map { |raw_job| ::Resque.decode(raw_job) || {} }
+      end
 
-        in_queues = redis.pipelined do |redis|
-          queues.map { |queue| redis.llen("queue:#{queue}") }
-        end.map(&:to_i).inject(&:+)
+      # Counts the number of scheduled jobs for the specified queues that are set to run immediately.
+      #
+      # This method is built on the assumption that resque-scheduler is utilized to schedule jobs for
+      # future execution. It will only count jobs that are due for immediate processing.
+      #
+      # Additionally, this method is compatible with resque-retry. Underneath, resque-retry leverages
+      # resque-scheduler to determine when failed jobs should be retried. Consequently, jobs slated for
+      # a retry are also accounted for.
+      #
+      # This method:
+      # 1. Fetches all pertinent timestamps from "delayed_queue_schedule".
+      # 2. Iterates over each timestamp to extract the actual job details.
+      # 3. Evaluates if the job is associated with any of the specified queues and, if so, increments the count.
+      #
+      # @param queues [Array<String, Symbol>] The list of queues from which to count scheduled jobs.
+      # @return [Integer] The number of immediate scheduled jobs for the given queues.
+      def count_scheduled(queues)
+        cursor = 0
+        batch = 1000
+        total_count = 0
+        current_time = Time.now.to_i
 
-        in_progress = jobs.inject(0) do |memo, job|
-          memo += 1 if queues.include?(job["queue"])
-          memo
+        loop do
+          timestamps = ::Resque.redis.zrangebyscore("delayed_queue_schedule", "-inf", current_time, limit: [cursor, batch])
+
+          break if timestamps.empty?
+
+          timestamps.each do |timestamp|
+            job_cursor = 0
+
+            loop do
+              encoded_jobs = ::Resque.redis.lrange("delayed:#{timestamp}", job_cursor, job_cursor + batch - 1)
+
+              break if encoded_jobs.empty?
+
+              total_count += encoded_jobs.count do |encoded_job|
+                queues.include?(::Resque.decode(encoded_job)["queue"])
+              end
+
+              break if encoded_jobs.size < batch
+
+              job_cursor += batch
+            end
+          end
+
+          break if timestamps.size < batch
+
+          cursor += batch
         end
 
-        in_queues + in_progress
+        total_count
       end
     end
   end

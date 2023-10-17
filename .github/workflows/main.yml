@@ -1,26 +1,81 @@
-name: Ruby
+name: Main
 
 on:
-  - push
-  - pull_request
+  push:
+    branches:
+      - "*"
+    tags:
+      - "*"
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref }}
 
 jobs:
-  build:
+  validate:
     runs-on: ubuntu-latest
-    name: Ruby ${{ matrix.ruby }}
+
+    env:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+    services:
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:latest
+        ports:
+          - 6379:6379
+      rabbitmq:
+        image: rabbitmq:latest
+        ports:
+          - 5672:5672
+
     strategy:
       matrix:
-        ruby:
-          - 2.7
-          - 3.0
-          - 3.1
-          - 3.2
+        ruby-version: ["2.7", "3.0", "3.1", "3.2"]
+
     steps:
-    - uses: actions/checkout@v3
+      - name: Check out repository
+        uses: actions/checkout@v3
+      - name: Set up Ruby ${{ matrix.ruby-version }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+      - name: Appraisal setup
+        run: |
+          bundle install
+          bundle exec appraisal install
+      - name: Run standard
+        run: bundle exec rake standard
+      - name: Run tests
+        run: bundle exec rake test:good_job-3
+      - name: Run build
+        run: bundle exec rake build
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v3
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
-        ruby-version: ${{ matrix.ruby }}
+        ruby-version: 3.2
         bundler-cache: true
-    - name: Run standard
-      run: bundle exec rake standard
+    - name: Release Gem
+      uses: cadwallion/publish-rubygems-action@master
+      env:
+        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        RUBYGEMS_API_KEY: ${{secrets.RUBYGEMS_API_KEY}}

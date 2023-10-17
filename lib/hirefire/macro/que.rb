@@ -3,53 +3,89 @@
 module HireFire
   module Macro
     module Que
+      extend HireFire::Errors::QueueMethodRenamed
+      extend HireFire::Errors::LatencyMethodRenamed
       extend self
 
-      # Queries the PostgreSQL database through Que in order to
-      # count the amount of jobs in the specified queue.
+      # Calculates the maximum job queue latency across the specified queues.
       #
-      # @example Queue Macro Usage
-      #   HireFire::Macro::Que.queue # counts all queues.
-      #   HireFire::Macro::Que.queue("email") # counts the `email` queue.
+      # @param queues [Array<String, Symbol>] the list of queues to check latency for.
+      # @param priority [Integer, Range, nil] optional priority filter.
+      # @return [Integer] Maximum latency in seconds across the specified queues.
+      # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
+      # @example Job Queue Latency for the default queue
+      #   HireFire::Macro::Que.job_queue_latency(:default)
+      # @example Maximum Job Queue Latency across the default and mailer queues
+      #   HireFire::Macro::Que.job_queue_latency(:default, :mailer)
+      # @example Job Queue Latency for the default queue, scoped to priority 3 jobs
+      #   HireFire::Macro::Que.job_queue_latency(priority: 3)
+      # @example Job Queue Latency for the default queue, scoped to priority 3 to 7 jobs
+      #   HireFire::Macro::Que.job_queue_latency(priority: 3..7)
+      def job_queue_latency(*queues, priority: nil)
+        queues = Utility.construct_queues(queues)
+
+        query = "SELECT run_at FROM que_jobs WHERE run_at <= NOW() AND finished_at IS NULL AND expired_at IS NULL"
+
+        if queues.any?
+          queue_names = queues.map { |q| sanitize_sql(q) }.join(", ")
+          query += " AND queue IN (#{queue_names})"
+        end
+
+        if priority.is_a?(Range)
+          query += " AND priority BETWEEN #{priority.begin} AND #{priority.end}"
+        elsif priority.is_a?(Integer)
+          query += " AND priority = #{priority}"
+        end
+
+        query += " ORDER BY priority ASC, run_at ASC LIMIT 1"
+
+        result = ::Que.execute(query).first
+        result ? (Time.now - result[:run_at].to_time).round : 0
+      end
+
+      # Calculates the total job queue size across the specified queues.
       #
-      # @param [String] queue the queue name to count. (default: nil # gets all queues)
-      # @return [Integer] the number of jobs in the queue(s).
-      #
-      def queue(*queues)
-        query = queues.empty? && base_query || base_query + " AND queue IN (#{names(queues)})"
-        results = ::Que.execute(query).first
-        (results[:total] || results["total"]).to_i
+      # @param queues [Array<String, Symbol>] the list of queues to count.
+      # @param priority [Integer, Range, nil] optional priority filter.
+      # @return [Integer] Cumulative queue size across the specified queues.
+      # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
+      # @example Job Queue Size for the default queue
+      #   HireFire::Macro::Que.job_queue_size(:default)
+      # @example Job Queue Size across the default and mailer queues
+      #   HireFire::Macro::Que.job_queue_size(:default, :mailer)
+      # @example Job Queue Size for the default queue, scoped to priority 3 jobs
+      #   HireFire::Macro::Que.job_queue_size(priority: 3)
+      # @example Job Queue Size for the default queue, scoped to priority 3 to 7 jobs
+      #   HireFire::Macro::Que.job_queue_size(priority: 3..7)
+      def job_queue_size(*queues, priority: nil)
+        queues = Utility.construct_queues(queues)
+
+        query = "SELECT COUNT(*) AS total FROM que_jobs WHERE run_at <= NOW() AND finished_at IS NULL AND expired_at IS NULL"
+
+        if queues.any?
+          queue_names = queues.map { |q| sanitize_sql(q) }.join(", ")
+          query += " AND queue IN (#{queue_names})"
+        end
+
+        if priority.is_a?(Range)
+          query += " AND priority BETWEEN #{priority.begin} AND #{priority.end}"
+        elsif priority.is_a?(Integer)
+          query += " AND priority = #{priority}"
+        end
+
+        ::Que.execute(query).first.fetch(:total).to_i
       end
 
       private
 
-      def base_query
-        return QUE_V0_QUERY if defined?(::Que::Version)
-        return QUE_V1_QUERY if defined?(::Que::VERSION)
-        raise "Couldn't find Que version"
+      # Basic SQL string sanitization.
+      # We assume that the value is provided by a trusted source.
+      #
+      # @param value [String] the value to sanitize.
+      # @return [String] the sanitized value.
+      def sanitize_sql(value)
+        "'" + value.to_s.gsub(/['"\\]/, '\\\\\\&') + "'"
       end
-
-      def names(queues)
-        queues.map { |queue| "'#{queue}'" }.join(",")
-      end
-
-      def query_const(query)
-        query.gsub(/\s+/, " ").strip.freeze
-      end
-
-      QUE_V0_QUERY = query_const(<<-QUERY)
-        SELECT COUNT(*) AS total
-        FROM que_jobs
-        WHERE run_at < NOW()
-      QUERY
-
-      QUE_V1_QUERY = query_const(<<-QUERY)
-        SELECT COUNT(*) AS total
-        FROM que_jobs
-        WHERE finished_at IS NULL
-        AND expired_at IS NULL
-        AND run_at <= NOW()
-      QUERY
     end
   end
 end

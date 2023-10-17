@@ -1,19 +1,25 @@
+require_relative "lib/hirefire/resource/version"
+
 Gem::Specification.new do |spec|
   spec.name = "hirefire-resource"
-  spec.version = "0.10.1"
+  spec.version = HireFire::Resource::VERSION
   spec.platform = Gem::Platform::RUBY
-  spec.authors = "Michael van Rooijen"
-  spec.email = "michael@hirefire.io"
+  spec.authors = ["Michael R. van Rooijen"]
+  spec.email = ["support@hirefire.io"]
   spec.homepage = "https://www.hirefire.io"
-  spec.summary = "Autoscaling for your Heroku dynos"
-  spec.description = "Load- and schedule-based scaling for web- and worker dynos"
-  spec.licenses = ["Apache License"]
-  spec.metadata = {
-    "homepage_uri" => "https://www.hirefire.io",
-    "changelog_uri" => "https://github.com/hirefire/hirefire-resource/blob/master/CHANGELOG.md",
-    "source_code_uri" => "https://github.com/hirefire/hirefire-resource/",
-    "bug_tracker_uri" => "https://github.com/hirefire/hirefire-resource/issues"
-  }
-  spec.files = `git ls-files`.split("\n")
-  spec.require_path = "lib"
+  spec.summary = "Advanced Heroku Dyno Autoscaling"
+  spec.description = "Advanced Heroku Dyno Autoscaling"
+  spec.licenses = ["MIT"]
+  spec.metadata["homepage_uri"] = "https://www.hirefire.io"
+  spec.metadata["changelog_uri"] = "https://github.com/hirefire/hirefire-resource-ruby/blob/master/CHANGELOG.md"
+  spec.metadata["source_code_uri"] = "https://github.com/hirefire/hirefire-resource-ruby/"
+  spec.metadata["bug_tracker_uri"] = "https://github.com/hirefire/hirefire-resource-ruby/issues"
+  spec.require_paths = ["lib"]
+  spec.files = Dir.chdir(__dir__) do
+    `git ls-files -z`.split("\x0").reject do |f|
+      (File.expand_path(f) == __FILE__) || f.start_with?(*%w[bin/ test/ .git .standard.yml Gemfile Rakefile])
+    end
+  end
+  spec.required_ruby_version = ">= 2.7.0"
+  spec.add_development_dependency "appraisal"
 end

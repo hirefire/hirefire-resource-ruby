@@ -3,75 +3,78 @@
 module HireFire
   module Macro
     module Bunny
+      extend HireFire::Errors::QueueMethodRenamed
+      extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
 
-      # Returns the job quantity for the provided queue(s).
+      # Raised when a valid connection or URL for RabbitMQ is not provided.
+      class ConnectionError < StandardError; end
+
+      # Calculates the total job queue size across the specified queues.
       #
-      # @example Bunny Macro Usage
-      #
-      #   # all queues using existing RabbitMQ connection.
-      #   HireFire::Macro::Bunny.queue("queue1", "queue2", :connection => connection)
-      #
-      #   # all queues using new RabbitMQ connection.
-      #   HireFire::Macro::Bunny.queue("queue1", "queue2", :amqp_url => url)
-      #
-      #   # all non-durable queues using new RabbitMQ connection.
-      #   HireFire::Macro::Bunny.queue("queue1", "queue2", :amqp_url => url, :durable => false)
-      #
-      # @param [Array] queues provide one or more queue names, or none for "all".
-      #   Last argument can pass in a Hash containing :connection => rabbitmq_connection or :amqp => :rabbitmq_url
-      # @return [Integer] the number of jobs in the queue(s).
-      #
-      def queue(*queues)
+      # @note This method may not accurately represent the immediate
+      #   workload for jobs scheduled to run in the future.  These
+      #   jobs are placed inside the same queue and will be included
+      #   in the total count, which is a limitation of RabbitMQ.
+      #   Currently, there is no workaround for this issue. It is
+      #   recommended not to use this method for queues that contain
+      #   scheduled jobs.
+      # @param queues [Array<String, Symbol>] Names of the RabbitMQ queues.
+      # @param connection [Bunny::Session, nil] An existing RabbitMQ connection.
+      # @param amqp_url [String, nil] RabbitMQ URL for initializing a new connection.
+      # @param durable [Boolean] Indicates if the queue is durable. Default is true.
+      # @param max_priority [Integer, nil] Sets x-max-priority for the queue.
+      # @param options [Hash] Additional Bunny options.
+      # @return [Integer] Cumulative queue size across the specified queues.
+      # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
+      # @example Retrieving the Job Queue Size of the default queue
+      #   HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url)
+      # @example Retrieving the Job Queue Size across multiple queues
+      #   HireFire::Macro::Bunny.job_queue_size(:default, :mailer, amqp_url: url)
+      # @example Establishing a new RabbitMQ connection
+      #   HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url)
+      # @example Using an existing RabbitMQ connection
+      #   HireFire::Macro::Bunny.job_queue_size(:default, connection: connection)
+      # @example Utilizing non-durable queues with a new RabbitMQ connection
+      #   HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url, durable: false)
+      # @example Setting "x-max-priority" for a queue
+      #   HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url, max_priority: 10)
+      def job_queue_size(*queues, connection: nil, amqp_url: nil, durable: true, max_priority: nil, **options)
         require "bunny"
 
-        queues.flatten!
+        queues = Utility.construct_queues(queues)
+        max_priority ||= options["x-max-priority"] || options[:"x-max-priority"]
+        bunny_options = {durable: durable, arguments: {}}
 
-        options = if queues.last.is_a?(Hash)
-          queues.pop
-        else
-          {}
+        if max_priority
+          bunny_options[:arguments]["x-max-priority"] = max_priority
         end
 
-        if options[:durable].nil?
-          options[:durable] = true
-        end
+        channel, connection = setup_channel(connection, amqp_url)
 
-        if options[:connection]
-          connection = options[:connection]
-
-          channel = nil
-          begin
-            channel = connection.create_channel
-            count_messages(channel, queues, options)
-          ensure
-            channel&.close
-          end
-        elsif options[:amqp_url]
-          connection = ::Bunny.new(options[:amqp_url])
-          begin
-            connection.start
-            channel = connection.create_channel
-            count_messages(channel, queues, options)
-          ensure
-            channel&.close
-            connection.close
-          end
-        else
-          raise %(Must pass in :connection => rabbitmq_connection or :amqp_url => url\n) +
-            %{For example: HireFire::Macro::Bunny.queue("queue1", :connection => rabbitmq_connection}
+        begin
+          queues.sum { |name| channel.queue(name, bunny_options).message_count }
+        ensure
+          channel&.close
+          connection&.close if amqp_url
         end
       end
 
-      def count_messages(channel, queue_names, options)
-        queue_names.inject(0) do |sum, queue_name|
-          queue = if options.key?(:"x-max-priority")
-            channel.queue(queue_name, durable: options[:durable],
-              arguments: {"x-max-priority" => options[:"x-max-priority"]})
-          else
-            channel.queue(queue_name, durable: options[:durable])
-          end
-          sum + queue.message_count
+      private
+
+      def setup_channel(connection, amqp_url)
+        if connection
+          channel = connection.create_channel
+          [channel, nil]
+        elsif amqp_url
+          connection = ::Bunny.new(amqp_url)
+          connection.start
+          [connection.create_channel, connection]
+        else
+          raise ConnectionError, <<~ERROR_MSG
+            Must provide either connection: rabbitmq_connection or amqp_url: url.
+            For example: HireFire::Macro::Bunny.job_queue_size("queue1", connection: rabbitmq_connection)
+          ERROR_MSG
         end
       end
     end

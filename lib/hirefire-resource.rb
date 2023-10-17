@@ -1,13 +1,10 @@
 # frozen_string_literal: true
 
-HIREFIRE_PATH = File.expand_path("../hirefire", __FILE__)
-
-%w[middleware resource].each do |file|
-  require "#{HIREFIRE_PATH}/#{file}"
+# Requires all Ruby files in the 'hirefire' directory and its subdirectories.
+# It conditionally requires 'railtie.rb' only if the Rails environment is detected.
+# This setup ensures that HireFire components are loaded appropriately depending on
+# the presence of Rails, allowing for proper integration in both Rails and non-Rails contexts.
+Dir[File.expand_path("../hirefire/**/*.rb", __FILE__)].sort.each do |file|
+  next if file.include?("railtie.rb") && !defined?(Rails::Railtie)
+  require file
 end
-
-%w[delayed_job resque sidekiq qu qc bunny que good_job].each do |file|
-  require "#{HIREFIRE_PATH}/macro/#{file}"
-end
-
-require "#{HIREFIRE_PATH}/railtie" if defined?(Rails::Railtie)

@@ -1,138 +1,173 @@
 # frozen_string_literal: true
 
+require "json"
+
 module HireFire
+  # HireFire::Middleware provides a Rack middleware for capturing and
+  # providing metrics required for autoscaling Heroku web and worker
+  # dynos. It serves two primary roles:
+  #
+  # 1. It responds to specific HTTP requests with JSON-formatted queue metrics.
+  # 2. It captures and processes request queue time data from incoming
+  #    HTTP requests, forwarding it to `HireFire::Web` for further
+  #    handling or logging it for HireFire Logdrain capture, depending
+  #    on configuration.
+  #
+  # The middleware intercepts requests to the HireFire info endpoints
+  # and allows all other requests to pass through unaffected. The
+  # `HTTP_X_REQUEST_START` header, set by the Heroku router, provides
+  # the data for measuring request queue times.
+  #
+  # In a Rails application, this middleware is automatically injected
+  # into the stack.  For other Ruby frameworks, it should be manually
+  # inserted as early as possible in the middleware stack to ensure
+  # accurate capture of request queue times.
   class Middleware
-    # Initializes HireFire::Middleware.
+    # Creates a new `Middleware` instance. When the Rack framework
+    # constructs the middleware stack, this initializer is called.
     #
-    # @param [Proc] app call with `env` to continue down the middleware stack.
+    # The `@path_prefix` is determined to accommodate Rails
+    # applications mounted at subpaths, ensuring correct pattern
+    # matching for incoming request paths.
     #
+    # @param app [#call] The next component in the middleware stack,
+    #   typically another middleware or the main application.
     def initialize(app)
       @app = app
-      @token = ENV["HIREFIRE_TOKEN"]
-      @path_prefix = get_path_prefix
+      @path_prefix = determine_path_prefix
     end
 
-    # Intercepts and handles the /hirefire/test, /hirefire/development/info,
-    # and /hirefire/HIREFIRE_TOKEN/info paths. If none of these paths match,
-    # then then request will continue down the middleware stack.
+    # Processes incoming HTTP requests by first analyzing the request
+    # queue time, if present, and then determining whether to respond
+    # with queue metrics or pass the request along the stack.  If the
+    # request path matches a HireFire info endpoint, it returns a JSON
+    # response with worker queue metrics; otherwise, it delegates to
+    # the subsequent middleware or application.
     #
-    # When HireFire::Resource.log_queue_metrics is enabled, and the HTTP_X_REQUEST_START
-    # header has been injected at the Heroku Router layer, queue time information will be
-    # logged to $stdout. This data can be used by the HireFire Logdrain with the
-    # Web.Logplex.QueueTime autoscaling strategy.
-    #
-    # Important: Don't set/update instance variables within this- or any underlying methods.
-    # Doing so may result in race conditions when using threaded application servers.
-    #
-    # @param [Hash] env containing request information.
-    #
+    # @param env [Hash] The Rack environment hash containing request details.
+    # @return [Array] A Rack-compatible response array or the result
+    #   of calling the next component in the stack.
     def call(env)
-      handle_queue(env["HTTP_X_REQUEST_START"])
+      process_request_queue_time(env)
 
-      if test_path?(env["PATH_INFO"])
-        build_test_response
-      elsif info_path?(env["PATH_INFO"])
-        build_info_response
-      else
-        @app.call(env)
-      end
+      return construct_info_response if matches_info_path?(env)
+
+      @app.call(env)
     end
 
     private
 
-    # Determines whether or not the test path has been requested.
+    # Fetches the HireFire token from the environment or falls back to
+    # "development".
     #
-    # @param [String] path_info the requested path.
-    # @return [Boolean] true if the requested path matches the test path.
+    # The HIREFIRE_TOKEN is provided by HireFire from the web
+    # interface, and is used to authenticate the request to the info
+    # path.
     #
-    def test_path?(path_info)
-      get_path(path_info) == "/hirefire/test"
+    # @return [String] The HireFire token.
+    def token
+      ENV["HIREFIRE_TOKEN"] || "development"
     end
 
-    # Determines whether or not the info path has been requested.
+    # Determines if the given request path aligns with the info path.
     #
-    # @param [String] path_info the requested path.
-    # @return [Boolean] true if the requested path matches the info path.
-    #
-    def info_path?(path_info)
-      get_path(path_info) == "/hirefire/#{@token || "development"}/info"
+    # @param env [Hash] The hash containing request specifics.
+    # @return [Boolean] True if paths align, otherwise false.
+    def matches_info_path?(env)
+      extract_path(env) == "/hirefire/#{token}/info"
     end
 
-    # The provided path with @path_prefix stripped off.
+    # Eliminates the path prefix from the request path.
     #
-    # @param [String] path_info the requested path.
-    # @return [String] the path without the @path_prefix.
+    # @param env [Hash] The hash containing request specifics.
+    # @return [String] The path after removing the `@path_prefix`.
+    def extract_path(env)
+      @path_prefix ? env["PATH_INFO"].gsub(@path_prefix, "") : env["PATH_INFO"]
+    end
+
+    # Creates the HTTP response for the info path, containing worker
+    # queue metrics based on `HireFire::Resource.configuration.workers`
+    # configuration.
     #
-    def get_path(path_info)
-      if @path_prefix
-        path_info.gsub(@path_prefix, "")
-      else
-        path_info
+    # @return [Array] A tuple consisting of the HTTP status code,
+    #   headers, and response body.
+    def construct_info_response
+      [
+        200,
+        {
+          "Content-Type" => "application/json",
+          "Cache-Control" => "must-revalidate, private, max-age=0"
+        },
+        [
+          HireFire::Resource.configuration.workers.map do |worker|
+            {name: worker.name, value: worker.call}
+          end.to_json
+        ]
+      ]
+    end
+
+    # Analyzes the request queue time (if present) based on the
+    # `HTTP_X_REQUEST_START` header and performs actions based on the
+    # configuration settings in `HireFire::Resource.configuration`.
+    #
+    # It will dispatch the request queue time via `HireFire::Web` or
+    # log the metric if the respective configurations are enabled. If
+    # both `HireFire::Web` and `log_queue_metrics` are enabled,
+    # `HireFire::Web` takes precedence.
+    #
+    # @param env [Hash] The hash containing request specifics.
+    def process_request_queue_time(env)
+      return unless HireFire::Resource.configuration.web || HireFire::Resource.configuration.log_queue_metrics
+      return unless (timestamp = env["HTTP_X_REQUEST_START"])
+
+      request_queue_time = calculate_request_queue_time(timestamp)
+
+      if HireFire::Resource.configuration.web
+        collect_request_queue_time(request_queue_time)
+      elsif HireFire::Resource.configuration.log_queue_metrics
+        log_request_queue_time(request_queue_time)
       end
     end
 
-    # Builds the response for the test path.
+    # Forwards the request queue time metric to HireFire::Web's
+    # buffer for eventual dispatch to HireFire's servers.
     #
-    # @return [String] in text/html format.
-    #
-    def build_test_response
-      status = 200
-      headers = {"Content-Type" => "text/html"}
-      body = "HireFire Middleware Found!"
-
-      [status, headers, [body]]
+    # @note Starts HireFire::Web's dispatcher thread if it is not already running.
+    # @param request_queue_time [Integer] Request queue time in milliseconds.
+    def collect_request_queue_time(request_queue_time)
+      HireFire::Resource.configuration.web.tap(&:start).add_to_buffer(request_queue_time)
     end
 
-    # Builds the response for the info path containing the configured
-    # queues and their sizes based on the HireFire::Resource configuration.
+    # Logs the request queue time to STDOUT in a structured format
+    # that is recognized by HireFire. Heroku's Logplex captures all
+    # STDOUT logs, including this one, and forwards them to the
+    # configured endpoints such as HireFire's Logdrain. HireFire's
+    # Logdrain uses this information to determine how to autoscale.
     #
-    # @return [String] in application/json format.
-    #
-    def build_info_response
-      entries = HireFire::Resource.dynos.map do |config|
-        %({"name":"#{config[:name]}","value":#{config[:value].call || "null"}})
-      end
-
-      status = 200
-      headers = {}
-      headers["Content-Type"] = "application/json"
-      headers["Cache-Control"] = "must-revalidate, private, max-age=0"
-      body = "[" + entries.join(",") + "]"
-
-      [status, headers, [body]]
+    # @param request_queue_time [Integer] The request queue time in milliseconds to be logged.
+    def log_request_queue_time(request_queue_time)
+      puts "[hirefire:router] queue=#{request_queue_time}ms"
     end
 
-    # Writes the Heroku Router queue time to $stdout if a String was provided.
+    # Calculates the time gap (in milliseconds) between the given
+    # `HTTP_X_REQUEST_START` timestamp and the present time.
     #
-    # @param [String] the timestamp from HTTP_X_REQUEST_START.
-    #
-    def handle_queue(value)
-      HireFire::Resource.log_queue_metrics && value && log_queue(value)
+    # @param timestamp [String] Timestamp from the `HTTP_X_REQUEST_START` header.
+    # @return [Integer] The computed queue time in milliseconds.
+    def calculate_request_queue_time(timestamp)
+      ms = (Time.now.to_f * 1000).to_i - timestamp.to_i
+      ms.negative? ? 0 : ms
     end
 
-    # Writes the Heroku Router queue time to $stdout.
+    # Identifies the path prefix based on Rails' relative URL root, if
+    # applicable.  This adjustment is necessary for applications not
+    # mounted at the root path and ensures that the middleware can
+    # correctly identify and respond to requests to the HireFire info
+    # endpoints.
     #
-    # @param [String] the timestamp from HTTP_X_REQUEST_START.
-    #
-    def log_queue(value)
-      puts("[hirefire:router] queue=#{get_queue(value)}ms")
-    end
-
-    # Calculates the difference, in milliseconds, between the
-    # HTTP_X_REQUEST_START time and the current time.
-    #
-    # @param [String] the timestamp from HTTP_X_REQUEST_START.
-    # @return [Integer] the queue time in milliseconds.
-    #
-    def get_queue(value)
-      ms = (Time.now.to_f * 1000).to_i - value.to_i
-      (ms < 0) ? 0 : ms
-    end
-
-    # Configures the @path_prefix in order to handle apps
-    # mounted under RAILS_RELATIVE_URL_ROOT.
-    #
-    def get_path_prefix
+    # @return [Regexp, nil] A regular expression matching the path
+    #   prefix, or nil if no subpath mounting is configured.
+    def determine_path_prefix
       if defined?(Rails) && Rails.application.config.relative_url_root
         Regexp.new("^" + Regexp.escape(Rails.application.config.relative_url_root))
       end

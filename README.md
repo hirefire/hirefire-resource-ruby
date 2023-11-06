@@ -21,12 +21,12 @@ This gem streamlines the integration of HireFire with Ruby applications running 
 
 HireFire comes with Rack middleware integration, making it compatible with a broad range of Rack-based applications, including:
 
-|    | Framework |
-|----|-----------|
-| ✅ | Rack      |
-| ✅ | Rails     |
-| ✅ | Sinatra   |
-| ✅ | Hanami    |
+|    | Ruby Web Framework |
+|----|--------------------|
+| ✅ | Rack               |
+| ✅ | Rails              |
+| ✅ | Sinatra            |
+| ✅ | Hanami             |
 
 ---
 
@@ -34,15 +34,15 @@ HireFire comes with Rack middleware integration, making it compatible with a bro
 
 Some libraries lack the requisite structure to measure latency. If your preferred library isn't listed, or if you need further support, please contact us.
 
-| Library            | Job Queue Latency | Job Queue Size |
-|--------------------|:-----------------:|:--------------:|
-| Bunny              | ❌                | ✅             |
-| Delayed Job        | ✅                | ✅             |
-| Good Job           | ✅                | ✅             |
-| Que                | ✅                | ✅             |
-| Queue Classic (QC) | ✅                | ✅             |
-| Resque             | ❌                | ✅             |
-| Sidekiq            | ✅                | ✅             |
+| Ruby Worker Library | Job Queue Latency | Job Queue Size |
+|---------------------|:-----------------:|:--------------:|
+| Bunny               | ❌                | ✅             |
+| Delayed Job         | ✅                | ✅             |
+| Good Job            | ✅                | ✅             |
+| Que                 | ✅                | ✅             |
+| Queue Classic (QC)  | ✅                | ✅             |
+| Resque              | ❌                | ✅             |
+| Sidekiq             | ✅                | ✅             |
 
 ---
 

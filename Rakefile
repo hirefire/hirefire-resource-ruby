@@ -20,7 +20,7 @@ APPRAISAL_VERSIONS = {
   "rack" => %w[2 3],
   "sidekiq" => %w[6 7],
   "bunny" => %w[2],
-  "good_job" => %w[3], # revert to %w[2 3]
+  "good_job" => %w[2 3],
   "delayed_job_active_record" => %w[4],
   "delayed_job_mongoid" => %w[3],
   "queue_classic" => %w[4],
@@ -36,9 +36,13 @@ def matrix
   end
 end
 
+def construct_task_name(appraisal, version)
+  version ? "#{appraisal}_#{version}" : appraisal
+end
+
 namespace :test do
   matrix.each do |appraisal, version|
-    task_name = version ? "#{appraisal}-#{version}" : appraisal
+    task_name = construct_task_name(appraisal, version)
 
     desc "Run tests for #{task_name}"
     task task_name do
@@ -60,7 +64,7 @@ task :test do
   ENV["COVERAGE"] = "false"
 
   matrix.each do |appraisal, version|
-    task_name = version ? "#{appraisal}-#{version}" : appraisal
+    task_name = construct_task_name(appraisal, version)
     Rake::Task["test:#{task_name}"].invoke
   end
 end

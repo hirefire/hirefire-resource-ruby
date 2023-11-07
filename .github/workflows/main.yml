@@ -1,3 +1,4 @@
+# @TODO optimize matrix for parallelism
 name: Main
 
 on:

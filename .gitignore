@@ -1,6 +1,6 @@
 .DS_Store
 *.log
-/.bundle/
+.bundle/
 /.yardoc
 /_yardoc/
 /coverage/

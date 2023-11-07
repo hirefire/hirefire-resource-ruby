@@ -1,6 +1,4 @@
-# @TODO optimize matrix for parallelism
 name: Main
-
 on:
   push:
     branches:
@@ -8,10 +6,8 @@ on:
     tags:
       - "*"
   pull_request:
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref }}
-
 jobs:
   validate:
     runs-on: ubuntu-latest

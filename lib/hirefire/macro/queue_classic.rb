@@ -30,7 +30,7 @@ module HireFire
         result = ::QC::Queue
           .new(queues_to_check.first)
           .conn_adapter
-          .execute(query, "{#{queues_to_check.join(",")}}")
+          .execute(query, "{#{queues_to_check.to_a.join(",")}}")
 
         (result && result["latency"]) ? result["latency"].to_f.round : 0
       end
@@ -47,7 +47,7 @@ module HireFire
       def job_queue_size(*queues)
         queues_to_check = Utility.construct_queues(queues)
 
-        formatted_queues = "{" + queues_to_check.join(",") + "}"
+        formatted_queues = "{" + queues_to_check.to_a.join(",") + "}"
 
         query = <<~SQL
           SELECT COUNT(*) FROM #{::QC.table_name}

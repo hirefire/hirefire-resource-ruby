@@ -26,6 +26,9 @@ module HireFire
   # prevents race conditions and maintains data integrity even when
   # operating in high concurrency environments.
   class Web
+    # Raised when the HIREFIRE_TOKEN environment variable is not set.
+    class TokenNotFoundError < StandardError; end
+
     # Raised when there is a network-related issue.
     class NetworkError < StandardError; end
 
@@ -217,6 +220,10 @@ module HireFire
     # @raise [TimeoutError] If the request times out.
     # @raise [ServerError] If the server returns a 5xx status, indicating server-side error.
     def submit_buffer(buffer)
+      if ENV["HIREFIRE_TOKEN"].nil?
+        raise TokenNotFoundError, "HIREFIRE_TOKEN environment variable is not set."
+      end
+
       uri = URI.parse("https://logdrain.hirefire.io/")
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = true
@@ -240,6 +247,8 @@ module HireFire
       raise TimeoutError, "Request timed out."
     rescue SocketError => e
       raise NetworkError, "Network error occurred (#{e.message})."
+    rescue TokenNotFoundError => e
+      raise e
     rescue => e
       raise NetworkError, "An unexpected error occurred (#{e.message})."
     end

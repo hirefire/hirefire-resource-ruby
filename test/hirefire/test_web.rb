@@ -5,6 +5,7 @@ require "test_helper"
 class HireFire::WebTest < Minitest::Test
   def setup
     HireFire::Resource.configuration.logger = Logger.new("/dev/null")
+    ENV["HIREFIRE_TOKEN"] = "8ab101e2-51da-49bc-beba-111dec49a287"
   end
 
   def test_starts_and_stops_correctly
@@ -109,6 +110,20 @@ class HireFire::WebTest < Minitest::Test
 
     assert_includes log_output.string,
       "[HireFire] Error while dispatching web metrics: Network error occurred (Failed)."
+  end
+
+  def test_dispatch_post_with_missing_token
+    ENV["HIREFIRE_TOKEN"] = nil
+
+    web = HireFire::Web.new
+    web.add_to_buffer(7)
+
+    log_output = StringIO.new
+    HireFire::Resource.configuration.logger = Logger.new(log_output)
+    web.dispatch
+
+    assert_includes log_output.string,
+      "[HireFire] Error while dispatching web metrics: HIREFIRE_TOKEN environment variable is not set."
   end
 
   def test_buffer_repopulation_after_dispatch_failure

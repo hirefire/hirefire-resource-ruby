@@ -109,7 +109,7 @@ module HireFire
         # and the time when the oldest job was enqueued.
         #
         # @param queues [Array<String>] List of queue names to calculate latencies for.
-        # @return [Integer] Maximum latency (in seconds) observed across all queues.
+        # @return [Integer] Maximum job queue latency (in seconds) observed across all queues.
         def find_latency_in_queues(queues)
           oldest_jobs = ::Sidekiq.redis do |conn|
             conn.pipelined do |pipeline|
@@ -136,7 +136,7 @@ module HireFire
         #
         # @param set [Sidekiq::RetrySet, Sidekiq::ScheduledSet] The set of jobs to inspect for latencies.
         # @param queues [Array<String>] List of queue names to calculate latencies for.
-        # @return [Integer] Latency (in seconds) for the earliest job from the specified queues.
+        # @return [Integer] Job Queue Latency (in seconds) for the earliest job from the specified queues.
         # @example Calculate Job Queue Latency of jobs in the retry set for specific queues
         #   find_latency_in_set(::Sidekiq::RetrySet.new, ["default", "critical"])
         def find_latency_in_set(set, queues)

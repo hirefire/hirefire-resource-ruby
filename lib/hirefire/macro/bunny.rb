@@ -25,7 +25,7 @@ module HireFire
       # @param durable [Boolean] Indicates if the queue is durable. Default is true.
       # @param max_priority [Integer, nil] Sets x-max-priority for the queue.
       # @param options [Hash] Additional Bunny options.
-      # @return [Integer] Cumulative queue size across the specified queues.
+      # @return [Integer] Cumulative job queue size across the specified queues.
       # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
       # @example Retrieving the Job Queue Size of the default queue
       #   HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url)

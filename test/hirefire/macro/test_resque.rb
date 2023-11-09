@@ -53,7 +53,7 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     end
   end
 
-  def test_latency_unsupported
+  def test_job_queue_latency_unsupported
     assert_raises(HireFire::Errors::JobQueueLatencyUnsupportedError) do
       HireFire::Macro::Resque.job_queue_latency(:default)
     end

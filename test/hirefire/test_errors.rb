@@ -3,7 +3,7 @@
 require "test_helper"
 
 class HireFire::ErrorsTest < Minitest::Test
-  def test_job_queue_size_method_renamed_errors
+  def test_queue_method_renamed_errors
     macros = [
       HireFire::Macro::Bunny,
       HireFire::Macro::Delayed::Job,

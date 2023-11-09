@@ -58,24 +58,24 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Que.job_queue_size(:default)
   end
 
-  def test_latency_without_jobs
+  def test_job_queue_latency_without_jobs
     assert_equal 0, HireFire::Macro::Que.job_queue_latency(:default)
   end
 
-  def test_latency_with_jobs
+  def test_job_queue_latency_with_jobs
     Que.enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 60})
     Que.enqueue(job_options: {job_class: "BasicJob", queue: "default"})
     Que.enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 120})
     assert_in_delta 60, HireFire::Macro::Que.job_queue_latency(:default), LATENCY_DELTA
   end
 
-  def test_latency_with_scheduled_jobs
+  def test_job_queue_latency_with_scheduled_jobs
     Que.enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 100})
     Que.enqueue(job_options: {job_class: "BasicJob", run_at: Time.now + 100})
     assert_equal 100, HireFire::Macro::Que.job_queue_latency(:default)
   end
 
-  def test_latency_with_prioritized_jobs
+  def test_job_queue_latency_with_prioritized_jobs
     Que.enqueue(job_options: {job_class: "BasicJob", priority: 300, run_at: Time.now - 300})
     Que.enqueue(job_options: {job_class: "BasicJob", priority: 500, run_at: Time.now - 600})
     Que.enqueue(job_options: {job_class: "BasicJob", priority: 700, run_at: Time.now - 900})
@@ -87,13 +87,13 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_in_delta 600, HireFire::Macro::Que.job_queue_latency(:default, priority: 500..700), LATENCY_DELTA
   end
 
-  def test_latency_skip_finished_jobs
+  def test_job_queue_latency_skip_finished_jobs
     job = Que.enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 60})
     Que.execute("UPDATE que_jobs SET finished_at = NOW() WHERE id = #{job.que_attrs[:id]};")
     assert_equal 0, HireFire::Macro::Que.job_queue_latency(:default)
   end
 
-  def test_latency_skip_expired_jobs
+  def test_job_queue_latency_skip_expired_jobs
     job = Que.enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 60})
     Que.execute("UPDATE que_jobs SET expired_at = NOW() WHERE id = #{job.que_attrs[:id]};")
     assert_equal 0, HireFire::Macro::Que.job_queue_latency(:default)

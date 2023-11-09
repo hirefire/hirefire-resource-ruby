@@ -56,25 +56,25 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(:default)
   end
 
-  def test_latency_without_jobs
+  def test_job_queue_latency_without_jobs
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency(:default)
   end
 
-  def test_latency_with_jobs
+  def test_job_queue_latency_with_jobs
     BasicJob.perform_later
     Timecop.freeze(1.minute.ago) { BasicJob.set(queue: :mailer).perform_later }
     assert_in_delta 0, HireFire::Macro::GoodJob.job_queue_latency(:default), LATENCY_DELTA
     assert_in_delta 60, HireFire::Macro::GoodJob.job_queue_latency(:default, :mailer), LATENCY_DELTA
   end
 
-  def test_latency_with_scheduled_job
+  def test_job_queue_latency_with_scheduled_job
     BasicJob.set(wait_until: 1.minute.from_now).perform_later
     BasicJob.set(queue: :mailer, wait_until: 1.minute.ago).perform_later
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency(:default)
     assert_equal 60, HireFire::Macro::GoodJob.job_queue_latency(:mailer)
   end
 
-  def test_latency_with_prioritized_jobs
+  def test_job_queue_latency_with_prioritized_jobs
     BasicJob.set(priority: 3, wait_until: 5.minutes.ago).perform_later
     BasicJob.set(priority: 5, wait_until: 10.minutes.ago).perform_later
     BasicJob.set(priority: 7, wait_until: 15.minutes.ago).perform_later
@@ -104,7 +104,7 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     end
   end
 
-  def test_latency_finished_jobs
+  def test_job_queue_latency_finished_jobs
     job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
     GoodJob::Execution.where(active_job_id: job_id).update_all(finished_at: Time.now)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency(:default)

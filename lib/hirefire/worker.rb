@@ -11,12 +11,12 @@ module HireFire
 
     # Initializes a new instance of the Worker class with a given name
     # and a block of work. The name should correspond to the worker
-    # dyno designation in the Procfile, such as 'worker',
-    # 'worker_critical', or 'worker_low'. The provided block must
-    # return an integer that represents either the queue latency or
-    # size metric. This block is expected to contain either one of the
-    # provided macros for common measurement tasks or custom logic
-    # tailored to the specific queue metric being monitored.
+    # dyno designation in the Procfile, such as 'worker' or 'mailer'.
+    # The provided block must return an integer that represents either
+    # the job queue latency or job queue size metric. This block is
+    # expected to contain either one of the provided macros for common
+    # measurement tasks or custom logic tailored to the specific queue
+    # metric being monitored.
     #
     # @param name [String] The name of the worker, corresponding to the Procfile's dyno name.
     # @param block [Proc] A block of code that returns an integer representing the queue metric.

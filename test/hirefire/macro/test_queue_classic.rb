@@ -34,11 +34,11 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_equal 1, HireFire::Macro::QC.job_queue_size(:default)
   end
 
-  def test_latency_without_jobs
+  def test_job_queue_latency_without_jobs
     assert_equal 0, HireFire::Macro::QC.job_queue_latency(:default)
   end
 
-  def test_latency_with_jobs
+  def test_job_queue_latency_with_jobs
     QC::Queue.new("default").enqueue_at(1.minute.ago.to_i, "BasicJob.perform")
     QC::Queue.new("default").enqueue("BasicJob.perform")
     QC::Queue.new("mailer").enqueue_at(2.minutes.ago.to_i, "BasicJob.perform")
@@ -46,7 +46,7 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_in_delta 120, HireFire::Macro::QC.job_queue_latency(:default, :mailer), LATENCY_DELTA
   end
 
-  def test_latency_with_scheduled_job
+  def test_job_queue_latency_with_scheduled_job
     QC::Queue.new("default").enqueue_at(1.minute.from_now.to_i, "BasicJob.perform")
     QC::Queue.new("mailer").enqueue_at(1.minute.ago.to_i, "BasicJob.perform")
     assert_in_delta 0, HireFire::Macro::QC.job_queue_latency(:default), LATENCY_DELTA

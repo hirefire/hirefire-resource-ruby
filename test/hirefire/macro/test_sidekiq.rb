@@ -56,11 +56,11 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, server: true, skip_working: true)
   end
 
-  def test_latency_without_jobs
+  def test_job_queue_latency_without_jobs
     assert_in_delta 0, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
   end
 
-  def test_latency_with_jobs
+  def test_job_queue_latency_with_jobs
     Timecop.freeze(Time.now - 200) { enqueue }
     Timecop.freeze(Time.now - 100) { enqueue queue: "critical" }
     assert_in_delta 200, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
@@ -68,7 +68,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_in_delta 200, HireFire::Macro::Sidekiq.job_queue_latency(:default, :critical), LATENCY_DELTA
   end
 
-  def test_latency_with_retry_jobs
+  def test_job_queue_latency_with_retry_jobs
     Timecop.freeze(Time.now + 150) { enqueue_retry }
     Timecop.freeze(Time.now - 450) { enqueue_retry }
     Timecop.freeze(Time.now - 300) { 50.times { enqueue_retry } } # test pagination
@@ -76,7 +76,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_in_delta 450, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
   end
 
-  def test_latency_with_scheduled_jobs
+  def test_job_queue_latency_with_scheduled_jobs
     Timecop.freeze(Time.now + 150) { enqueue_scheduled }
     Timecop.freeze(Time.now - 450) { enqueue_scheduled }
     Timecop.freeze(Time.now - 300) { 50.times { enqueue_scheduled } } # test pagination
@@ -84,13 +84,13 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_in_delta 450, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
   end
 
-  def test_latency_with_skip_retries
+  def test_job_queue_latency_with_skip_retries
     Timecop.freeze(Time.now - 250) { enqueue_retry }
     Timecop.freeze(Time.now - 150) { enqueue }
     assert_in_delta 150, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true), LATENCY_DELTA
   end
 
-  def test_latency_with_skip_scheduled
+  def test_job_queue_latency_with_skip_scheduled
     Timecop.freeze(Time.now - 300) { enqueue_scheduled }
     Timecop.freeze(Time.now - 150) { enqueue }
     assert_in_delta 150, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true), LATENCY_DELTA

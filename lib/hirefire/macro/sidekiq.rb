@@ -15,7 +15,7 @@ module HireFire
       # @param [Hash] options The options to filter and control the latency calculation.
       # @option options [Boolean] :skip_retries (false) If set to true, skips checking the RetrySet for latencies.
       # @option options [Boolean] :skip_scheduled (false) If set to true, skips checking the ScheduledSet for latencies.
-      # @return [Integer] Maximum latency in seconds across the specified queues.
+      # @return [Integer] Maximum job queue latency in seconds across the specified queues.
       # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
       # @example Job Queue Latency of the default queue
       #   HireFire::Macro::Sidekiq.job_queue_latency(:default)
@@ -38,7 +38,7 @@ module HireFire
       # @option options [Boolean] :skip_scheduled (false) If true, skip counting jobs in scheduled queues.
       # @option options [Boolean] :skip_working (false) If true, skip counting already running jobs.
       # @option options [Integer, nil] :max_scheduled Maximum number of scheduled jobs to consider; nil indicates no maximum.
-      # @return [Integer] Cumulative queue size across the specified queues.
+      # @return [Integer] Cumulative job queue size across the specified queues.
       # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
       # @example Job Queue Size of the default queue
       #   HireFire::Macro::Sidekiq.job_queue_size(:default)

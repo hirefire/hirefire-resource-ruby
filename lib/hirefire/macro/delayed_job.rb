@@ -15,7 +15,7 @@ module HireFire
         #
         # @param queues [Array<String, Symbol>] provide one or more queue names.
         # @param priority [Integer, Range, nil] specific priority or a range of priorities.
-        # @return [Integer] Maximum latency in seconds across the specified queues.
+        # @return [Integer] Maximum job queue latency in seconds across the specified queues.
         # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
         # @example Job Queue Latency of the default queue
         #   HireFire::Macro::Delayed::Job.job_queue_latency(:default)
@@ -51,7 +51,7 @@ module HireFire
         #
         # @param queues [Array<String, Symbol>] provide one or more queue names.
         # @param priority [Integer, Range, nil] specific priority or a range of priorities.
-        # @return [Integer] Cumulative queue size across the specified queues.
+        # @return [Integer] Cumulative job queue size across the specified queues.
         # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
         # @example Job Queue Size of the default queue
         #   HireFire::Macro::Delayed::Job.job_queue_size(:default)

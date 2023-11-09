@@ -53,10 +53,10 @@ module HireFire
 
     # Configures Web and Worker objects.
     #
-    # The block is ignored for the web object as it is not used for
+    # The block is ignored for the Web object as it is not used for
     # collecting web metrics.
     #
-    # The block is required for worker objects as it should return the
+    # The block is required for Worker objects as it should return the
     # job queue latency or job queue size metric.
     #
     # @param name [Symbol, String] The name of the dyno as declared in the Procfile.

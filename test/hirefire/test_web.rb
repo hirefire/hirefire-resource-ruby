@@ -4,7 +4,7 @@ require "test_helper"
 
 class HireFire::WebTest < Minitest::Test
   def setup
-    HireFire::Resource.configuration.logger = Logger.new("/dev/null")
+    HireFire.configuration.logger = Logger.new("/dev/null")
     ENV["HIREFIRE_TOKEN"] = "8ab101e2-51da-49bc-beba-111dec49a287"
   end
 
@@ -39,7 +39,7 @@ class HireFire::WebTest < Minitest::Test
     web.add_to_buffer(5)
 
     log_output = StringIO.new
-    HireFire::Resource.configuration.logger = Logger.new(log_output)
+    HireFire.configuration.logger = Logger.new(log_output)
     web.dispatch
 
     assert log_output.string.empty?
@@ -51,7 +51,7 @@ class HireFire::WebTest < Minitest::Test
     web.add_to_buffer(5)
 
     log_output = StringIO.new
-    HireFire::Resource.configuration.logger = Logger.new(log_output)
+    HireFire.configuration.logger = Logger.new(log_output)
     web.dispatch
 
     assert_includes log_output.string,
@@ -65,7 +65,7 @@ class HireFire::WebTest < Minitest::Test
     web.add_to_buffer(8)
 
     log_output = StringIO.new
-    HireFire::Resource.configuration.logger = Logger.new(log_output)
+    HireFire.configuration.logger = Logger.new(log_output)
     web.dispatch
 
     assert_includes log_output.string,
@@ -78,7 +78,7 @@ class HireFire::WebTest < Minitest::Test
     web.add_to_buffer(4)
 
     log_output = StringIO.new
-    HireFire::Resource.configuration.logger = Logger.new(log_output)
+    HireFire.configuration.logger = Logger.new(log_output)
     web.dispatch
 
     assert_includes log_output.string,
@@ -92,7 +92,7 @@ class HireFire::WebTest < Minitest::Test
     web.add_to_buffer(5)
 
     log_output = StringIO.new
-    HireFire::Resource.configuration.logger = Logger.new(log_output)
+    HireFire.configuration.logger = Logger.new(log_output)
     web.dispatch
 
     assert_includes log_output.string,
@@ -105,7 +105,7 @@ class HireFire::WebTest < Minitest::Test
     web.add_to_buffer(6)
 
     log_output = StringIO.new
-    HireFire::Resource.configuration.logger = Logger.new(log_output)
+    HireFire.configuration.logger = Logger.new(log_output)
     web.dispatch
 
     assert_includes log_output.string,
@@ -119,7 +119,7 @@ class HireFire::WebTest < Minitest::Test
     web.add_to_buffer(7)
 
     log_output = StringIO.new
-    HireFire::Resource.configuration.logger = Logger.new(log_output)
+    HireFire.configuration.logger = Logger.new(log_output)
     web.dispatch
 
     assert_includes log_output.string,

@@ -183,7 +183,7 @@ module HireFire
     #
     # @return [Logger] The logger used for logging messages.
     def logger
-      HireFire::Resource.configuration.logger
+      HireFire.configuration.logger
     end
 
     # Repopulates the main buffer with the passed buffer's contents,

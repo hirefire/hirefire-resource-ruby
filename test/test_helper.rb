@@ -21,13 +21,13 @@ require "timecop"
 class Minitest::Test
   def setup
     ENV["HIREFIRE_TOKEN"] = nil
-    HireFire::Resource.configuration = HireFire::Configuration.new
+    HireFire.configuration = HireFire::Configuration.new
     super
   end
 
   def teardown
     ENV["HIREFIRE_TOKEN"] = nil
-    HireFire::Resource.configuration = HireFire::Configuration.new
+    HireFire.configuration = HireFire::Configuration.new
     super
   end
 

@@ -11,11 +11,11 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_pass_through_without_HIREFIRE_TOKEN
-    HireFire::Resource.configure do |config|
+    HireFire.configure do |config|
       config.dyno(:web)
     end
 
-    HireFire::Resource.configuration.web.expects(:start).never
+    HireFire.configuration.web.expects(:start).never
 
     response = @request.get("/")
     assert_equal 200, response.status
@@ -33,7 +33,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   def test_intercept_and_process_worker_configuration
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
 
-    HireFire::Resource.configure do |config|
+    HireFire.configure do |config|
       config.dyno(:worker) { 5 }
     end
 
@@ -46,21 +46,21 @@ class HireFire::MiddlewareTest < Minitest::Test
   def test_pass_through_and_process_web_configuration
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
 
-    HireFire::Resource.configure do |config|
+    HireFire.configure do |config|
       config.dyno(:web)
     end
 
-    HireFire::Resource.configuration.web.stub(:start, nil) do
+    HireFire.configuration.web.stub(:start, nil) do
       Time.stub :now, Time.at(1) do
         request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
         @middleware.call(request)
-        assert_equal ({1 => [1000]}), HireFire::Resource.configuration.web.flush
+        assert_equal ({1 => [1000]}), HireFire.configuration.web.flush
       end
     end
   end
 
   def test_pass_through_and_process_logplex_configuration
-    HireFire::Resource.configure do |config|
+    HireFire.configure do |config|
       config.log_queue_metrics = true
     end
 

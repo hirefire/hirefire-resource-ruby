@@ -59,7 +59,7 @@ gem "hirefire-resource"
 2. Configure HireFire in `config/initializers/hirefire.rb`:
 
 ```ruby
-HireFire::Resource.configure do |config|
+HireFire.configure do |config|
   # To collect Request Queue Time metrics for autoscaling `web` dynos:
   config.dyno(:web)
   # To collect Job Queue Latency metrics for autoscaling `worker` dynos

@@ -3,7 +3,8 @@
 * Switch to MIT license.
 * Document entire gem.
 * Test entire gem.
-* `HireFire::Resource`:
+* `HireFire`:
+  * Rename `HireFire::Resource` to `HireFire`. `HireFire::Resource` is now an alias of `HireFire` for backwards compatibility.
   * Add configuration option to specify a custom logger -- defaults to `Logger.new($stdout)`.
   * Add `dyno(:web)` configuration option. Offers an alternative (and preferred) way to collect and transmit Request Queue Time metrics to HireFire, without involving the Heroku Logplex and HireFire Logdrain. Enabling both `dyno(:web)` and `log_queue_metrics = true` results in `dyno(:web)` taking precedence. Requires `HIREFIRE_TOKEN` to be set.
 * `HireFire::Macro::Sidekiq.job_queue_latency`:
@@ -114,6 +115,6 @@
 
 ## v0.7.0
 
-* Made `HireFire::Resource.log_queue_metrics` optional. This is now disabled by default.
+* Made `HireFire.log_queue_metrics` optional. This is now disabled by default.
   * Enable by setting `log_queue_metrics = true`.
   * Required when using the `Manager::Web::Logplex::QueueTime` autoscaling strategy.

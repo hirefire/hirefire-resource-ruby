@@ -1,8 +1,8 @@
-require_relative "lib/hirefire/resource/version"
+require_relative "lib/hirefire/version"
 
 Gem::Specification.new do |spec|
   spec.name = "hirefire-resource"
-  spec.version = HireFire::Resource::VERSION
+  spec.version = HireFire::VERSION
   spec.platform = Gem::Platform::RUBY
   spec.authors = ["Michael R. van Rooijen"]
   spec.email = ["support@hirefire.io"]

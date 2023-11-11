@@ -67,7 +67,7 @@ module HireFire
     end
 
     # Creates the HTTP response for the info path, containing worker queue metrics based on
-    # `HireFire::Resource.configuration.workers` configuration.
+    # `HireFire.configuration.workers` configuration.
     #
     # @return [Array] A tuple consisting of the HTTP status code,
     #   headers, and response body.
@@ -79,7 +79,7 @@ module HireFire
           "Cache-Control" => "must-revalidate, private, max-age=0"
         },
         [
-          HireFire::Resource.configuration.workers.map do |worker|
+          HireFire.configuration.workers.map do |worker|
             {name: worker.name, value: worker.call}
           end.to_json
         ]
@@ -87,7 +87,7 @@ module HireFire
     end
 
     # Analyzes the request queue time (if present) based on the `HTTP_X_REQUEST_START` header and
-    # performs actions based on the configuration settings in `HireFire::Resource.configuration`.
+    # performs actions based on the configuration settings in `HireFire.configuration`.
     #
     # It will dispatch the request queue time via `HireFire::Web` or log the metric if the
     # respective configurations are enabled. If both `HireFire::Web` and `log_queue_metrics` are
@@ -97,11 +97,11 @@ module HireFire
     def process_request_queue_time(env)
       return unless (timestamp = env["HTTP_X_REQUEST_START"])
 
-      if HireFire::Resource.configuration.web && ENV["HIREFIRE_TOKEN"]
+      if HireFire.configuration.web && ENV["HIREFIRE_TOKEN"]
         collect_request_queue_time(
           calculate_request_queue_time(timestamp)
         )
-      elsif HireFire::Resource.configuration.log_queue_metrics
+      elsif HireFire.configuration.log_queue_metrics
         log_request_queue_time(
           calculate_request_queue_time(timestamp)
         )
@@ -114,7 +114,7 @@ module HireFire
     # @note Starts HireFire::Web's dispatcher thread if it is not already running.
     # @param request_queue_time [Integer] Request queue time in milliseconds.
     def collect_request_queue_time(request_queue_time)
-      HireFire::Resource
+      HireFire
         .configuration
         .web
         .tap(&:start)

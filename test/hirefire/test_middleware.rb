@@ -10,18 +10,27 @@ class HireFire::MiddlewareTest < Minitest::Test
     @request = Rack::MockRequest.new(@middleware)
   end
 
-  def test_info_path_for_development
+  def test_pass_through_without_HIREFIRE_TOKEN
     HireFire::Resource.configure do |config|
-      config.dyno(:worker) { 5 }
+      config.dyno(:web)
     end
 
-    response = @request.get("/hirefire/development/info")
-    expected_body = [{name: "worker", value: 5}].to_json
+    HireFire::Resource.configuration.web.expects(:start).never
+
+    response = @request.get("/")
     assert_equal 200, response.status
-    assert_equal expected_body, response.body
+    assert_equal "Hello", response.body
   end
 
-  def test_info_path_for_token
+  def test_pass_through_without_configuration
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+
+    response = @request.get("/")
+    assert_equal 200, response.status
+    assert_equal "Hello", response.body
+  end
+
+  def test_intercept_and_process_worker_configuration
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
 
     HireFire::Resource.configure do |config|
@@ -34,13 +43,9 @@ class HireFire::MiddlewareTest < Minitest::Test
     assert_equal expected_body, response.body
   end
 
-  def test_non_intercepted_path
-    response = @request.get("/some/other/path")
-    assert_equal 200, response.status
-    assert_equal "Hello", response.body
-  end
+  def test_pass_through_and_process_web_configuration
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
 
-  def test_process_request_queue_time_with_dyno_web
     HireFire::Resource.configure do |config|
       config.dyno(:web)
     end
@@ -54,7 +59,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     end
   end
 
-  def test_process_request_queue_time_with_log_queue_metrics
+  def test_pass_through_and_process_logplex_configuration
     HireFire::Resource.configure do |config|
       config.log_queue_metrics = true
     end

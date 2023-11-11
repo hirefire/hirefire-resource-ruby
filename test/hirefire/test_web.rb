@@ -143,7 +143,7 @@ class HireFire::WebTest < Minitest::Test
 
     web.add_to_buffer(7)
 
-    past_timestamp = Time.now.to_i - HireFire::Web::TTL - 10
+    past_timestamp = Time.now.to_i - HireFire::Web::BUFFER_TTL - 10
     Time.stub(:now, Time.at(past_timestamp)) do
       web.add_to_buffer(8)
     end

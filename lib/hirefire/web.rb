@@ -42,19 +42,19 @@ module HireFire
     DISPATCH_INTERVAL = 5
 
     # The timeout for HTTP requests in seconds.
-    TIMEOUT = 5
+    DISPATCH_TIMEOUT = 5
 
     # Metrics older than this value will be discarded.
-    TTL = 60
+    BUFFER_TTL = 60
 
     def initialize
       # @buffer is a hash where the keys are timestamps (in seconds
       # since the Epoch) and the values are arrays of request queue
       # time metrics that have been added at that particular timestamp
-      # on a per-request basis. Metrics older than the TTL value
-      # (defined below) will be automatically discarded, ensuring the
-      # buffer contains only recent and relevant data and that memory
-      # usage remains minimal.
+      # on a per-request basis. Metrics older than the `BUFFER_TTL`
+      # value (defined below) will be automatically discarded,
+      # ensuring the buffer contains only recent and relevant data and
+      # that memory usage remains minimal.
       #
       # Example of @buffer contents:
       # {
@@ -108,9 +108,9 @@ module HireFire
     # currently running, this method will have no effect.
     #
     # The method waits for the dispatcher's thread to complete (up to
-    # the duration specified by the `TIMEOUT` constant) before marking
-    # it as stopped. After stopping, the dispatcher will log an
-    # informational message indicating its state.
+    # the duration specified by the `DISPATCH_TIMEOUT` constant)
+    # before marking it as stopped. After stopping, the dispatcher
+    # will log an informational message indicating its state.
     #
     # @example
     #   web = HireFire::Web.new
@@ -123,7 +123,7 @@ module HireFire
         @running = false
       end
 
-      @dispatcher.join(TIMEOUT)
+      @dispatcher.join(DISPATCH_TIMEOUT)
       @dispatcher = nil
 
       logger.info "[HireFire] Web metrics dispatcher stopped."
@@ -187,12 +187,12 @@ module HireFire
     end
 
     # Repopulates the main buffer with the passed buffer's contents,
-    # filtering out any entries older than the TTL value to ensure
-    # only recent data is preserved.
+    # filtering out any entries older than the `BUFFER_TTL` value to
+    # ensure only recent data is preserved.
     #
-    # The TTL value represents the duration (in seconds) an entry
-    # should be kept in the buffer before being considered stale and
-    # discarded.
+    # The `BUFFER_TTL` value represents the duration (in seconds) an
+    # entry should be kept in the buffer before being considered stale
+    # and discarded.
     #
     # @param buffer [Hash] The buffer to be merged back to the main
     #  buffer, with each key representing a timestamp and each value
@@ -201,7 +201,7 @@ module HireFire
       now = Time.now.to_i
       @mutex.synchronize do
         buffer.each do |timestamp, values|
-          next if timestamp < now - TTL
+          next if timestamp < now - BUFFER_TTL
           @buffer[timestamp] ||= []
           @buffer[timestamp].concat(values)
         end
@@ -227,8 +227,8 @@ module HireFire
       uri = URI.parse("https://logdrain.hirefire.io/")
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = true
-      http.read_timeout = TIMEOUT
-      http.open_timeout = TIMEOUT
+      http.read_timeout = DISPATCH_TIMEOUT
+      http.open_timeout = DISPATCH_TIMEOUT
       request = Net::HTTP::Post.new(uri.request_uri)
       request["Content-Type"] = "application/json"
       request["HireFire-Token"] = ENV["HIREFIRE_TOKEN"]

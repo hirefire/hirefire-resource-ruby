@@ -13,7 +13,9 @@ class HireFire::WebTest < Minitest::Test
     refute web.running?
     web.start
     assert web.running?
+    web.add_to_buffer(1)
     web.stop
+    assert_empty web.flush
     refute web.running?
   end
 

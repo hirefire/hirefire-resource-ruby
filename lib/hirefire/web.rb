@@ -103,14 +103,14 @@ module HireFire
       end
     end
 
-    # Stops the dispatcher thread, ensuring that no further metrics
-    # are dispatched to the HireFire server. If the dispatcher is not
-    # currently running, this method will have no effect.
+    # Stops the dispatcher thread, ensuring that no further metrics are dispatched to the HireFire
+    # server. If the dispatcher is not currently running, this method will have no effect.
     #
-    # The method waits for the dispatcher's thread to complete (up to
-    # the duration specified by the `DISPATCH_TIMEOUT` constant)
-    # before marking it as stopped. After stopping, the dispatcher
-    # will log an informational message indicating its state.
+    # The method waits for the dispatcher's thread to complete (up to the duration specified by the
+    # `DISPATCH_TIMEOUT` constant) before marking it as stopped. After stopping, the dispatcher will
+    # log an informational message indicating its state.
+    #
+    # The buffer will be cleared after stopping the dispatcher.
     #
     # @example
     #   web = HireFire::Web.new
@@ -125,6 +125,8 @@ module HireFire
 
       @dispatcher.join(DISPATCH_TIMEOUT)
       @dispatcher = nil
+
+      flush
 
       logger.info "[HireFire] Web metrics dispatcher stopped."
     end

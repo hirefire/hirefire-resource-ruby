@@ -1,4 +1,4 @@
-## HireFire: Advanced Autoscaling for Heroku Applications
+## HireFire: Advanced Autoscaling for Heroku-hosted Applications
 
 [HireFire] is the oldest and a leading autoscaling service for applications hosted on [Heroku]. Since 2011, we've assisted more than 1,000 companies in autoscaling upwards of 5,000 applications, involving over 10,000 dynos.
 

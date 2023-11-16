@@ -88,12 +88,14 @@ module HireFire
     end
 
     # Returns the running state of the dispatcher.
+    #
     # @return [Boolean] True if running, false otherwise.
     def running?
       @mutex.synchronize { @running }
     end
 
     # Adds a metric value to the buffer with the current timestamp. Thread-safe.
+    #
     # @param value [Integer] The request queue time in milliseconds.
     def add_to_buffer(value)
       @mutex.synchronize do
@@ -104,6 +106,7 @@ module HireFire
     end
 
     # Clears and returns the buffer's contents. Ensures no data duplication in dispatch.
+    #
     # @return [Hash] Buffer contents prior to clearing.
     def flush
       @mutex.synchronize do
@@ -124,6 +127,7 @@ module HireFire
     private
 
     # Provides a logger instance from HireFire's global configuration for logging messages.
+    #
     # @return [Logger] The configured logger.
     def logger
       HireFire.configuration.logger
@@ -131,6 +135,7 @@ module HireFire
 
     # Merges given buffer contents back into the main buffer, discarding entries older than
     # `BUFFER_TTL`.
+    #
     # @param buffer [Hash] Buffer contents to merge back.
     def repopulate_buffer(buffer)
       now = Time.now.to_i
@@ -145,6 +150,7 @@ module HireFire
 
     # Sends buffer contents to HireFire's servers via a secure HTTPS POST request. Handles HTTP
     # success and error responses, raising exceptions for error statuses.
+    #
     # @param buffer [Hash] The buffer contents to send.
     # @return [Net::HTTPResponse] Server response.
     # @raise [NetworkError, TimeoutError, ServerError] For various error scenarios.

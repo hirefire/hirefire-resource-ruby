@@ -16,6 +16,7 @@ module HireFire
     attr_reader :name
 
     # Initializes a new Worker instance with a given name and a block of work.
+    #
     # @param name [String] The name of the worker, corresponding to the Procfile's dyno name.
     # @param block [Proc] A block of code that returns an integer representing the queue metric.
     def initialize(name, &block)
@@ -26,6 +27,7 @@ module HireFire
     # Executes the block of work passed during initialization and returns its result, which is an
     # integer representing the measured queue metric (latency or size).  The result is made
     # available for retrieval via the middleware.
+    #
     # @return [Integer] The queue metric result from the executed block.
     def call
       @block.call

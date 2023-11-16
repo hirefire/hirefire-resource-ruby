@@ -2,27 +2,24 @@
 
 require "logger"
 
-# The `HireFire` module serves as the primary interface for integrating the `hirefire-resource` gem
-# into your application. It offers a configuration interface to specify how metrics (such as job
-# queue latency and job queue size) should be collected, served, and dispatched for web and worker
-# dynos. These metrics enables making autoscaling decisions for Heroku dynos. A custom logger can
-# also be configured.
+# `HireFire` is the primary module of the hirefire-resource gem.
 #
-# Configuration is typically done in an initializer in Rails (e.g., config/initializers/hirefire.rb)
-# or during the application boot process in other Ruby applications.
+# The gem is configured through this module. In Rails, configuration is typically done in an
+# initializer (i.e. config/initializers/hirefire.rb). For other Ruby applications, ensure that the
+# configuration is loaded at application startup.
 #
-# @example Configuring HireFire for web and worker dyno metrics
+# @example Configuration for autoscaling Rails (web) + Sidekiq (worker) dynos
 #   HireFire.configure do |config|
-#     config.logger = Rails.logger  # Set a custom logger
-#     config.dyno(:web)             # Configure web dyno metrics
-#     config.dyno(:worker) do       # Configure worker dyno metrics
-#       HireFire::Macro::Sidekiq.job_queue_latency(:critical, :high, :default, :low)
+#     config.logger = Rails.logger  # Use to Rails.logger
+#     config.dyno(:web)             # Capture web dyno metrics
+#     config.dyno(:worker) do       # Provide worker dyno metrics
+#       HireFire::Macro::Sidekiq.job_queue_latency(:default)
 #     end
 #   end
 module HireFire
   extend self
 
-  # Yields the singleton configuration instance to a block for customization.  This method is
+  # Yields the singleton configuration instance to a block for customization. This method is
   # typically invoked from an initializer or setup script.
   #
   # @yield [Configuration] The singleton configuration instance for modification.

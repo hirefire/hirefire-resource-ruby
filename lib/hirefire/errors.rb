@@ -2,7 +2,7 @@
 
 module HireFire
   module Errors
-    # Raised when no queue name is specified for macros that explicitly require it.  This error
+    # Raised when no queue name is specified for macros that explicitly require it. This error
     # occurs during when calling macro functions where at least one queue name must be provided to
     # measure job queue metrics.
     class MissingQueueError < StandardError; end

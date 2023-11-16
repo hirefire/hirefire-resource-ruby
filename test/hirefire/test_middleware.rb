@@ -40,6 +40,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     response = @request.get("/hirefire/SOME_TOKEN/info")
     expected_body = [{name: "worker", value: 5}].to_json
     assert_equal 200, response.status
+    assert_equal "Ruby-#{HireFire::VERSION}", response.headers["HireFire-Resource"]
     assert_equal expected_body, response.body
   end
 

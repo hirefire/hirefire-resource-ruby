@@ -6,6 +6,7 @@ class HireFire::WebTest < Minitest::Test
   def setup
     HireFire.configuration.logger = Logger.new("/dev/null")
     ENV["HIREFIRE_TOKEN"] = "8ab101e2-51da-49bc-beba-111dec49a287"
+    WebMock.reset_executed_requests!
   end
 
   def test_starts_and_stops_correctly
@@ -37,7 +38,9 @@ class HireFire::WebTest < Minitest::Test
 
   def test_successful_dispatch_post
     web = HireFire::Web.new
-    stub_request(:post, "https://logdrain.hirefire.io/").to_return(status: 200)
+    request = stub_request(:post, "https://logdrain.hirefire.io/")
+      .with(headers: {"HireFire-Resource" => "Ruby-#{HireFire::VERSION}"})
+      .to_return(status: 200)
     web.add_to_buffer(5)
 
     log_output = StringIO.new
@@ -45,6 +48,7 @@ class HireFire::WebTest < Minitest::Test
     web.dispatch
 
     assert log_output.string.empty?
+    assert_requested request
   end
 
   def test_dispatch_post_with_unexpected_response_code

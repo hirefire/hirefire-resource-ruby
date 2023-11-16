@@ -81,7 +81,8 @@ module HireFire
         200,
         {
           "Content-Type" => "application/json",
-          "Cache-Control" => "must-revalidate, private, max-age=0"
+          "Cache-Control" => "must-revalidate, private, max-age=0",
+          "HireFire-Resource" => "Ruby-#{HireFire::VERSION}"
         },
         [
           HireFire.configuration.workers.map do |worker|

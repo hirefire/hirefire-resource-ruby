@@ -159,6 +159,7 @@ module HireFire
       request = Net::HTTP::Post.new(uri.request_uri)
       request["Content-Type"] = "application/json"
       request["HireFire-Token"] = ENV["HIREFIRE_TOKEN"]
+      request["HireFire-Resource"] = "Ruby-#{HireFire::VERSION}"
       request.body = buffer.to_json
       response = http.request(request)
 

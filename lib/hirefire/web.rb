@@ -10,11 +10,6 @@ module HireFire
   # for independent metric collection and dispatch.  It is thread-safe, suitable for multithreaded
   # servers, using a Mutex to prevent race conditions.
   class Web
-    # Raised when the HIREFIRE_TOKEN environment variable is not set. This error is triggered during
-    # the dispatch process if the token required for authentication with HireFire's servers is
-    # missing.
-    class TokenNotFoundError < StandardError; end
-
     # Raised for network-related issues, such as connectivity problems or DNS failures, encountered
     # during communication with HireFire's servers.
     class NetworkError < StandardError; end
@@ -39,9 +34,10 @@ module HireFire
     BUFFER_TTL = 60
 
     def initialize
-      @buffer = {} # Stores request queue time metrics with timestamps. It's a hash mapping
-                   # timestamps to arrays of metrics. Metrics older than `BUFFER_TTL` are discarded
-                   # to maintain relevance and minimize memory usage.
+      # Stores request queue time metrics with timestamps. It's a hash mapping
+      # timestamps to arrays of metrics. Metrics older than `BUFFER_TTL` are discarded
+      # to maintain relevance and minimize memory usage.
+      @buffer = {}
       @mutex = Mutex.new # Ensures thread-safe access to @buffer.
       @running = false # Indicates the state of the dispatcher (running or not).
     end
@@ -155,10 +151,6 @@ module HireFire
     # @return [Net::HTTPResponse] Server response.
     # @raise [NetworkError, TimeoutError, ServerError] For various error scenarios.
     def submit_buffer(buffer)
-      if ENV["HIREFIRE_TOKEN"].nil?
-        raise TokenNotFoundError, "HIREFIRE_TOKEN environment variable is not set."
-      end
-
       uri = URI.parse("https://logdrain.hirefire.io/")
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = true
@@ -182,8 +174,6 @@ module HireFire
       raise TimeoutError, "Request timed out."
     rescue SocketError => e
       raise NetworkError, "Network error occurred (#{e.message})."
-    rescue TokenNotFoundError => e
-      raise e
     rescue => e
       raise NetworkError, "An unexpected error occurred (#{e.message})."
     end

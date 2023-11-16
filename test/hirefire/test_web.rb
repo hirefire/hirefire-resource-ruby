@@ -114,20 +114,6 @@ class HireFire::WebTest < Minitest::Test
       "[HireFire] Error while dispatching web metrics: Network error occurred (Failed)."
   end
 
-  def test_dispatch_post_with_missing_token
-    ENV["HIREFIRE_TOKEN"] = nil
-
-    web = HireFire::Web.new
-    web.add_to_buffer(7)
-
-    log_output = StringIO.new
-    HireFire.configuration.logger = Logger.new(log_output)
-    web.dispatch
-
-    assert_includes log_output.string,
-      "[HireFire] Error while dispatching web metrics: HIREFIRE_TOKEN environment variable is not set."
-  end
-
   def test_buffer_repopulation_after_dispatch_failure
     web = HireFire::Web.new
     stub_request(:post, "https://logdrain.hirefire.io/").to_return(status: 500)

@@ -4,27 +4,21 @@ require "json"
 require "net/http"
 
 module HireFire
-  # The Web class is responsible for collecting and dispatching web
-  # metrics to the HireFire server. This class is designed to function
-  # efficiently in various web server architectures, including both
-  # non-forked (single-process) and forked (multi-process) server
-  # models.
+  # The Web class is responsible for collecting and dispatching web metrics to HireFire's
+  # servers. This class is designed to function efficiently in various web server architectures,
+  # including both non-forked (single-process) and forked (multi-process) server models.
   #
-  # In a forked environment, such as when using Puma workers, each
-  # worker process will have its own Web instance. This separation
-  # ensures that metrics are collected and dispatched independently by
-  # each process. For this reason, it's recommended to start the Web
-  # instances within a Rack middleware. This ensures that each forked
-  # worker process initializes its own web instance and associated
-  # dispatcher thread.
+  # In a forked environment, such as when using Puma workers, each worker process will have its own
+  # Web instance. This separation ensures that metrics are collected and dispatched independently by
+  # each process. For this reason, it's recommended to start the Web instances within a Rack
+  # middleware. This ensures that each forked worker process initializes its own web instance and
+  # associated dispatcher thread.
   #
-  # Additionally, Web is also thread-safe, making it compatible with
-  # multithreaded servers like Puma's threaded mode. This is achieved
-  # using a Mutex, which ensures that concurrent collection of
-  # metrics, modifications to the buffer, and other critical sections
-  # by multiple threads are properly synchronized. This approach
-  # prevents race conditions and maintains data integrity even when
-  # operating in high concurrency environments.
+  # Additionally, Web is also thread-safe, making it compatible with multithreaded servers like
+  # Puma's threaded mode. This is achieved using a Mutex, which ensures that concurrent collection
+  # of metrics, modifications to the buffer, and other critical sections by multiple threads are
+  # properly synchronized. This approach prevents race conditions and maintains data integrity even
+  # when operating in high concurrency environments.
   class Web
     # Raised when the HIREFIRE_TOKEN environment variable is not set.
     class TokenNotFoundError < StandardError; end
@@ -48,13 +42,11 @@ module HireFire
     BUFFER_TTL = 60
 
     def initialize
-      # @buffer is a hash where the keys are timestamps (in seconds
-      # since the Epoch) and the values are arrays of request queue
-      # time metrics that have been added at that particular timestamp
-      # on a per-request basis. Metrics older than the `BUFFER_TTL`
-      # value (defined below) will be automatically discarded,
-      # ensuring the buffer contains only recent and relevant data and
-      # that memory usage remains minimal.
+      # @buffer is a hash where the keys are timestamps (in seconds since the Epoch) and the values
+      # are arrays of request queue time metrics that have been added at that particular timestamp
+      # on a per-request basis. Metrics older than the `BUFFER_TTL` value (defined below) will be
+      # automatically discarded, ensuring the buffer contains only recent and relevant data and that
+      # memory usage remains minimal.
       #
       # Example of @buffer contents:
       # {
@@ -62,23 +54,20 @@ module HireFire
       #   1634367002 => [10, 12, 8]
       # }
       #
-      # The purpose of this structure is to batch metrics added at the
-      # same second together, allowing for more efficient dispatching
-      # to the HireFire server. When metrics are dispatched, the entire
-      # buffer is flushed to prevent duplicate data transmission.
+      # The purpose of this structure is to batch metrics added at the same second together,
+      # allowing for more efficient dispatching to HireFire's servers. When metrics are dispatched,
+      # the entire buffer is flushed to prevent duplicate data transmission.
       @buffer = {}
       @mutex = Mutex.new
       @running = false
     end
 
-    # Starts the dispatcher in a separate thread to continuously
-    # dispatch web metrics to the HireFire server. The dispatcher will
-    # attempt to send the metrics at intervals defined by the
+    # Starts the dispatcher in a separate thread to continuously dispatch web metrics to HireFire's
+    # servers. The dispatcher will attempt to send the metrics at intervals defined by the
     # `DISPATCH_INTERVAL` constant.
     #
-    # If the dispatcher is already running, this method will have no
-    # effect. After starting, the dispatcher will log an
-    # informational message indicating its state.
+    # If the dispatcher is already running, this method will have no effect. After starting, the
+    # dispatcher will log an informational message indicating its state.
     #
     # @example
     #   web = HireFire::Web.new
@@ -147,10 +136,9 @@ module HireFire
       end
     end
 
-    # Flushes the current buffer, returning its contents.  After
-    # calling this method, the internal buffer will be reset to an
-    # empty state, ensuring that the same data isn't dispatched more
-    # than once.
+    # Flushes the current buffer, returning its contents.  After calling this method, the internal
+    # buffer will be reset to an empty state, ensuring that the same data isn't dispatched more than
+    # once.
     #
     # @return [Hash] The contents of the current buffer before it was cleared.
     def flush
@@ -159,17 +147,9 @@ module HireFire
       end
     end
 
-    # Dispatches the buffer contents to the HireFire servers.
+    # Dispatches the buffer contents to HireFire's servers. If the buffer is empty, no action is
+    # taken.
     #
-    # The method first flushes the current buffer, ensuring that
-    # metrics are cleared from the buffer once they are dispatched. If
-    # the buffer is empty, no action will be taken.
-    #
-    # If an error occurs during the dispatch process, the flushed
-    # buffer's contents are repopulated back into the main buffer so
-    # that no metrics are lost. This ensures that metrics are retained
-    # and can be attempted for dispatch in subsequent iterations.  Any
-    # errors encountered during dispatch are also logged.
     def dispatch
       return unless (buffer = flush).any?
       submit_buffer(buffer)
@@ -180,21 +160,19 @@ module HireFire
 
     private
 
-    # Retrieves the logger instance from the global configuration.
-    # The logger can be changed using `HireFire::Resource.configuration.logger=`.
+    # Retrieves the logger instance from the global configuration.  The logger can be changed using
+    # `HireFire::Resource.configuration.logger=`.
     #
     # @return [Logger] The logger used for logging messages.
     def logger
       HireFire.configuration.logger
     end
 
-    # Repopulates the main buffer with the passed buffer's contents,
-    # filtering out any entries older than the `BUFFER_TTL` value to
-    # ensure only recent data is preserved.
+    # Repopulates the main buffer with the passed buffer's contents, filtering out any entries older
+    # than the `BUFFER_TTL` value to ensure only recent data is preserved.
     #
-    # The `BUFFER_TTL` value represents the duration (in seconds) an
-    # entry should be kept in the buffer before being considered stale
-    # and discarded.
+    # The `BUFFER_TTL` value represents the duration (in seconds) an entry should be kept in the
+    # buffer before being considered stale and discarded.
     #
     # @param buffer [Hash] The buffer to be merged back to the main
     #  buffer, with each key representing a timestamp and each value
@@ -210,11 +188,9 @@ module HireFire
       end
     end
 
-    # Sends a POST request to the HireFire server with the buffer
-    # contents.  This private method ensures that the contents of the
-    # buffer are transmitted securely using HTTPS. It handles HTTP
-    # success and server error responses, raising corresponding
-    # exceptions for error statuses.
+    # Sends a POST request to HireFire's servers with the buffer contents.  This private method
+    # ensures that the contents of the buffer are transmitted securely using HTTPS. It handles HTTP
+    # success and server error responses, raising corresponding exceptions for error statuses.
     #
     # @param buffer [Hash] The buffer to be sent to the server.
     # @return [Net::HTTPResponse] The server's response.

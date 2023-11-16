@@ -4,74 +4,51 @@ require "json"
 require "net/http"
 
 module HireFire
-  # The Web class is responsible for collecting and dispatching web metrics to HireFire's
-  # servers. This class is designed to function efficiently in various web server architectures,
-  # including both non-forked (single-process) and forked (multi-process) server models.
-  #
-  # In a forked environment, such as when using Puma workers, each worker process will have its own
-  # Web instance. This separation ensures that metrics are collected and dispatched independently by
-  # each process. For this reason, it's recommended to start the Web instances within a Rack
-  # middleware. This ensures that each forked worker process initializes its own web instance and
-  # associated dispatcher thread.
-  #
-  # Additionally, Web is also thread-safe, making it compatible with multithreaded servers like
-  # Puma's threaded mode. This is achieved using a Mutex, which ensures that concurrent collection
-  # of metrics, modifications to the buffer, and other critical sections by multiple threads are
-  # properly synchronized. This approach prevents race conditions and maintains data integrity even
-  # when operating in high concurrency environments.
+  # The Web class handles collecting and dispatching web metrics to HireFire's servers. It is
+  # designed to work efficiently in different web server architectures, both non-forked and
+  # forked. Each process in a forked environment, like Puma workers, will have its own Web instance
+  # for independent metric collection and dispatch.  It is thread-safe, suitable for multithreaded
+  # servers, using a Mutex to prevent race conditions.
   class Web
-    # Raised when the HIREFIRE_TOKEN environment variable is not set.
+    # Raised when the HIREFIRE_TOKEN environment variable is not set. This error is triggered during
+    # the dispatch process if the token required for authentication with HireFire's servers is
+    # missing.
     class TokenNotFoundError < StandardError; end
 
-    # Raised when there is a network-related issue.
+    # Raised for network-related issues, such as connectivity problems or DNS failures, encountered
+    # during communication with HireFire's servers.
     class NetworkError < StandardError; end
 
-    # Raised when the request to the server times out.
+    # Raised when a request to HireFire's servers times out. This typically indicates network
+    # congestion or an unresponsive server.
     class TimeoutError < StandardError; end
 
-    # Raised when the server returns a 5xx status.
+    # Raised when HireFire's servers return a 5xx status, indicating a server-side error.
     class ServerError < StandardError; end
 
-    # The interval between dispatch attempts in seconds.
+    # The interval (in seconds) between attempts to dispatch metrics. The default value strikes a
+    # balance between timely updates and minimizing network traffic.
     DISPATCH_INTERVAL = 5
 
-    # The timeout for HTTP requests in seconds.
+    # The timeout (in seconds) for HTTP requests. This value is chosen to promptly detect
+    # unresponsive network conditions while allowing for typical network latency.
     DISPATCH_TIMEOUT = 5
 
-    # Metrics older than this value will be discarded.
+    # Age threshold (in seconds) for discarding metrics. Metrics older than this are considered
+    # stale and are not dispatched, ensuring the relevance and timeliness of the data sent.
     BUFFER_TTL = 60
 
     def initialize
-      # @buffer is a hash where the keys are timestamps (in seconds since the Epoch) and the values
-      # are arrays of request queue time metrics that have been added at that particular timestamp
-      # on a per-request basis. Metrics older than the `BUFFER_TTL` value (defined below) will be
-      # automatically discarded, ensuring the buffer contains only recent and relevant data and that
-      # memory usage remains minimal.
-      #
-      # Example of @buffer contents:
-      # {
-      #   1634367001 => [3, 9],
-      #   1634367002 => [10, 12, 8]
-      # }
-      #
-      # The purpose of this structure is to batch metrics added at the same second together,
-      # allowing for more efficient dispatching to HireFire's servers. When metrics are dispatched,
-      # the entire buffer is flushed to prevent duplicate data transmission.
-      @buffer = {}
-      @mutex = Mutex.new
-      @running = false
+      @buffer = {} # Stores request queue time metrics with timestamps. It's a hash mapping
+                   # timestamps to arrays of metrics. Metrics older than `BUFFER_TTL` are discarded
+                   # to maintain relevance and minimize memory usage.
+      @mutex = Mutex.new # Ensures thread-safe access to @buffer.
+      @running = false # Indicates the state of the dispatcher (running or not).
     end
 
-    # Starts the dispatcher in a separate thread to continuously dispatch web metrics to HireFire's
-    # servers. The dispatcher will attempt to send the metrics at intervals defined by the
-    # `DISPATCH_INTERVAL` constant.
-    #
-    # If the dispatcher is already running, this method will have no effect. After starting, the
-    # dispatcher will log an informational message indicating its state.
-    #
-    # @example
-    #   web = HireFire::Web.new
-    #   web.start
+    # Starts the dispatcher in a new thread, sending metrics at intervals set by
+    # `DISPATCH_INTERVAL`. If the dispatcher is already running, this method does nothing. Logs the
+    # dispatcher's state upon starting.
     def start
       @mutex.synchronize do
         return if @running
@@ -92,20 +69,10 @@ module HireFire
       end
     end
 
-    # Stops the dispatcher thread, ensuring that no further metrics are dispatched to the HireFire
-    # server. If the dispatcher is not currently running, this method will have no effect.
-    #
-    # The method waits for the dispatcher's thread to complete (up to the duration specified by the
-    # `DISPATCH_TIMEOUT` constant) before marking it as stopped. After stopping, the dispatcher will
-    # log an informational message indicating its state.
-    #
-    # The buffer will be cleared after stopping the dispatcher.
-    #
-    # @example
-    #   web = HireFire::Web.new
-    #   web.start
-    #   # ... some time later ...
-    #   web.stop
+    # Stops the dispatcher thread, halting metric dispatch. If the dispatcher isn't running, this
+    # method does nothing. Waits for the dispatcher's thread to complete, up to `DISPATCH_TIMEOUT`,
+    # before marking it as stopped.  Logs the dispatcher's state upon stopping. Clears the buffer
+    # after stopping.
     def stop
       @mutex.synchronize do
         return unless @running
@@ -120,14 +87,14 @@ module HireFire
       logger.info "[HireFire] Web metrics dispatcher stopped."
     end
 
-    # @return [Boolean] True if the dispatcher is running, false otherwise.
+    # Returns the running state of the dispatcher.
+    # @return [Boolean] True if running, false otherwise.
     def running?
       @mutex.synchronize { @running }
     end
 
-    # Adds a value to the buffer with the current timestamp.
-    #
-    # @param value [Integer] The request queue time in milliseconds to be added to the buffer.
+    # Adds a metric value to the buffer with the current timestamp. Thread-safe.
+    # @param value [Integer] The request queue time in milliseconds.
     def add_to_buffer(value)
       @mutex.synchronize do
         timestamp = Time.now.to_i
@@ -136,20 +103,16 @@ module HireFire
       end
     end
 
-    # Flushes the current buffer, returning its contents.  After calling this method, the internal
-    # buffer will be reset to an empty state, ensuring that the same data isn't dispatched more than
-    # once.
-    #
-    # @return [Hash] The contents of the current buffer before it was cleared.
+    # Clears and returns the buffer's contents. Ensures no data duplication in dispatch.
+    # @return [Hash] Buffer contents prior to clearing.
     def flush
       @mutex.synchronize do
         @buffer.tap { @buffer = {} }
       end
     end
 
-    # Dispatches the buffer contents to HireFire's servers. If the buffer is empty, no action is
-    # taken.
-    #
+    # Dispatches buffer contents to HireFire's servers. Skips dispatch if buffer is empty.  Handles
+    # exceptions by logging and repopulating the buffer.
     def dispatch
       return unless (buffer = flush).any?
       submit_buffer(buffer)
@@ -160,23 +123,15 @@ module HireFire
 
     private
 
-    # Retrieves the logger instance from the global configuration.  The logger can be changed using
-    # `HireFire::Resource.configuration.logger=`.
-    #
-    # @return [Logger] The logger used for logging messages.
+    # Provides a logger instance from HireFire's global configuration for logging messages.
+    # @return [Logger] The configured logger.
     def logger
       HireFire.configuration.logger
     end
 
-    # Repopulates the main buffer with the passed buffer's contents, filtering out any entries older
-    # than the `BUFFER_TTL` value to ensure only recent data is preserved.
-    #
-    # The `BUFFER_TTL` value represents the duration (in seconds) an entry should be kept in the
-    # buffer before being considered stale and discarded.
-    #
-    # @param buffer [Hash] The buffer to be merged back to the main
-    #  buffer, with each key representing a timestamp and each value
-    #  being an array of numbers for that timestamp.
+    # Merges given buffer contents back into the main buffer, discarding entries older than
+    # `BUFFER_TTL`.
+    # @param buffer [Hash] Buffer contents to merge back.
     def repopulate_buffer(buffer)
       now = Time.now.to_i
       @mutex.synchronize do
@@ -188,15 +143,11 @@ module HireFire
       end
     end
 
-    # Sends a POST request to HireFire's servers with the buffer contents.  This private method
-    # ensures that the contents of the buffer are transmitted securely using HTTPS. It handles HTTP
-    # success and server error responses, raising corresponding exceptions for error statuses.
-    #
-    # @param buffer [Hash] The buffer to be sent to the server.
-    # @return [Net::HTTPResponse] The server's response.
-    # @raise [NetworkError] If there's any network-related issue.
-    # @raise [TimeoutError] If the request times out.
-    # @raise [ServerError] If the server returns a 5xx status, indicating server-side error.
+    # Sends buffer contents to HireFire's servers via a secure HTTPS POST request. Handles HTTP
+    # success and error responses, raising exceptions for error statuses.
+    # @param buffer [Hash] The buffer contents to send.
+    # @return [Net::HTTPResponse] Server response.
+    # @raise [NetworkError, TimeoutError, ServerError] For various error scenarios.
     def submit_buffer(buffer)
       if ENV["HIREFIRE_TOKEN"].nil?
         raise TokenNotFoundError, "HIREFIRE_TOKEN environment variable is not set."

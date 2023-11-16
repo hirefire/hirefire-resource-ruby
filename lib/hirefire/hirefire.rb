@@ -2,55 +2,38 @@
 
 require "logger"
 
-# The `HireFire` module is the main entry point for integrating the `hirefire-resource` gem into
-# your application. It provides a configuration interface to define how HireFire should collect,
-# serve, and dispatch metrics. These metrics are required for the Heroku autoscaling decisions made
-# by your dyno managers on HireFire. Through this module, you can configure which metrics to collect
-# for web and worker dynos, and how these metrics should be gathered. You can also specify a custom
-# logger.
+# The `HireFire` module serves as the primary interface for integrating the `hirefire-resource` gem
+# into your application. It offers a configuration interface to specify how metrics (such as job
+# queue latency and job queue size) should be collected, served, and dispatched for web and worker
+# dynos. These metrics enables making autoscaling decisions for Heroku dynos. A custom logger can
+# also be configured.
 #
-# This setup is usually done in an initializer within a Rails application (e.g.,
-# config/initializers/hirefire.rb). For other Ruby applications, the configuration should be placed
-# in a part of your codebase that is executed during application boot.
+# Configuration is typically done in an initializer in Rails (e.g., config/initializers/hirefire.rb)
+# or during the application boot process in other Ruby applications.
 #
-# @example Configuring HireFire to collect metrics for web (i.e. Puma) and worker (i.e. Sidekiq)
+# @example Configuring HireFire for web and worker dyno metrics
 #   HireFire.configure do |config|
-#     # Configure HireFire to use the Rails.logger
-#     config.logger = Rails.logger
-#
-#     # Configure HireFire to collect request queue time metrics and
-#     # periodically dispatch them. This matches the web dyno entry
-#     # in the Procfile.
-#     config.dyno(:web)
-#
-#     # Configure HireFire to measure Sidekiq latency across the
-#     # critical, high, default and low queues, and make these
-#     # metrics available to HireFire. This matches the worker dyno
-#     # entry in the Procfile.
-#     config.dyno(:worker) do
+#     config.logger = Rails.logger  # Set a custom logger
+#     config.dyno(:web)             # Configure web dyno metrics
+#     config.dyno(:worker) do       # Configure worker dyno metrics
 #       HireFire::Macro::Sidekiq.job_queue_latency(:critical, :high, :default, :low)
 #     end
 #   end
 module HireFire
   extend self
 
-  # Yields the current configuration to a block, allowing for
-  # configuration of the `hirefire-resource` gem. This method is
-  # typically called from an initializer file or any other setup
-  # script in your application.
+  # Yields the singleton configuration instance to a block for customization.  This method is
+  # typically invoked from an initializer or setup script.
   #
-  # @yield [Configuration] The current configuration instance to be
-  #   modified by the block.
+  # @yield [Configuration] The singleton configuration instance for modification.
   def configure
     yield configuration
   end
 
-  # Accessor for the current configuration instance. If the
-  # configuration has not yet been set, it initializes a new
-  # Configuration instance. This method ensures that there is always
-  # a configuration instance to work with.
+  # Provides access to the singleton configuration instance. Initializes a new Configuration
+  # instance if not already set, ensuring a consistent configuration state.
   #
-  # @return [Configuration] The current configuration instance.
+  # @return [Configuration] The singleton configuration instance.
   def configuration
     @configuration ||= Configuration.new
   end

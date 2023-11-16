@@ -51,19 +51,19 @@ module HireFire
 
     attr_writer :log_queue_metrics
 
-    # Configures Web and Worker objects.
+    # Configures Web and Worker objects for HireFire.
     #
-    # The block is ignored for the Web object as it is not used for
-    # collecting web metrics.
+    # For the Web object, a block is not required nor used, as it does not involve custom metric
+    # collection logic.
     #
-    # The block is required for Worker objects as it should return the
-    # job queue latency or job queue size metric.
+    # For Worker objects, the block is required as it defines the logic for measuring job queue
+    # metrics such as latency or size. It should return an integer representing these metrics.
     #
     # @param name [Symbol, String] The name of the dyno as declared in the Procfile.
-    # @param block [Proc] Required for worker dynos and returns an integer representing
-    #   the job queue latency or job queue size metric. Ignored when name is :web.
-    # @raise [InvalidDynoName] If the dyno name is invalid according to Procfile naming restrictions.
-    # @raise [MissingDynoBlock] If a required block is not provided for a worker dyno.
+    # @param block [Proc] Required for worker dynos; returns an integer representing the job queue metric.
+    #   Ignored and not required for the :web dyno configuration.
+    # @raise [InvalidDynoName] If the dyno name doesn't conform to Procfile naming constraints.
+    # @raise [MissingDynoBlock] If the required block is not provided for a worker dyno.
     # @example Configuring HireFire to dispatch web dyno metrics
     #   HireFire::Resource.configure do |config|
     #     config.dyno(:web)

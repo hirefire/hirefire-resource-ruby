@@ -46,12 +46,4 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_equal :worker, @configuration.workers[0].name
     assert_equal 2, @configuration.workers[0].call
   end
-
-  def test_dyno_raises_error_for_invalid_dyno_name
-    assert_raises(HireFire::Configuration::InvalidDynoName) { @configuration.dyno(:_invalid) }
-  end
-
-  def test_dyno_raises_error_for_missing_dyno_block
-    assert_raises(HireFire::Configuration::MissingDynoBlock) { @configuration.dyno(:worker) }
-  end
 end

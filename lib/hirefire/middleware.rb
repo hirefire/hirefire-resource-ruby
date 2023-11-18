@@ -61,7 +61,7 @@ module HireFire
       HireFire
         .configuration
         .web
-        .tap(&:start)
+        .tap(&:start_dispatcher)
         .add_to_buffer(request_queue_time)
     end
 

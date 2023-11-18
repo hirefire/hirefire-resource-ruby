@@ -15,7 +15,7 @@ class HireFire::MiddlewareTest < Minitest::Test
       config.dyno(:web)
     end
 
-    HireFire.configuration.web.expects(:start).never
+    HireFire.configuration.web.expects(:start_dispatcher).never
 
     response = @request.get("/")
     assert_equal 200, response.status
@@ -51,7 +51,7 @@ class HireFire::MiddlewareTest < Minitest::Test
       config.dyno(:web)
     end
 
-    HireFire.configuration.web.stub(:start, nil) do
+    HireFire.configuration.web.stub(:start_dispatcher, nil) do
       Time.stub :now, Time.at(1) do
         request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
         @middleware.call(request)

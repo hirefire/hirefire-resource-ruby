@@ -6,17 +6,13 @@ module HireFire
   class Configuration
     attr_reader :web
     attr_reader :workers
+    attr_accessor :logger
 
     def initialize
       @web = nil
       @workers = []
+      @logger = Logger.new($stdout)
     end
-
-    def logger
-      @logger ||= Logger.new($stdout)
-    end
-
-    attr_writer :logger
 
     def log_queue_metrics
       @log_queue_metrics ||= false

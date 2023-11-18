@@ -15,7 +15,7 @@ module HireFire
       @running = false
     end
 
-    def start
+    def start_dispatcher
       @mutex.synchronize do
         return if @running
         @running = true
@@ -24,14 +24,14 @@ module HireFire
       logger.info "[HireFire] Starting web metrics dispatcher."
 
       @dispatcher = Thread.new do
-        while running?
-          dispatch
+        while dispatcher_running?
+          dispatch_buffer
           sleep DISPATCH_INTERVAL
         end
       end
     end
 
-    def stop
+    def stop_dispatcher
       @mutex.synchronize do
         return unless @running
         @running = false
@@ -40,12 +40,12 @@ module HireFire
       @dispatcher.join(DISPATCH_TIMEOUT)
       @dispatcher = nil
 
-      flush
+      flush_buffer
 
       logger.info "[HireFire] Web metrics dispatcher stopped."
     end
 
-    def running?
+    def dispatcher_running?
       @mutex.synchronize { @running }
     end
 
@@ -57,14 +57,14 @@ module HireFire
       end
     end
 
-    def flush
+    def flush_buffer
       @mutex.synchronize do
         @buffer.tap { @buffer = {} }
       end
     end
 
-    def dispatch
-      return unless (buffer = flush).any?
+    def dispatch_buffer
+      return unless (buffer = flush_buffer).any?
       submit_buffer(buffer)
     rescue => e
       repopulate_buffer(buffer)
@@ -72,10 +72,6 @@ module HireFire
     end
 
     private
-
-    def logger
-      HireFire.configuration.logger
-    end
 
     def repopulate_buffer(buffer)
       now = Time.now.to_i
@@ -115,6 +111,10 @@ module HireFire
       raise "Network error occurred (#{e.message})."
     rescue => e
       raise "An unexpected error occurred (#{e.message})."
+    end
+
+    def logger
+      HireFire.configuration.logger
     end
   end
 end

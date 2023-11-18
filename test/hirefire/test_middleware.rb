@@ -55,7 +55,7 @@ class HireFire::MiddlewareTest < Minitest::Test
       Time.stub :now, Time.at(1) do
         request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
         @middleware.call(request)
-        assert_equal ({1 => [1000]}), HireFire.configuration.web.flush
+        assert_equal ({1 => [1000]}), HireFire.configuration.web.flush_buffer
       end
     end
   end

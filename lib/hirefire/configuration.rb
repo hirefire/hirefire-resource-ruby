@@ -14,12 +14,6 @@ module HireFire
       @logger = Logger.new($stdout)
     end
 
-    def log_queue_metrics
-      @log_queue_metrics ||= false
-    end
-
-    attr_writer :log_queue_metrics
-
     def dyno(name, &block)
       if name.to_s == "web"
         @web = Web.new
@@ -27,5 +21,11 @@ module HireFire
         @workers << Worker.new(name, &block)
       end
     end
+
+    def log_queue_metrics
+      @log_queue_metrics ||= false
+    end
+
+    attr_writer :log_queue_metrics
   end
 end

@@ -11,17 +11,7 @@ module HireFire
     attr_reader :name
 
     def initialize(name, &block)
-      unless name.to_s.match?(PROCESS_NAME_PATTERN)
-        raise InvalidDynoName,
-          "Invalid name for #{self.class}#dyno(#{name}, &block). " \
-          "Ensure it matches the Procfile process name (i.e. web, worker)."
-      end
-
-      unless block
-        raise MissingDynoBlock,
-          "Missing block for #{self.class}#dyno(#{name}, &block). " \
-          "Ensure that you provide a block of code that returns the queue metric."
-      end
+      validate(name, &block)
 
       @name = name
       @block = block
@@ -29,6 +19,22 @@ module HireFire
 
     def call
       @block.call
+    end
+
+    private
+
+    def validate(name, &block)
+      unless name.to_s.match?(PROCESS_NAME_PATTERN)
+        raise InvalidDynoName,
+          "Invalid name for HireFire::Worker.new(#{name}, &block). " \
+          "Ensure it matches the Procfile process name (i.e. web, worker)."
+      end
+
+      unless block
+        raise MissingDynoBlock,
+          "Missing block for HireFire::Worker.new(#{name}, &block). " \
+          "Ensure that you provide a block that returns the job queue metric."
+      end
     end
   end
 end

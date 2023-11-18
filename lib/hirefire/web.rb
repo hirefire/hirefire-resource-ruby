@@ -5,12 +5,6 @@ require "net/http"
 
 module HireFire
   class Web
-    class NetworkError < StandardError; end
-
-    class TimeoutError < StandardError; end
-
-    class ServerError < StandardError; end
-
     DISPATCH_INTERVAL = 5
     DISPATCH_TIMEOUT = 5
     BUFFER_TTL = 60
@@ -31,11 +25,7 @@ module HireFire
 
       @dispatcher = Thread.new do
         while running?
-          begin
-            dispatch
-          rescue => e
-            logger.error "[HireFire] Unexpected error during dispatch: #{e.message}"
-          end
+          dispatch
           sleep DISPATCH_INTERVAL
         end
       end
@@ -115,16 +105,16 @@ module HireFire
       when Net::HTTPSuccess
         response
       when Net::HTTPServerError
-        raise ServerError, "Server responded with #{response.code} status."
+        raise "Server responded with #{response.code} status."
       else
-        raise NetworkError, "Unexpected response code #{response.code}."
+        raise "Unexpected response code #{response.code}."
       end
     rescue Timeout::Error
-      raise TimeoutError, "Request timed out."
+      raise "Request timed out."
     rescue SocketError => e
-      raise NetworkError, "Network error occurred (#{e.message})."
+      raise "Network error occurred (#{e.message})."
     rescue => e
-      raise NetworkError, "An unexpected error occurred (#{e.message})."
+      raise "An unexpected error occurred (#{e.message})."
     end
   end
 end

@@ -64,6 +64,8 @@ HireFire.configure do |config|
   config.dyno(:web)
   # To collect Job Queue Latency metrics for autoscaling `worker` dynos
   config.dyno(:worker) { HireFire::Macro::Sidekiq.job_queue_latency(:default) }
+  # To use the Rails logger
+  config.logger = Rails.logger
 end
 ```
 

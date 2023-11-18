@@ -25,7 +25,7 @@ module HireFire
     attr_writer :log_queue_metrics
 
     def dyno(name, &block)
-      if name.to_s.downcase == "web"
+      if name.to_s == "web"
         @web = Web.new
       else
         @workers << Worker.new(name, &block)

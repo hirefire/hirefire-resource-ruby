@@ -9,14 +9,14 @@ class HireFire::WorkerTest < Minitest::Test
     assert_equal 2, worker.call
   end
 
-  def test_invalid_dyno_name_exception
-    assert_raises(HireFire::Worker::InvalidDynoName) do
+  def test_invalid_dyno_name_error
+    assert_raises(HireFire::Worker::InvalidDynoNameError) do
       HireFire::Worker.new("invalid name") { 1 + 1 }
     end
   end
 
-  def test_missing_dyno_block_exception
-    assert_raises(HireFire::Worker::MissingDynoBlock) do
+  def test_missing_dyno_block_error
+    assert_raises(HireFire::Worker::MissingDynoBlockError) do
       HireFire::Worker.new(:worker)
     end
   end

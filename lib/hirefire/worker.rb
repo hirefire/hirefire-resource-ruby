@@ -2,9 +2,9 @@
 
 module HireFire
   class Worker
-    class InvalidDynoName < StandardError; end
+    class InvalidDynoNameError < StandardError; end
 
-    class MissingDynoBlock < StandardError; end
+    class MissingDynoBlockError < StandardError; end
 
     PROCESS_NAME_PATTERN = /\A[a-zA-Z][a-zA-Z0-9_]{0,29}\z/
 
@@ -25,13 +25,13 @@ module HireFire
 
     def validate(name, &block)
       unless name.to_s.match?(PROCESS_NAME_PATTERN)
-        raise InvalidDynoName,
+        raise InvalidDynoNameError,
           "Invalid name for HireFire::Worker.new(#{name}, &block). " \
           "Ensure it matches the Procfile process name (i.e. web, worker)."
       end
 
       unless block
-        raise MissingDynoBlock,
+        raise MissingDynoBlockError,
           "Missing block for HireFire::Worker.new(#{name}, &block). " \
           "Ensure that you provide a block that returns the job queue metric."
       end

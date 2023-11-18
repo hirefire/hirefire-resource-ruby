@@ -68,7 +68,7 @@ module HireFire
       submit_buffer(buffer)
     rescue => e
       repopulate_buffer(buffer)
-      logger.warn "[HireFire] Error while dispatching web metrics: #{e.message}"
+      logger.error "[HireFire] Error while dispatching web metrics: #{e.message}"
     end
 
     private

@@ -12,13 +12,13 @@ module HireFire
     def initialize
       @buffer = {}
       @mutex = Mutex.new
-      @running = false
+      @dispatcher_running = false
     end
 
     def start_dispatcher
       @mutex.synchronize do
-        return if @running
-        @running = true
+        return if @dispatcher_running
+        @dispatcher_running = true
       end
 
       logger.info "[HireFire] Starting web metrics dispatcher."
@@ -33,8 +33,8 @@ module HireFire
 
     def stop_dispatcher
       @mutex.synchronize do
-        return unless @running
-        @running = false
+        return unless @dispatcher_running
+        @dispatcher_running = false
       end
 
       @dispatcher.join(DISPATCH_TIMEOUT)
@@ -46,7 +46,7 @@ module HireFire
     end
 
     def dispatcher_running?
-      @mutex.synchronize { @running }
+      @mutex.synchronize { @dispatcher_running }
     end
 
     def add_to_buffer(value)

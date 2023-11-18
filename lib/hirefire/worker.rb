@@ -12,7 +12,6 @@ module HireFire
 
     def initialize(name, &block)
       validate(name, &block)
-
       @name = name
       @block = block
     end

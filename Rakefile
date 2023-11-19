@@ -4,7 +4,7 @@ require "bundler/gem_tasks"
 require "standard/rake"
 
 APPRAISAL_FILES = {
-  "default" => %w[test_web.rb test_worker.rb test_configuration.rb test_resource.rb test_errors.rb],
+  "default" => %w[test_configuration.rb test_errors.rb test_resource.rb test_version.rb test_web.rb test_worker.rb],
   "rack" => %w[test_middleware.rb],
   "sidekiq" => %w[macro/test_sidekiq.rb],
   "bunny" => %w[macro/test_bunny.rb],

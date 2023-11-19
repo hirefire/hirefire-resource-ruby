@@ -71,7 +71,9 @@ change is due to the fact that automatic inference has previously led to unexpec
 For example, if previously you were doing the following:
 
 ```rb
-HireFire::Macro::Sidekiq.queue # infers all queues
+HireFire::Macro::Sidekiq.queue   # defaulted to all queues
+# or
+HireFire::Macro::Sidekiq.latency # defaulted to "default"
 ```
 
 To maintain the same behavior, you must now explicitly pass in the queues that the worker dyno works on.
@@ -86,7 +88,11 @@ Would require the following call:
 
 ```rb
 HireFire::Macro::Sidekiq.job_queue_size(:critical, :default, :low)
+# or
+HireFire::Macro::Sidekiq.job_queue_latency(:critical, :default, :low)
 ```
+
+Depending on whether you're using the Job Queue Size or Job Queue Latency autoscaling strategy.
 
 This applies to all macro functions.
 

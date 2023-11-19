@@ -25,13 +25,10 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_empty @configuration.workers
   end
 
-  def test_log_queue_metrics_default_to_false
-    refute @configuration.log_queue_metrics
-  end
-
-  def test_can_set_log_queue_metrics
-    @configuration.log_queue_metrics = true
-    assert @configuration.log_queue_metrics
+  def test_log_queue_metrics_unsupported_error
+    assert_raises(HireFire::Configuration::LogQueueMetricsUnsupportedError) do
+      @configuration.log_queue_metrics = true
+    end
   end
 
   def test_configure_web

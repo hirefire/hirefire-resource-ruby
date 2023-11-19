@@ -44,16 +44,8 @@ module HireFire
     end
 
     def process_request_queue_time(env)
-      return unless (timestamp = env["HTTP_X_REQUEST_START"])
-
-      if HireFire.configuration.web && ENV["HIREFIRE_TOKEN"]
-        collect_request_queue_time(
-          calculate_request_queue_time(timestamp)
-        )
-      elsif HireFire.configuration.log_queue_metrics
-        log_request_queue_time(
-          calculate_request_queue_time(timestamp)
-        )
+      if HireFire.configuration.web && ENV["HIREFIRE_TOKEN"] && env["HTTP_X_REQUEST_START"]
+        collect_request_queue_time(calculate_request_queue_time(env["HTTP_X_REQUEST_START"]))
       end
     end
 
@@ -63,10 +55,6 @@ module HireFire
         .web
         .tap(&:start_dispatcher)
         .add_to_buffer(request_queue_time)
-    end
-
-    def log_request_queue_time(request_queue_time)
-      puts "[hirefire:router] queue=#{request_queue_time}ms"
     end
 
     def calculate_request_queue_time(timestamp)

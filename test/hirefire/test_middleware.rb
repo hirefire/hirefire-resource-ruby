@@ -59,16 +59,4 @@ class HireFire::MiddlewareTest < Minitest::Test
       end
     end
   end
-
-  def test_pass_through_and_process_logplex_configuration
-    HireFire.configure do |config|
-      config.log_queue_metrics = true
-    end
-
-    Time.stub :now, Time.at(1) do
-      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
-      stdout = capture { @middleware.call(request) }
-      assert_includes stdout, "[hirefire:router] queue=1000ms"
-    end
-  end
 end

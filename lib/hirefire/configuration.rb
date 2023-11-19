@@ -40,14 +40,14 @@ module HireFire
         to your Heroku application. You can find this token in the web dyno manager in the HireFire
         UI. If you are already autoscaling worker dynos, you should already have this token set.
 
-          $ heroku config -a <APP_NAME> | grep HIREFIRE_TOKEN
+          $ heroku config -a <application> | grep HIREFIRE_TOKEN
 
         With this change, metric data will no longer be logged to STDOUT and forwarded via the
         Heroku Logplex. Instead, it will be sent directly from your web dynos to HireFire's servers.
 
         After deploying this change, you can also remove the Heroku logdrain:
 
-          $ heroku drains:remove https://logdrain.hirefire.io -a <APP_NAME>
+          $ heroku drains:remove https://logdrain.hirefire.io -a <application>
 
         For more information, see CHANGELOG.md in:
 

@@ -4,7 +4,8 @@
 * `HireFire`:
   * Rename `HireFire::Resource` to `HireFire`. `HireFire::Resource` is now an alias of `HireFire` for backwards compatibility.
   * Add configuration option to specify a custom logger -- defaults to `Logger.new($stdout)`.
-  * Add `dyno(:web)` configuration option. Offers an alternative (and preferred) way to collect and transmit Request Queue Time metrics to HireFire, without involving the Heroku Logplex and HireFire Logdrain. Enabling both `dyno(:web)` and `log_queue_metrics = true` results in `dyno(:web)` taking precedence. Requires `HIREFIRE_TOKEN` to be set.
+  * Add `dyno(:web)` configuration option. This replaces the `log_queue_metrics = true` flag.
+  * Remove `log_queue_metrics` in favor of `dyno(:web)`.
 * `HireFire::Macro::Sidekiq.job_queue_latency`:
   * Rename `.latency` to `.job_queue_latency`.
   * Take into account jobs in the scheduled and retry sets.
@@ -59,6 +60,64 @@
   * Drop support for que 0.
   * Drop support for que 1.
   * Drop support for qu.
+
+### Migration - Macro Functions
+
+All `.queue` and `.latency` macro functions have been renamed to `.job_queue_size` and
+`.job_queue_latency` respectively. In addition, both functions now require you to explicitly pass in
+one or more queue names, as it will no longer infer which queues to monitor, as it has led to
+unexpected results.
+
+For example, if previously you were doing the following:
+
+```rb
+HireFire::Macro::Sidekiq.queue
+```
+
+To maintain the same behavior, you must pass in the queues that the worker dyno works on explicitly.
+
+For example, the following Sidekiq worker:
+
+```sh
+sidekiq -q critical,default,low
+```
+
+Would require the following call:
+
+```rb
+HireFire::Macro::Sidekiq.queue(:critical, :default, :low)
+```
+
+This applies to all macro functions.
+
+
+### Migration - Request Queue Time
+
+We're changing how we collect request queue time metric data. Up until now, the way we've collected
+and dispatched these metrics has been through the Heroku Logplex. The HireFire middleware would
+intercept requests in order to extract and process the relevant information and log this to stdout
+where it would be picked up by the Heroku Logplex, which would forward it to HireFire's Logdrain.
+Moving forward, the middleware will continue to collect and process these metrics, but it will now
+instead dispatch them directly from the web dynos to HireFire's servers.
+
+This has a couple of advantages:
+
+- Less overhead
+- Less log noise
+- No log forwarding required
+- No reliance on the availability of the Heroku Logplex
+- Simpler integration
+
+To make the change do the following:
+
+1. Remove `config.log_queue_metrics = true`
+2. Insert `config.dyno(:web)`
+3. Add the `HIREFIRE_TOKEN` environment variable to your Heroku application (*)
+4. Deploy these changes to Heroku
+
+\*If you're autoscaling workers, this should already be set. Otherwise, log in to HireFire retrieve
+the `HIREFIRE_TOKEN` from the web dyno manager page.
+
 
 ## v0.10.1
 

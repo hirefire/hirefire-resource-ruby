@@ -55,7 +55,7 @@ class HireFire::WebTest < Minitest::Test
     assert_requested request
   end
 
-  def test_dispatch_post_with_unexpected_response_code
+  def test_dispatch_with_unexpected_response_code
     stub_request(:post, "https://logdrain.hirefire.io/").to_return(status: 404)
     web.add_to_buffer(5)
     web.send :dispatch_buffer
@@ -64,7 +64,7 @@ class HireFire::WebTest < Minitest::Test
       "An unexpected error occurred (Unexpected response code 404.)."
   end
 
-  def test_dispatch_post_with_generic_exception
+  def test_dispatch_with_generic_exception
     stub_request(:post, "https://logdrain.hirefire.io/")
       .to_raise(StandardError.new("Some generic error"))
     web.add_to_buffer(8)
@@ -74,7 +74,7 @@ class HireFire::WebTest < Minitest::Test
       "An unexpected error occurred (Some generic error)."
   end
 
-  def test_dispatch_post_with_server_error
+  def test_dispatch_with_server_error
     stub_request(:post, "https://logdrain.hirefire.io/").to_return(status: 500)
     web.add_to_buffer(4)
     web.send :dispatch_buffer
@@ -83,7 +83,7 @@ class HireFire::WebTest < Minitest::Test
       "An unexpected error occurred (Server responded with 500 status.)."
   end
 
-  def test_dispatch_post_with_timeout
+  def test_dispatch_with_timeout
     stub_request(:post, "https://logdrain.hirefire.io/").to_timeout
     web.add_to_buffer(5)
     web.send :dispatch_buffer
@@ -92,7 +92,7 @@ class HireFire::WebTest < Minitest::Test
       "Request timed out."
   end
 
-  def test_dispatch_post_with_network_error
+  def test_dispatch_with_network_error
     stub_request(:post, "https://logdrain.hirefire.io/").to_raise(SocketError.new("Failed"))
     web.add_to_buffer(6)
     web.send :dispatch_buffer
@@ -104,9 +104,9 @@ class HireFire::WebTest < Minitest::Test
   def test_buffer_repopulation_after_dispatch_failure
     stub_request(:post, "https://logdrain.hirefire.io/").to_return(status: 500)
     web.add_to_buffer(7)
+    buffer = web.instance_variable_get(:@buffer)
     web.send :dispatch_buffer
-    buffer_contents_after_fail = web.send :flush_buffer
-    assert_equal [7], buffer_contents_after_fail.values.first
+    assert_equal buffer, web.send(:flush_buffer)
   end
 
   def test_buffer_ttl_discards_old_entries
@@ -117,8 +117,6 @@ class HireFire::WebTest < Minitest::Test
       web.add_to_buffer(8)
     end
     web.send :dispatch_buffer
-    buffer_contents_after_fail = web.send :flush_buffer
-    assert_equal [7], buffer_contents_after_fail.values.first
-    assert_nil buffer_contents_after_fail[past_timestamp]
+    assert_equal [[7]], web.send(:flush_buffer).values
   end
 end

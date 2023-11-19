@@ -116,13 +116,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue_working
   end
 
-  # Enqueues a `SampleWorker` job to be processed immediately. This
-  # helper method interacts with Sidekiq to insert a new job into the
-  # provided queue. The job will be processed as soon as a worker is
-  # available and there are no higher-priority jobs in the queue.
-  #
-  # @param queue [String] the name of the queue to which the job should be enqueued.
-  #
   def enqueue(queue: "default")
     Sidekiq::Client.push(
       "queue" => queue,
@@ -131,14 +124,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     )
   end
 
-  # Enqueues a job to be processed at a specific time in the future. This helper method
-  # interacts with Sidekiq to schedule a `SampleWorker` job using the provided queue and
-  # scheduled time. Sidekiq internally uses the "at" parameter to determine when the job
-  # should be moved from the scheduled set to the appropriate queue for processing.
-  #
-  # @param queue [String] the name of the queue to which the job should be scheduled.
-  # @param at [Integer] the unix timestamp when the job should be processed.
-  #
   def enqueue_scheduled(queue: "default", at: Time.now.to_i)
     Sidekiq::Client.push(
       "queue" => queue,
@@ -152,20 +137,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue_scheduled(queue: queue, at: Time.now.to_i + 60)
   end
 
-  # This helper method sets up a job in Sidekiq's retry set,
-  # simulating a job that has failed and needs to be retried.  It
-  # works as of Sidekiq versions 6 and 7. However, since this method
-  # interacts with Sidekiq at a low level, using Redis directly, it
-  # might break in future major Sidekiq updates. Therefore, it's
-  # recommended to test this method against any new major releases of
-  # Sidekiq.
-  #
-  # By default, the job is made immediately eligible for retry. If you
-  # want to simulate a delay before the job becomes eligible for
-  # retry, you can use the `retry_in` parameter.
-  #
-  # @param queue [String] the queue name to which the job should be pushed.
-  # @param retry_in [Integer] (Optional) The number of seconds to delay before the job becomes eligible for retry.
   def enqueue_retry(queue: "default", at: Time.now.to_i)
     jid = Sidekiq::Client.push(
       "queue" => queue,
@@ -192,17 +163,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue_retry(queue: "default", at: Time.now.to_i + 60)
   end
 
-  # This helper method sets up a job in Sidekiq's working set,
-  # simulating a job that is currently being processed.  It interacts
-  # with Sidekiq at a low level, using Redis directly, to mimic a job
-  # being in progress.  As with other methods that deal with low level
-  # Redis operations, it might break with future major Sidekiq
-  # updates.  Thus, it's recommended to test this method against any
-  # new major releases of Sidekiq.
-  #
-  # @param queue [String] the queue name to which the job should be pushed.
-  # @param run_at [Integer] the unix timestamp when the job started processing.
-  #
   def enqueue_working(queue: "default", run_at: Time.now.to_i - 60)
     Sidekiq.redis do |connection|
       process_key = "process:mock"
@@ -220,14 +180,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     end
   end
 
-  # Identifies the type of Redis client being used with Sidekiq.
-  #
-  # @note Sidekiq <= 6 uses :redis (redis gem)
-  # @note Sidekiq >= 7 uses :redis_client (redis_client gem)
-  # @param connection [Object] the active Redis connection.
-  # @return [Symbol] :redis or :redis_client
-  # @raise [RuntimeError] if the Redis client type cannot be identified.
-  #
   def identify_redis_client(connection)
     if defined?(::Sidekiq::RedisClientAdapter::CompatClient) && connection.is_a?(::Sidekiq::RedisClientAdapter::CompatClient)
       :redis_client

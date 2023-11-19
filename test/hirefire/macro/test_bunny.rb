@@ -84,20 +84,6 @@ class HireFire::Macro::BunnyTest < Minitest::Test
 
   private
 
-  # Establishes a connection to the RabbitMQ server and opens a channel.
-  # A queue with the specified options is then declared on this channel.
-  # This method is used to setup and teardown connection for test cases.
-  #
-  # @param options [Hash] the options for configuring the connection and queue.
-  # @option options [String, Symbol] :queue (default) the name of the queue.
-  # @option options [Boolean] :durable (false) whether the queue should be durable.
-  # @option options [Integer] :max_priority (nil) the maximum priority the queue should support.
-  # @yield [connection, channel, queue] Gives a connected RabbitMQ connection, channel, and declared queue to the block.
-  # @yieldparam connection [Bunny::Session] the established RabbitMQ connection.
-  # @yieldparam channel [Bunny::Channel] the opened RabbitMQ channel.
-  # @yieldparam queue [Bunny::Queue] the declared RabbitMQ queue.
-  # @return [void]
-  #
   def with_connection(options = {})
     connection = ::Bunny.new(AMQP_URL)
     connection.start

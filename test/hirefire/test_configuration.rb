@@ -17,8 +17,8 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_equal custom_logger, @configuration.logger
   end
 
-  def test_web_default_to_false
-    refute @configuration.web
+  def test_web_default_to_nil
+    assert_nil @configuration.web
   end
 
   def test_workers_default_to_empty_array
@@ -34,16 +34,19 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert @configuration.log_queue_metrics
   end
 
-  def test_dyno_configures_web_correctly
+  def test_configure_web
     @configuration.dyno(:web)
     assert_instance_of HireFire::Web, @configuration.web
   end
 
-  def test_dyno_adds_block_configuration_to_workers
+  def test_configure_workers
     worker_block = -> { 1 + 1 }
     @configuration.dyno(:worker, &worker_block)
-    assert_equal 1, @configuration.workers.size
+    @configuration.dyno(:mailer, &worker_block)
+    assert_equal 2, @configuration.workers.size
     assert_equal :worker, @configuration.workers[0].name
     assert_equal 2, @configuration.workers[0].value
+    assert_equal :mailer, @configuration.workers[1].name
+    assert_equal 2, @configuration.workers[1].value
   end
 end

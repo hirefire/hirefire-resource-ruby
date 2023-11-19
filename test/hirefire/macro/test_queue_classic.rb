@@ -55,11 +55,6 @@ class HireFire::Macro::QCTest < Minitest::Test
 
   private
 
-  # Prepares the test database for the current RAILS_ENV.
-  # It establishes a connection to the database, creates the database if it doesn't exist,
-  # runs migrations, and clears out any existing jobs.
-  #
-  # @return [void]
   def prepare_database
     db_config = Rails.configuration.database_configuration[Rails.env]
 

@@ -90,3 +90,9 @@ task :test do
 end
 
 task default: %i[test standard]
+
+desc "Run standard"
+task check: ["standard"]
+
+desc "Run standard:fix"
+task format: ["standard:fix"]

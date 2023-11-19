@@ -61,6 +61,27 @@
   * Drop support for que 1.
   * Drop support for qu.
 
+### Migration - Configuration
+
+The `hirefire-resource` gem was previously configured as follows:
+
+```rb
+HireFire::Resource.configure do |config|
+  # ...
+end
+```
+
+This has been changed to:
+
+```rb
+HireFire.configure do |config|
+  # ...
+end
+```
+
+The above change is backwards-compatible, so you don't need to update your configuration
+immediately, but `HireFire::Resource` may be removed in a future release.
+
 ### Migration - Macro Functions
 
 All `.queue` and `.latency` macro functions have been renamed to `.job_queue_size` and
@@ -96,7 +117,6 @@ Depending on whether you're using the Job Queue Size or Job Queue Latency autosc
 
 This applies to all macro functions.
 
-
 ### Migration - Request Queue Time
 
 We are updating the method of collecting and dispatching request queue time metric data. Previously,
@@ -126,6 +146,8 @@ manager settings. To check if it's already set, run:
 ```sh
 heroku config -a <application> | grep HIREFIRE_TOKEN
 ```
+
+
 
 ## v0.10.1
 

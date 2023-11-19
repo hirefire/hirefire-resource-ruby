@@ -16,7 +16,7 @@ module HireFire
       @block = block
     end
 
-    def call
+    def value
       @block.call
     end
 

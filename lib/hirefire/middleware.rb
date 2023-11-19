@@ -37,7 +37,7 @@ module HireFire
         },
         [
           HireFire.configuration.workers.map do |worker|
-            {name: worker.name, value: worker.call}
+            {name: worker.name, value: worker.value}
           end.to_json
         ]
       ]

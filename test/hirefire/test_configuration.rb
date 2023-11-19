@@ -44,6 +44,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     @configuration.dyno(:worker, &worker_block)
     assert_equal 1, @configuration.workers.size
     assert_equal :worker, @configuration.workers[0].name
-    assert_equal 2, @configuration.workers[0].call
+    assert_equal 2, @configuration.workers[0].value
   end
 end

@@ -61,7 +61,7 @@ class HireFire::WebTest < Minitest::Test
     web.send :dispatch_buffer
     assert_includes log.string,
       "[HireFire] Error while dispatching web metrics: " \
-      "An unexpected error occurred (Unexpected response code 404.).\n"
+      "An unexpected error occurred (Unexpected response code 404.)."
   end
 
   def test_dispatch_post_with_generic_exception

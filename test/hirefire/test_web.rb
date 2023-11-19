@@ -63,11 +63,13 @@ class HireFire::WebTest < Minitest::Test
   end
 
   def test_dispatch_post_with_generic_exception
-    stub_request(:post, "https://logdrain.hirefire.io/").to_raise(StandardError.new("Some generic error"))
+    stub_request(:post, "https://logdrain.hirefire.io/")
+      .to_raise(StandardError.new("Some generic error"))
     web.add_to_buffer(8)
     web.send :dispatch_buffer
     assert_includes log.string,
-      "[HireFire] Error while dispatching web metrics: An unexpected error occurred (Some generic error)."
+      "[HireFire] Error while dispatching web metrics: " \
+      "An unexpected error occurred (Some generic error)."
   end
 
   def test_dispatch_post_with_server_error
@@ -84,7 +86,8 @@ class HireFire::WebTest < Minitest::Test
     web.add_to_buffer(5)
     web.send :dispatch_buffer
     assert_includes log.string,
-      "[HireFire] Error while dispatching web metrics: Request timed out."
+      "[HireFire] Error while dispatching web metrics: " \
+      "Request timed out."
   end
 
   def test_dispatch_post_with_network_error
@@ -92,7 +95,8 @@ class HireFire::WebTest < Minitest::Test
     web.add_to_buffer(6)
     web.send :dispatch_buffer
     assert_includes log.string,
-      "[HireFire] Error while dispatching web metrics: Network error occurred (Failed)."
+      "[HireFire] Error while dispatching web metrics: " \
+      "Network error occurred (Failed)."
   end
 
   def test_buffer_repopulation_after_dispatch_failure

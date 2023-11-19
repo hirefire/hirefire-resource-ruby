@@ -6,6 +6,7 @@ module HireFire
   class Configuration
     attr_reader :web, :workers
     attr_accessor :logger
+    attr_writer :log_queue_metrics
 
     def initialize
       @web = nil
@@ -24,7 +25,5 @@ module HireFire
     def log_queue_metrics
       @log_queue_metrics ||= false
     end
-
-    attr_writer :log_queue_metrics
   end
 end

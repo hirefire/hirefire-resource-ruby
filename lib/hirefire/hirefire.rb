@@ -3,6 +3,8 @@
 module HireFire
   extend self
 
+  attr_writer :configuration
+
   def configure
     yield configuration
   end
@@ -10,6 +12,4 @@ module HireFire
   def configuration
     @configuration ||= Configuration.new
   end
-
-  attr_writer :configuration
 end

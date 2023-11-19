@@ -4,7 +4,7 @@ Gem::Specification.new do |spec|
   spec.name = "hirefire-resource"
   spec.version = HireFire::VERSION
   spec.platform = Gem::Platform::RUBY
-  spec.authors = ["Michael R. van Rooijen"]
+  spec.authors = ["Michael van Rooijen"]
   spec.email = ["support@hirefire.io"]
   spec.homepage = "https://www.hirefire.io"
   spec.summary = "Advanced Heroku Dyno Autoscaling"

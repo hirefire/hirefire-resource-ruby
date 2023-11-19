@@ -91,8 +91,8 @@ end
 
 task default: %i[test standard]
 
-desc "Run standard"
+desc "Run checks: standard"
 task check: ["standard"]
 
-desc "Run standard:fix"
+desc "Run formatters: standard:fix"
 task format: ["standard:fix"]

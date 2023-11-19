@@ -49,13 +49,15 @@ module HireFire
       @mutex.synchronize { @dispatcher_running }
     end
 
-    def add_to_buffer(value)
+    def add_to_buffer(request_queue_time)
       @mutex.synchronize do
         timestamp = Time.now.to_i
         @buffer[timestamp] ||= []
-        @buffer[timestamp] << value
+        @buffer[timestamp] << request_queue_time
       end
     end
+
+    private
 
     def flush_buffer
       @mutex.synchronize do
@@ -70,8 +72,6 @@ module HireFire
       repopulate_buffer(buffer)
       logger.error "[HireFire] Error while dispatching web metrics: #{e.message}"
     end
-
-    private
 
     def repopulate_buffer(buffer)
       now = Time.now.to_i

@@ -68,11 +68,9 @@ end
 namespace :test do
   matrix.each do |appraisal, version|
     task_name = construct_task_name(appraisal, version)
-
     desc "Run tests for #{task_name}"
     task task_name do
       coverage = (ENV["COVERAGE"] == "false") ? "false" : "true"
-
       puts "\n\n# Running #{task_name} tests\n\n"
       paths = APPRAISAL_FILES[appraisal].map { |file| File.expand_path("test/hirefire/#{file}") }
       command = "COVERAGE=#{coverage} appraisal #{task_name} ruby -Ilib:test -e '%w[#{paths.join(" ")}].each { |file| require file }'"
@@ -85,7 +83,6 @@ end
 desc "Run tests for all libraries and versions using Appraisal"
 task :test do
   ENV["COVERAGE"] = "false"
-
   matrix.each do |appraisal, version|
     task_name = construct_task_name(appraisal, version)
     Rake::Task["test:#{task_name}"].invoke

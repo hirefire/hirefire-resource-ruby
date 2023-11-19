@@ -5,8 +5,8 @@ require "logger"
 module HireFire
   class Configuration
     attr_reader :web, :workers
-    attr_accessor :logger
     attr_writer :log_queue_metrics
+    attr_accessor :logger
 
     def initialize
       @web = nil

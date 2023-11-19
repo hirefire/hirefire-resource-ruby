@@ -40,13 +40,12 @@ class HireFire::ConfigurationTest < Minitest::Test
   end
 
   def test_configure_workers
-    worker_block = -> { 1 + 1 }
-    @configuration.dyno(:worker, &worker_block)
-    @configuration.dyno(:mailer, &worker_block)
+    @configuration.dyno(:worker) { 1.23 }
+    @configuration.dyno(:mailer) { 2.46 }
     assert_equal 2, @configuration.workers.size
     assert_equal :worker, @configuration.workers[0].name
-    assert_equal 2, @configuration.workers[0].value
+    assert_equal 1.23, @configuration.workers[0].value
     assert_equal :mailer, @configuration.workers[1].name
-    assert_equal 2, @configuration.workers[1].value
+    assert_equal 2.46, @configuration.workers[1].value
   end
 end

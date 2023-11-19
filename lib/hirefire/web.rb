@@ -17,7 +17,7 @@ module HireFire
 
     def start_dispatcher
       @mutex.synchronize do
-        return if @dispatcher_running
+        return false if @dispatcher_running
         @dispatcher_running = true
       end
 
@@ -29,11 +29,13 @@ module HireFire
           sleep DISPATCH_INTERVAL
         end
       end
+
+      true
     end
 
     def stop_dispatcher
       @mutex.synchronize do
-        return unless @dispatcher_running
+        return false unless @dispatcher_running
         @dispatcher_running = false
       end
 
@@ -43,6 +45,8 @@ module HireFire
       flush_buffer
 
       logger.info "[HireFire] Web metrics dispatcher stopped."
+
+      true
     end
 
     def dispatcher_running?

@@ -19,12 +19,14 @@ class HireFire::WebTest < Minitest::Test
 
   def test_starts_and_stops_correctly
     refute web.dispatcher_running?
-    web.start_dispatcher
+    assert web.start_dispatcher
     assert web.dispatcher_running?
+    refute web.start_dispatcher
     web.add_to_buffer(1)
-    web.stop_dispatcher
-    assert_empty web.send :flush_buffer
+    assert web.stop_dispatcher
     refute web.dispatcher_running?
+    refute web.stop_dispatcher
+    assert_empty web.send :flush_buffer
     assert_includes log.string, "[HireFire] Starting web metrics dispatcher."
     assert_includes log.string, "[HireFire] Web metrics dispatcher stopped."
   end

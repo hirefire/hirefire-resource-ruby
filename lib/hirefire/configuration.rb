@@ -45,6 +45,10 @@ module HireFire
 
           $ heroku drains:remove https://logdrain.hirefire.io -a <APP_NAME>
 
+        For more information, see CHANGELOG.md in:
+
+          $ gem open hirefire-resource
+
         Contact support for any questions or assistance.
       MSG
     end

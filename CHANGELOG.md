@@ -63,24 +63,26 @@
 
 ### Migration - Configuration
 
-The `hirefire-resource` gem was previously configured as follows:
+The configuration method for the `hirefire-resource` gem has been updated. Previously, it was set up
+as follows:
 
 ```rb
 HireFire::Resource.configure do |config|
-  # ...
+  # existing configuration
 end
 ```
 
-This has been changed to:
+The new configuration method is:
 
 ```rb
 HireFire.configure do |config|
-  # ...
+  # existing configuration
 end
 ```
 
-The above change is backwards-compatible, so you don't need to update your configuration
-immediately, but `HireFire::Resource` may be removed in a future release.
+This change is backwards-compatible, meaning that your current configuration using
+`HireFire::Resource` will continue to work for now. However, `HireFire::Resource` may be removed in
+a future release, so we recommend updating to the new method at your earliest convenience.
 
 ### Migration - Macro Functions
 

@@ -66,7 +66,8 @@
 All `.queue` and `.latency` macro functions have been renamed to `.job_queue_size` and
 `.job_queue_latency` respectively. In addition, both functions now require you to explicitly pass in
 one or more queue names, as it will no longer infer which queues to monitor, as it has led to
-unexpected results.
+unexpected results. All of these functions have been rewritten for improved functionality and
+performance.
 
 For example, if previously you were doing the following:
 

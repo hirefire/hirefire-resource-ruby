@@ -76,10 +76,10 @@ module HireFire
     def repopulate_buffer(buffer)
       now = Time.now.to_i
       @mutex.synchronize do
-        buffer.each do |timestamp, values|
+        buffer.each do |timestamp, request_queue_times|
           next if timestamp < now - BUFFER_TTL
           @buffer[timestamp] ||= []
-          @buffer[timestamp].concat(values)
+          @buffer[timestamp].concat(request_queue_times)
         end
       end
     end

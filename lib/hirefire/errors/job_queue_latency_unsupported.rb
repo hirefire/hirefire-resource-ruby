@@ -5,7 +5,7 @@ module HireFire
     module JobQueueLatencyUnsupported
       def job_queue_latency(*, **)
         raise HireFire::Errors::JobQueueLatencyUnsupportedError,
-          "#{name} does not support job queue latency measurements."
+          "#{name} currently does not support job queue latency measurements."
       end
     end
   end

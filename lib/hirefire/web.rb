@@ -5,6 +5,8 @@ require "net/http"
 
 module HireFire
   class Web
+    class DispatchError < StandardError; end
+
     def initialize
       @buffer = {}
       @mutex = Mutex.new
@@ -91,7 +93,7 @@ module HireFire
       hirefire_token = ENV["HIREFIRE_TOKEN"]
 
       unless hirefire_token
-        raise <<~MSG
+        raise DispatchError, <<~MSG
           The HIREFIRE_TOKEN environment variable is not set. Unable to submit
           Request Queue Time metric data. The HIREFIRE_TOKEN can be found in
           the HireFire Web UI in the web dyno manager settings.
@@ -115,16 +117,16 @@ module HireFire
         adjust_parameters(response)
         response
       when Net::HTTPServerError
-        raise "Server responded with #{response.code} status."
+        raise DispatchError, "Server responded with #{response.code} status."
       else
-        raise "Unexpected response code #{response.code}."
+        raise DispatchError, "Unexpected response code #{response.code}."
       end
     rescue Timeout::Error
-      raise "Request timed out."
+      raise DispatchError, "Request timed out."
     rescue SocketError => e
-      raise "Network error occurred (#{e.message})."
+      raise DispatchError, "Network error occurred (#{e.message})."
     rescue => e
-      raise "An unexpected error occurred (#{e.message})."
+      raise DispatchError, "An unexpected error occurred (#{e.message})."
     end
 
     def adjust_parameters(response)

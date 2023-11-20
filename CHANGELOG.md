@@ -1,6 +1,5 @@
 ## v1.0.0
 
-* Switch to MIT license.
 * `HireFire`:
   * Rename `HireFire::Resource` to `HireFire`. `HireFire::Resource` is now an alias of `HireFire` for backwards compatibility.
   * Add configuration option to specify a custom logger -- defaults to `Logger.new($stdout)`.
@@ -60,6 +59,7 @@
   * Drop support for que 0.
   * Drop support for que 1.
   * Drop support for qu.
+* Switch to MIT license.
 
 ### Migration - Configuration
 
@@ -148,8 +148,6 @@ manager settings. To check if it's already set, run:
 ```sh
 heroku config -a <application> | grep HIREFIRE_TOKEN
 ```
-
-
 
 ## v0.10.1
 

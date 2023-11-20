@@ -148,4 +148,12 @@ class HireFire::WebTest < Minitest::Test
     assert_equal 20, web.instance_variable_get(:@dispatch_timeout)
     assert_equal 30, web.instance_variable_get(:@buffer_ttl)
   end
+
+  def test_submit_buffer_without_token
+    ENV["HIREFIRE_TOKEN"] = nil
+    exception = assert_raises RuntimeError do
+      web.send(:submit_buffer, 5)
+    end
+    assert_match(/The HIREFIRE_TOKEN environment variable is not set/, exception.message)
+  end
 end

@@ -88,6 +88,16 @@ module HireFire
     end
 
     def submit_buffer(buffer)
+      hirefire_token = ENV["HIREFIRE_TOKEN"]
+
+      unless hirefire_token
+        raise <<~MSG
+          The HIREFIRE_TOKEN environment variable is not set. Unable to submit
+          Request Queue Time metric data. The HIREFIRE_TOKEN can be found in
+          the HireFire Web UI in the web dyno manager settings.
+        MSG
+      end
+
       uri = URI.parse("https://logdrain.hirefire.io/")
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = true

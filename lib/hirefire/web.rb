@@ -102,7 +102,7 @@ module HireFire
 
       case response
       when Net::HTTPSuccess
-        update_variables(response)
+        adjust_parameters(response)
         response
       when Net::HTTPServerError
         raise "Server responded with #{response.code} status."
@@ -117,7 +117,7 @@ module HireFire
       raise "An unexpected error occurred (#{e.message})."
     end
 
-    def update_variables(response)
+    def adjust_parameters(response)
       if response.key?("HireFire-Resource-Dispatch-Interval")
         @dispatch_interval = response["HireFire-Resource-Dispatch-Interval"].to_i
       end

@@ -132,7 +132,7 @@ class HireFire::WebTest < Minitest::Test
     end
   end
 
-  def test_updates_variables_based_on_response_headers
+  def test_adjust_parameters_based_on_response_headers
     stub_request(:post, "https://logdrain.hirefire.io/")
       .to_return(
         status: 200,

@@ -5,14 +5,13 @@ require "net/http"
 
 module HireFire
   class Web
-    DISPATCH_INTERVAL = 5
-    DISPATCH_TIMEOUT = 5
-    BUFFER_TTL = 60
-
     def initialize
       @buffer = {}
       @mutex = Mutex.new
       @dispatcher_running = false
+      @dispatch_interval = 5
+      @dispatch_timeout = 5
+      @buffer_ttl = 60
     end
 
     def start_dispatcher
@@ -26,7 +25,7 @@ module HireFire
       @dispatcher = Thread.new do
         while dispatcher_running?
           dispatch_buffer
-          sleep DISPATCH_INTERVAL
+          sleep @dispatch_interval
         end
       end
 
@@ -39,7 +38,7 @@ module HireFire
         @dispatcher_running = false
       end
 
-      @dispatcher.join(DISPATCH_TIMEOUT)
+      @dispatcher.join(@dispatch_timeout)
       @dispatcher = nil
 
       flush_buffer
@@ -81,7 +80,7 @@ module HireFire
       now = Time.now.to_i
       @mutex.synchronize do
         buffer.each do |timestamp, request_queue_times|
-          next if timestamp < now - BUFFER_TTL
+          next if timestamp < now - @buffer_ttl
           @buffer[timestamp] ||= []
           @buffer[timestamp].concat(request_queue_times)
         end
@@ -92,8 +91,8 @@ module HireFire
       uri = URI.parse("https://logdrain.hirefire.io/")
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = true
-      http.read_timeout = DISPATCH_TIMEOUT
-      http.open_timeout = DISPATCH_TIMEOUT
+      http.read_timeout = @dispatch_timeout
+      http.open_timeout = @dispatch_timeout
       request = Net::HTTP::Post.new(uri.request_uri)
       request["Content-Type"] = "application/json"
       request["HireFire-Token"] = ENV["HIREFIRE_TOKEN"]
@@ -103,6 +102,7 @@ module HireFire
 
       case response
       when Net::HTTPSuccess
+        update_variables(response)
         response
       when Net::HTTPServerError
         raise "Server responded with #{response.code} status."
@@ -115,6 +115,20 @@ module HireFire
       raise "Network error occurred (#{e.message})."
     rescue => e
       raise "An unexpected error occurred (#{e.message})."
+    end
+
+    def update_variables(response)
+      if response.key?("HireFire-Resource-Dispatch-Interval")
+        @dispatch_interval = response["HireFire-Resource-Dispatch-Interval"].to_i
+      end
+
+      if response.key?("HireFire-Resource-Dispatch-Timeout")
+        @dispatch_timeout = response["HireFire-Resource-Dispatch-Timeout"].to_i
+      end
+
+      if response.key?("HireFire-Resource-Buffer-TTL")
+        @buffer_ttl = response["HireFire-Resource-Buffer-TTL"].to_i
+      end
     end
 
     def logger

@@ -110,13 +110,42 @@ class HireFire::WebTest < Minitest::Test
   end
 
   def test_buffer_ttl_discards_old_entries
-    stub_request(:post, "https://logdrain.hirefire.io/").to_return(status: 500)
-    web.add_to_buffer(7)
-    past_timestamp = Time.now.to_i - HireFire::Web::BUFFER_TTL - 10
-    Time.stub(:now, Time.at(past_timestamp)) do
-      web.add_to_buffer(8)
+    timestamp_1 = Time.local(2000, 1, 1, 0, 0, 0).to_i
+    Time.stub(:now, Time.at(timestamp_1)) do
+      web.add_to_buffer(5)
+      assert_equal({timestamp_1 => [5]}, web.instance_variable_get(:@buffer))
     end
+    timestamp_2 = Time.local(2000, 1, 1, 0, 0, 30).to_i
+    Time.stub(:now, Time.at(timestamp_2)) do
+      web.add_to_buffer(10)
+      assert_equal({timestamp_1 => [5], timestamp_2 => [10]}, web.instance_variable_get(:@buffer))
+    end
+    Time.stub(:now, Time.local(2000, 1, 1, 0, 1, 0)) do
+      stub_request(:post, "https://logdrain.hirefire.io/").to_return(status: 500)
+      web.send :dispatch_buffer
+      assert_equal({timestamp_1 => [5], timestamp_2 => [10]}, web.instance_variable_get(:@buffer))
+    end
+    Time.stub(:now, Time.local(2000, 1, 1, 0, 1, 1)) do
+      stub_request(:post, "https://logdrain.hirefire.io/").to_return(status: 500)
+      web.send :dispatch_buffer
+      assert_equal({timestamp_2 => [10]}, web.instance_variable_get(:@buffer))
+    end
+  end
+
+  def test_updates_variables_based_on_response_headers
+    stub_request(:post, "https://logdrain.hirefire.io/")
+      .to_return(
+        status: 200,
+        headers: {
+          "HireFire-Resource-Dispatch-Interval" => "10",
+          "HireFire-Resource-Dispatch-Timeout" => "20",
+          "HireFire-Resource-Buffer-TTL" => "30"
+        }
+      )
+    web.add_to_buffer(5)
     web.send :dispatch_buffer
-    assert_equal [[7]], web.send(:flush_buffer).values
+    assert_equal 10, web.instance_variable_get(:@dispatch_interval)
+    assert_equal 20, web.instance_variable_get(:@dispatch_timeout)
+    assert_equal 30, web.instance_variable_get(:@buffer_ttl)
   end
 end

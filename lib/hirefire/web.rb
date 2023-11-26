@@ -100,7 +100,7 @@ module HireFire
         MSG
       end
 
-      uri = URI.parse("https://logdrain.hirefire.io/")
+      uri = URI.parse(ENV.fetch("HIREFIRE_DISPATCH_URL", "https://logdrain.hirefire.io/"))
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = true
       http.read_timeout = @dispatch_timeout

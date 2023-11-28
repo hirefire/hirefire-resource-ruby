@@ -13,6 +13,7 @@ class HireFire::WebTest < Minitest::Test
 
   def setup
     ENV["HIREFIRE_TOKEN"] = "8ab101e2-51da-49bc-beba-111dec49a287"
+    ENV["HIREFIRE_DISPATCH_URL"] = nil
     WebMock.reset_executed_requests!
     HireFire.configuration.logger = Logger.new(log)
   end
@@ -155,5 +156,16 @@ class HireFire::WebTest < Minitest::Test
       web.send(:submit_buffer, 5)
     end
     assert_match(/The HIREFIRE_TOKEN environment variable is not set/, exception.message)
+  end
+
+  def test_submit_buffer_with_custom_dispatcher_url
+    custom_url = "https://custom.hirefire.io/"
+    ENV["HIREFIRE_DISPATCH_URL"] = custom_url
+    request = stub_request(:post, custom_url)
+      .with(headers: {"HireFire-Resource" => "Ruby-#{HireFire::VERSION}"})
+      .to_return(status: 200)
+    web.add_to_buffer(5)
+    web.send :dispatch_buffer
+    assert_requested request
   end
 end

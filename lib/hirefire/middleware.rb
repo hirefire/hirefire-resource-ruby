@@ -12,9 +12,17 @@ module HireFire
     def call(env)
       process_request_queue_time(env)
 
-      return construct_info_response if matches_info_path?(env)
+      if matches_info_path?(env) || matches_hirefire_path?(env)
+        return construct_info_response
+      end
 
       @app.call(env)
+    end
+
+    private
+
+    def matches_hirefire_path?(env)
+      ENV["HIREFIRE_TOKEN"] && env["PATH_INFO"] == "/hirefire" && ENV["HIREFIRE_TOKEN"] == env["HTTP_HIREFIRE_TOKEN"]
     end
 
     private

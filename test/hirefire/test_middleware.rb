@@ -59,4 +59,20 @@ class HireFire::MiddlewareTest < Minitest::Test
       end
     end
   end
+
+  def test_intercept_and_process_worker_configuration_with_token_in_header
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+
+    HireFire.configure do |config|
+      config.dyno(:worker) { 5 }
+    end
+
+    request = Rack::MockRequest.env_for("/hirefire", "HTTP_HIREFIRE_TOKEN" => "SOME_TOKEN")
+    response_status, response_headers, response_body = @middleware.call(request)
+    expected_body = [{name: "worker", value: 5}].to_json
+
+    assert_equal 200, response_status
+    assert_equal "Ruby-#{HireFire::VERSION}", response_headers["HireFire-Resource"]
+    assert_equal expected_body, response_body.first
+  end
 end

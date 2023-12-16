@@ -11,7 +11,7 @@ module HireFire
       @buffer = {}
       @mutex = Mutex.new
       @dispatcher_running = false
-      @dispatch_interval = 5
+      @dispatch_interval = 1
       @dispatch_timeout = 5
       @buffer_ttl = 60
     end

@@ -72,6 +72,7 @@ module HireFire
 
     def dispatch_buffer
       return unless (buffer = flush_buffer).any?
+      logger.info "[HireFire] Dispatching web metrics: #{buffer}" if ENV["HIREFIRE_VERBOSE"]
       submit_buffer(buffer)
     rescue => e
       repopulate_buffer(buffer)

@@ -20,7 +20,7 @@ Run `bin/setup` to prepare the environment by installing dependencies. See `rake
 
 ## License
 
-This library is licensed under the MIT license. See LICENSE.
+This gem is licensed under the MIT license. See LICENSE.
 
 [HireFire]: https://www.hirefire.io/
 [Heroku]: https://www.heroku.com/

@@ -2,7 +2,7 @@
 
 [HireFire] is the oldest autoscaling service for applications running on [Heroku]. Since 2011, we've assisted more than 1,000 companies in autoscaling upwards of 5,000 applications, with over 10,000 dynos.
 
-This gem collects metrics from Ruby applications running on Heroku and makes them available to HireFire in order to autoscale web and worker dynos.
+This gem collects metrics from Ruby applications running on Heroku and provides them to HireFire in order to autoscale web and worker dynos.
 
 ## Guides & Documentation
 

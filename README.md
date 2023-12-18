@@ -4,13 +4,17 @@
 
 This gem collects metrics from Ruby applications running on Heroku and makes them available to HireFire in order to autoscale web and worker dynos.
 
-WIP: See our [Getting Started with Ruby] guide on how to set up HireFire with your Ruby application.
+## Guides & Documentation
+
+Please refer to our [Getting Started with Ruby] guide for instructions on setting up HireFire with your Ruby application.
 
 ## Development
 
-Run `bin/setup` to prepare the environment by installing dependencies. See `rake -T` for common tasks.
+Run `bin/setup` to prepare the environment.
 
-## Release Procedure
+See `rake -T` for common tasks.
+
+## Release
 
 1. Update the `HireFire::VERSION` constant.
 2. Ensure that `CHANGELOG.md` is up-to-date.

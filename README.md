@@ -6,7 +6,7 @@ This gem collects metrics from Ruby applications running on Heroku and makes the
 
 ## Guides & Documentation
 
-Please refer to our [Getting Started with Ruby] guide for instructions on setting up HireFire with your Ruby application.
+Please refer to our [Ruby Guide] for instructions on setting up HireFire with your Ruby application.
 
 ## Development
 
@@ -28,4 +28,4 @@ This gem is licensed under the MIT license. See LICENSE.
 
 [HireFire]: https://www.hirefire.io/
 [Heroku]: https://www.heroku.com/
-[Getting Started with Ruby]: https://help.hirefire.io/TODO
+[Ruby Guide]: https://help.hirefire.io/TODO

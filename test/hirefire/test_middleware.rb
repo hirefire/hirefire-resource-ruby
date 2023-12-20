@@ -75,4 +75,36 @@ class HireFire::MiddlewareTest < Minitest::Test
     assert_equal "Ruby-#{HireFire::VERSION}", response_headers["HireFire-Resource"]
     assert_equal expected_body, response_body.first
   end
+
+  def test_pass_through_without_log_queue_metrics
+    original_stdout = $stdout
+    $stdout = StringIO.new
+
+    Time.stub :now, Time.at(1) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
+      @middleware.call(request)
+    end
+
+    assert_empty $stdout.string
+  ensure
+    $stdout = original_stdout
+  end
+
+  def test_pass_through_and_process_log_queue_metrics
+    original_stdout = $stdout
+    $stdout = StringIO.new
+
+    HireFire.configure do |config|
+      config.log_queue_metrics = true
+    end
+
+    Time.stub :now, Time.at(1) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
+      @middleware.call(request)
+    end
+
+    assert_equal("[hirefire:router] queue=1000ms", $stdout.string.strip)
+  ensure
+    $stdout = original_stdout
+  end
 end

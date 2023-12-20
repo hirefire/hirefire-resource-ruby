@@ -58,6 +58,7 @@ module HireFire
         JobQueueSize.call(*queues, **options)
       end
 
+      # @!visibility private
       module Common
         private
 
@@ -89,6 +90,7 @@ module HireFire
         end
       end
 
+      # @!visibility private
       module JobQueueLatency
         extend Common
         extend self
@@ -157,6 +159,7 @@ module HireFire
         end
       end
 
+      # @!visibility private
       module JobQueueSize
         extend Common
         extend self

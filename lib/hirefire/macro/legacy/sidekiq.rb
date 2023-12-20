@@ -3,30 +3,40 @@
 module HireFire
   module Macro
     module Legacy
+      # Provides backward compatibility with the legacy Sidekiq Macro.
+      # For new implementations, refer to {HireFire::Macro::Sidekiq}.
       module Sidekiq
-        # The latency in seconds for the provided queue.
+        # Calculates the latency (in seconds) for the specified Sidekiq queue.
         #
-        # @example Sidekiq Queue Latency Macro Usage
-        #   HireFire::Macro::Sidekiq.queue # default queue
-        #   HireFire::Macro::Sidekiq.queue("email") # email queue
-        #
+        # @param queue [String, Symbol] The name of the queue to measure latency.
+        #   Defaults to 'default' if no queue name is provided.
+        # @return [Float] The latency of the queue in seconds.
+        # @example Calculating latency for the default queue
+        #   HireFire::Macro::Sidekiq.latency
+        # @example Calculating latency for the 'email' queue
+        #   HireFire::Macro::Sidekiq.latency("email")
         def latency(queue = "default")
           ::Sidekiq::Queue.new(queue).latency
         end
 
-        # Counts the amount of jobs in the (provided) Sidekiq queue(s).
+        # Counts the number of jobs in the specified Sidekiq queue(s).
         #
-        # @example Sidekiq Queue Size Macro Usage
-        #   HireFire::Macro::Sidekiq.queue # all queues
-        #   HireFire::Macro::Sidekiq.queue("email") # only email queue
-        #   HireFire::Macro::Sidekiq.queue("audio", "video") # audio and video queues
-        #   HireFire::Macro::Sidekiq.queue("email", skip_scheduled: true) # only email, will not count scheduled queue
-        #   HireFire::Macro::Sidekiq.queue("audio", skip_retries: true) # only audio, will not count the retries queue
-        #   HireFire::Macro::Sidekiq.queue("audio", skip_working: true) # only audio, will not count already queued
+        # The method supports various options to include or exclude jobs from
+        # specific sets like scheduled, retries, or in-progress jobs.
         #
-        # @param [Array] queues provide one or more queue names, or none for "all".
-        # @return [Integer] the number of jobs in the queue(s).
-        #
+        # @param queues [Array<String, Symbol>] Queue names to count jobs in.
+        #   Pass an empty array or no arguments to count jobs in all queues.
+        # @param options [Hash] Options to modify the count behavior.
+        #   Possible keys are :skip_scheduled, :skip_retries, :skip_working.
+        # @return [Integer] Total number of jobs in the specified queues.
+        # @example Counting jobs in all queues
+        #   HireFire::Macro::Sidekiq.queue
+        # @example Counting jobs in the 'email' queue
+        #   HireFire::Macro::Sidekiq.queue("email")
+        # @example Counting jobs in both 'audio' and 'video' queues
+        #   HireFire::Macro::Sidekiq.queue("audio", "video")
+        # @example Counting jobs in the 'email' queue, excluding scheduled jobs
+        #   HireFire::Macro::Sidekiq.queue("email", skip_scheduled: true)
         def queue(*queues)
           require "sidekiq/api"
 

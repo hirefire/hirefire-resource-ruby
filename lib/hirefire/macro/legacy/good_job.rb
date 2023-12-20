@@ -16,8 +16,8 @@ module HireFire
         # @return [Integer] Total number of jobs in the specified queues.
         # @example Counting jobs in all queues
         #   HireFire::Macro::GoodJob.queue
-        # @example Counting jobs in the 'email' queue
-        #   HireFire::Macro::GoodJob.queue("email")
+        # @example Counting jobs in the 'default' queue
+        #   HireFire::Macro::GoodJob.queue("default")
         def queue(*queues)
           base_class = defined?(::GoodJob::Execution) ? ::GoodJob::Execution : ::GoodJob::Job
           scope = base_class.only_scheduled.unfinished

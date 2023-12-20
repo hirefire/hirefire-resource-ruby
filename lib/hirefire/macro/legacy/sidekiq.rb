@@ -13,8 +13,8 @@ module HireFire
         # @return [Float] The latency of the queue in seconds.
         # @example Calculating latency for the default queue
         #   HireFire::Macro::Sidekiq.latency
-        # @example Calculating latency for the 'email' queue
-        #   HireFire::Macro::Sidekiq.latency("email")
+        # @example Calculating latency for the 'critical' queue
+        #   HireFire::Macro::Sidekiq.latency("critical")
         def latency(queue = "default")
           ::Sidekiq::Queue.new(queue).latency
         end
@@ -31,12 +31,14 @@ module HireFire
         # @return [Integer] Total number of jobs in the specified queues.
         # @example Counting jobs in all queues
         #   HireFire::Macro::Sidekiq.queue
-        # @example Counting jobs in the 'email' queue
-        #   HireFire::Macro::Sidekiq.queue("email")
-        # @example Counting jobs in both 'audio' and 'video' queues
-        #   HireFire::Macro::Sidekiq.queue("audio", "video")
-        # @example Counting jobs in the 'email' queue, excluding scheduled jobs
-        #   HireFire::Macro::Sidekiq.queue("email", skip_scheduled: true)
+        # @example Counting jobs in the 'default' and 'critical' queues
+        #   HireFire::Macro::Sidekiq.queue("default", "critical")
+        # @example Counting jobs in the 'default' queue, excluding scheduled jobs
+        #   HireFire::Macro::Sidekiq.queue("default", skip_scheduled: true)
+        # @example Counting jobs in the 'default' queue, excluding retryable jobs
+        #   HireFire::Macro::Sidekiq.queue("default", skip_retries: true)
+        # @example Counting jobs in the 'default' queue, excluding in-progress jobs
+        #   HireFire::Macro::Sidekiq.queue("default", skip_working: true)
         def queue(*queues)
           require "sidekiq/api"
 

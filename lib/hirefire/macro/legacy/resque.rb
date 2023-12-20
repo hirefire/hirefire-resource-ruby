@@ -8,18 +8,18 @@ module HireFire
       module Resque
         # Retrieves the total number of jobs in the specified Resque queue(s).
         #
-        # This method counts the number of jobs in either specific queues or all queues
-        # if none are specified. It includes both queued and in-progress jobs.
+        # This method counts the number of jobs in either specific queues or all queues if none are
+        # specified. It includes both queued and in-progress jobs.
         #
         # @param queues [Array<String, Symbol>] Queue names to count jobs in.
         #   Pass an empty array or no arguments to count jobs in all queues.
         # @return [Integer] Total number of jobs in the specified queues.
         # @example Counting jobs in all queues
         #   HireFire::Macro::Resque.queue
-        # @example Counting jobs in the 'email' queue
-        #   HireFire::Macro::Resque.queue("email")
-        # @example Counting jobs in both 'audio' and 'video' queues
-        #   HireFire::Macro::Resque.queue("audio", "video")
+        # @example Counting jobs in the 'default' queue
+        #   HireFire::Macro::Resque.queue("default")
+        # @example Counting jobs in both 'default' and 'critical' queues
+        #   HireFire::Macro::Resque.queue("default", "critical")
         def queue(*queues)
           queues = queues.flatten.map(&:to_s)
           queues = ::Resque.queues if queues.empty?

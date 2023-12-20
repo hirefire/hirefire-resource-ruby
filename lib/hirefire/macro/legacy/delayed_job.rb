@@ -22,8 +22,8 @@ module HireFire
           # @example Querying all queues using ActiveRecord mapper
           #   HireFire::Macro::Delayed::Job.queue(mapper: :active_record)
           # @example Querying specific queues with Mongoid mapper
-          #   HireFire::Macro::Delayed::Job.queue("email", mapper: :mongoid)
-          # @example Specifying minimum and maximum priorities with ActiveRecord mapper
+          #   HireFire::Macro::Delayed::Job.queue("default", mapper: :mongoid)
+          # @example Query all queues scoped to a priority range
           #   HireFire::Macro::Delayed::Job.queue(max_priority: 20, min_priority: 5, mapper: :active_record)
           def queue(*queues)
             queues.flatten!

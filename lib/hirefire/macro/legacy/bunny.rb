@@ -8,9 +8,8 @@ module HireFire
       module Bunny
         # Retrieves the total number of jobs in the specified queue(s).
         #
-        # This method allows querying multiple queues and supports both
-        # existing and new RabbitMQ connections. By default, queues are
-        # considered durable unless specified otherwise.
+        # This method allows querying multiple queues and supports both existing and new RabbitMQ
+        # connections. By default, queues are considered durable unless specified otherwise.
         #
         # @param queues [Array<String, Symbol>] Queue names to query.
         #   The last argument can be a Hash with either :connection or :amqp_url.
@@ -19,12 +18,12 @@ module HireFire
         # @option queues [Boolean] :durable (true) Set to false for non-durable queues.
         # @return [Integer] Total number of jobs in the specified queues.
         # @raise [ArgumentError] Raises an error if neither :connection nor :amqp_url are provided.
-        # @example Querying all queues using an existing RabbitMQ connection
-        #   HireFire::Macro::Bunny.queue("queue1", "queue2", connection: connection)
-        # @example Querying all queues using a new RabbitMQ connection
-        #   HireFire::Macro::Bunny.queue("queue1", "queue2", amqp_url: url)
-        # @example Querying all non-durable queues using a new RabbitMQ connection
-        #   HireFire::Macro::Bunny.queue("queue1", "queue2", amqp_url: url, durable: false)
+        # @example Querying the default queue using an existing RabbitMQ connection
+        #   HireFire::Macro::Bunny.queue("default", connection: connection)
+        # @example Querying the default queue using a new RabbitMQ connection
+        #   HireFire::Macro::Bunny.queue("default", amqp_url: url)
+        # @example Querying the 'default' and 'critical' non-durable queues
+        #   HireFire::Macro::Bunny.queue("default", "critical", amqp_url: url, durable: false)
         def queue(*queues)
           require "bunny"
 

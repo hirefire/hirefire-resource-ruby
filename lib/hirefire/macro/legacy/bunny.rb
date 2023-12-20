@@ -4,43 +4,36 @@ module HireFire
   module Macro
     module Legacy
       # Provides backward compatibility with the legacy Bunny Macro.
-      # For new implementations, use {HireFire::Macro::Bunny}.
+      # For new implementations, refer to {HireFire::Macro::Bunny}.
       module Bunny
-        # Returns the job quantity for the provided queue(s).
+        # Retrieves the total number of jobs in the specified queue(s).
         #
-        # @example Bunny Macro Usage
+        # This method allows querying multiple queues and supports both
+        # existing and new RabbitMQ connections. By default, queues are
+        # considered durable unless specified otherwise.
         #
-        #   # all queues using existing RabbitMQ connection.
-        #   HireFire::Macro::Bunny.queue("queue1", "queue2", :connection => connection)
-        #
-        #   # all queues using new RabbitMQ connection.
-        #   HireFire::Macro::Bunny.queue("queue1", "queue2", :amqp_url => url)
-        #
-        #   # all non-durable queues using new RabbitMQ connection.
-        #   HireFire::Macro::Bunny.queue("queue1", "queue2", :amqp_url => url, :durable => false)
-        #
-        # @param [Array] queues provide one or more queue names, or none for "all".
-        #   Last argument can pass in a Hash containing :connection => rabbitmq_connection or :amqp => :rabbitmq_url
-        # @return [Integer] the number of jobs in the queue(s).
-        #
+        # @param queues [Array<String, Symbol>] Queue names to query.
+        #   The last argument can be a Hash with either :connection or :amqp_url.
+        # @option queues [Bunny::Session, nil] :connection An existing RabbitMQ connection.
+        # @option queues [String, nil] :amqp_url RabbitMQ URL for initializing a new connection.
+        # @option queues [Boolean] :durable (true) Set to false for non-durable queues.
+        # @return [Integer] Total number of jobs in the specified queues.
+        # @raise [ArgumentError] Raises an error if neither :connection nor :amqp_url are provided.
+        # @example Querying all queues using an existing RabbitMQ connection
+        #   HireFire::Macro::Bunny.queue("queue1", "queue2", connection: connection)
+        # @example Querying all queues using a new RabbitMQ connection
+        #   HireFire::Macro::Bunny.queue("queue1", "queue2", amqp_url: url)
+        # @example Querying all non-durable queues using a new RabbitMQ connection
+        #   HireFire::Macro::Bunny.queue("queue1", "queue2", amqp_url: url, durable: false)
         def queue(*queues)
           require "bunny"
 
           queues.flatten!
-
-          options = if queues.last.is_a?(Hash)
-            queues.pop
-          else
-            {}
-          end
-
-          if options[:durable].nil?
-            options[:durable] = true
-          end
+          options = queues.last.is_a?(Hash) ? queues.pop : {}
+          options[:durable] = true if options[:durable].nil?
 
           if options[:connection]
             connection = options[:connection]
-
             channel = nil
             begin
               channel = connection.create_channel
@@ -59,8 +52,8 @@ module HireFire
               connection.close
             end
           else
-            raise %(Must pass in :connection => rabbitmq_connection or :amqp_url => url\n) +
-              %{For example: HireFire::Macro::Bunny.queue("queue1", :connection => rabbitmq_connection}
+            raise ArgumentError, "Must pass either :connection => rabbitmq_connection or :amqp_url => url." \
+                                 "For example: HireFire::Macro::Bunny.queue('queue1', connection: rabbitmq_connection)"
           end
         end
 
@@ -68,14 +61,17 @@ module HireFire
         module Private
           extend self
 
+          # Counts the number of messages in the specified queues.
+          # @param channel [Bunny::Channel] The channel to use for communication with RabbitMQ.
+          # @param queue_names [Array<String>] Names of the queues to be counted.
+          # @param options [Hash] Options for the Bunny client.
+          # @return [Integer] Sum of messages across the specified queues.
           def count_messages(channel, queue_names, options)
             queue_names.inject(0) do |sum, queue_name|
-              queue = if options.key?(:"x-max-priority")
-                channel.queue(queue_name, durable: options[:durable],
-                  arguments: {"x-max-priority" => options[:"x-max-priority"]})
-              else
-                channel.queue(queue_name, durable: options[:durable])
-              end
+              queue_options = {durable: options[:durable]}
+              queue_options[:arguments] = {"x-max-priority" => options[:"x-max-priority"]} if options.key?(:"x-max-priority")
+
+              queue = channel.queue(queue_name, **queue_options)
               sum + queue.message_count
             end
           end

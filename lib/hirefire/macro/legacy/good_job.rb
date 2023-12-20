@@ -3,17 +3,21 @@
 module HireFire
   module Macro
     module Legacy
+      # Provides backward compatibility with the legacy GoodJob Macro.
+      # For new implementations, refer to {HireFire::Macro::GoodJob}.
       module GoodJob
-        # Queries the PostgreSQL database through GoodJob in order to
-        # count the amount of jobs in the specified queue.
+        # Retrieves the total number of jobs in the specified queue(s) using GoodJob.
         #
-        # @example Queue Macro Usage
-        #   HireFire::Macro::GoodJob.queue # counts all queues.
-        #   HireFire::Macro::GoodJob.queue("email") # counts the `email` queue.
+        # This method queries the PostgreSQL database through GoodJob. It's capable
+        # of counting jobs across different queues or all queues if none specified.
         #
-        # @param [String] queue the queue name to count. (default: nil # gets all queues)
-        # @return [Integer] the number of jobs in the queue(s).
-        #
+        # @param queues [Array<String>] The names of the queues to count.
+        #   Pass an empty array or no arguments to count jobs in all queues.
+        # @return [Integer] Total number of jobs in the specified queues.
+        # @example Counting jobs in all queues
+        #   HireFire::Macro::GoodJob.queue
+        # @example Counting jobs in the 'email' queue
+        #   HireFire::Macro::GoodJob.queue("email")
         def queue(*queues)
           base_class = defined?(::GoodJob::Execution) ? ::GoodJob::Execution : ::GoodJob::Job
           scope = base_class.only_scheduled.unfinished

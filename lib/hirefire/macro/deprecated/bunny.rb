@@ -2,8 +2,8 @@
 
 module HireFire
   module Macro
-    module Legacy
-      # Provides backward compatibility with the legacy Bunny Macro.
+    module Deprecated
+      # Provides backward compatibility with the deprecated Bunny macro.
       # For new implementations, refer to {HireFire::Macro::Bunny}.
       module Bunny
         # Retrieves the total number of jobs in the specified queue(s).

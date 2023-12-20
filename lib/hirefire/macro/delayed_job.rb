@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
-require_relative "legacy/delayed_job"
+require_relative "deprecated/delayed_job"
 
 module HireFire
   module Macro
     module Delayed
       module Job
-        extend HireFire::Macro::Legacy::Delayed::Job
+        extend HireFire::Macro::Deprecated::Delayed::Job
         extend self
 
         class MapperNotDetectedError < StandardError; end

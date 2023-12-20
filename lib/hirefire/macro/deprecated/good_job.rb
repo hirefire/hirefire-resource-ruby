@@ -2,8 +2,8 @@
 
 module HireFire
   module Macro
-    module Legacy
-      # Provides backward compatibility with the legacy GoodJob Macro.
+    module Deprecated
+      # Provides backward compatibility with the deprecated GoodJob macro.
       # For new implementations, refer to {HireFire::Macro::GoodJob}.
       module GoodJob
         # Retrieves the total number of jobs in the specified queue(s) using GoodJob.

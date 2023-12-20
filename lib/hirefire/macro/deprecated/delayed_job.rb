@@ -2,9 +2,9 @@
 
 module HireFire
   module Macro
-    module Legacy
+    module Deprecated
       module Delayed
-        # Provides backward compatibility with the legacy Delayed::Job Macro.
+        # Provides backward compatibility with the deprecated Delayed::Job macro.
         # For new implementations, refer to {HireFire::Macro::Delayed::Job}.
         module Job
           # Retrieves the total number of jobs in the specified queue(s).
@@ -43,7 +43,7 @@ module HireFire
               query = query.scoped(conditions: ["priority <= ?", options[:max_priority]]) if options.key?(:max_priority)
               query.count.tap { ActiveRecord::Base.clear_active_connections! if ActiveRecord::Base.respond_to?(:clear_active_connections!) }
             when :mongoid
-              query = ::Delayed::Job.where(failed_at: nil, :run_at.lte => Time.now.utc)
+              query = ::Delayed::Job.where(:failed_at => nil, :run_at.lte => Time.now.utc)
               query = query.where(:priority.gte => options[:min_priority]) if options.key?(:min_priority)
               query = query.where(:priority.lte => options[:max_priority]) if options.key?(:max_priority)
               query = query.where(:queue.in => queues) unless queues.empty?

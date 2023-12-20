@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
 require "digest/sha1"
-require_relative "legacy/sidekiq"
+require_relative "deprecated/sidekiq"
 
 module HireFire
   module Macro
     module Sidekiq
-      extend HireFire::Macro::Legacy::Sidekiq
+      extend HireFire::Macro::Deprecated::Sidekiq
       extend self
 
       # Calculates the maximum job queue latency across the specified queues.

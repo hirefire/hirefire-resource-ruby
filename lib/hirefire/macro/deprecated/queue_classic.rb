@@ -2,8 +2,8 @@
 
 module HireFire
   module Macro
-    module Legacy
-      # Provides backward compatibility with the legacy QC Macro.
+    module Deprecated
+      # Provides backward compatibility with the deprecated QC macro.
       # For new implementations, refer to {HireFire::Macro::QC}.
       module QC
         # Retrieves the total number of jobs in the specified queue using QueueClassic.

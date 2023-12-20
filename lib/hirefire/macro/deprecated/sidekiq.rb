@@ -2,8 +2,8 @@
 
 module HireFire
   module Macro
-    module Legacy
-      # Provides backward compatibility with the legacy Sidekiq Macro.
+    module Deprecated
+      # Provides backward compatibility with the deprecated Sidekiq macro.
       # For new implementations, refer to {HireFire::Macro::Sidekiq}.
       module Sidekiq
         # Calculates the latency (in seconds) for the specified Sidekiq queue.

@@ -2,8 +2,8 @@
 
 module HireFire
   module Macro
-    module Legacy
-      # Provides backward compatibility with the legacy Que Macro.
+    module Deprecated
+      # Provides backward compatibility with the deprecated Que macro.
       # For new implementations, refer to {HireFire::Macro::Que}.
       module Que
         # Retrieves the total number of jobs in the specified queue(s) using Que.

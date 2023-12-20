@@ -2,8 +2,8 @@
 
 module HireFire
   module Macro
-    module Legacy
-      # Provides backward compatibility with the legacy Resque Macro.
+    module Deprecated
+      # Provides backward compatibility with the deprecated Resque macro.
       # For new implementations, refer to {HireFire::Macro::Resque}.
       module Resque
         # Retrieves the total number of jobs in the specified Resque queue(s).

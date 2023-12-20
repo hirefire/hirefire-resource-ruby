@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
-require_relative "legacy/bunny"
+require_relative "deprecated/bunny"
 
 module HireFire
   module Macro
     module Bunny
-      extend HireFire::Macro::Legacy::Bunny
+      extend HireFire::Macro::Deprecated::Bunny
       extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
 

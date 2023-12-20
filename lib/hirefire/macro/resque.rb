@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
+require_relative "legacy/resque"
+
 module HireFire
   module Macro
     module Resque
-      extend HireFire::Errors::QueueMethodRenamed
       extend HireFire::Errors::JobQueueLatencyUnsupported
+      extend HireFire::Macro::Legacy::Resque
       extend self
 
       # Calculates the total job queue size across the specified queues.

@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
+require_relative "legacy/delayed_job"
+
 module HireFire
   module Macro
     module Delayed
       module Job
-        extend HireFire::Errors::QueueMethodRenamed
-        extend HireFire::Errors::LatencyMethodRenamed
+        extend HireFire::Macro::Legacy::Delayed::Job
         extend self
 
         class MapperNotDetectedError < StandardError; end

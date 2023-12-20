@@ -1,0 +1,26 @@
+# frozen_string_literal: true
+
+module HireFire
+  module Macro
+    module Legacy
+      module GoodJob
+        # Queries the PostgreSQL database through GoodJob in order to
+        # count the amount of jobs in the specified queue.
+        #
+        # @example Queue Macro Usage
+        #   HireFire::Macro::GoodJob.queue # counts all queues.
+        #   HireFire::Macro::GoodJob.queue("email") # counts the `email` queue.
+        #
+        # @param [String] queue the queue name to count. (default: nil # gets all queues)
+        # @return [Integer] the number of jobs in the queue(s).
+        #
+        def queue(*queues)
+          base_class = defined?(::GoodJob::Execution) ? ::GoodJob::Execution : ::GoodJob::Job
+          scope = base_class.only_scheduled.unfinished
+          scope = scope.where(queue_name: queues) if queues.any?
+          scope.count
+        end
+      end
+    end
+  end
+end

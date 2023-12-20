@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "legacy/good_job"
+
 module HireFire
   module Macro
     module GoodJob
-      extend HireFire::Errors::QueueMethodRenamed
-      extend HireFire::Errors::LatencyMethodRenamed
+      extend HireFire::Macro::Legacy::GoodJob
       extend self
 
       # Calculates the maximum job queue latency across the specified queues.

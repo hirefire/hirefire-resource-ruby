@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "legacy/que"
+
 module HireFire
   module Macro
     module Que
-      extend HireFire::Errors::QueueMethodRenamed
-      extend HireFire::Errors::LatencyMethodRenamed
+      extend HireFire::Macro::Legacy::Que
       extend self
 
       # Calculates the maximum job queue latency across the specified queues.

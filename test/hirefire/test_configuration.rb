@@ -25,12 +25,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_empty @configuration.workers
   end
 
-  def test_log_queue_metrics_unsupported_error
-    assert_raises(HireFire::Configuration::LogQueueMetricsUnsupportedError) do
-      @configuration.log_queue_metrics = true
-    end
-  end
-
   def test_configure_web
     @configuration.dyno(:web)
     assert_instance_of HireFire::Web, @configuration.web
@@ -44,5 +38,14 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_equal 1.23, @configuration.workers[0].value
     assert_equal :mailer, @configuration.workers[1].name
     assert_equal 2.46, @configuration.workers[1].value
+  end
+
+  def test_log_queue_metrics_defaults_to_false
+    refute @configuration.log_queue_metrics
+  end
+
+  def test_log_queue_metrics_can_be_set
+    @configuration.log_queue_metrics = true
+    assert @configuration.log_queue_metrics
   end
 end

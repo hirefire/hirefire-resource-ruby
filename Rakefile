@@ -6,7 +6,6 @@ require "standard/rake"
 APPRAISAL_FILES = {
   "default" => [
     "test_configuration.rb",
-    "test_errors.rb",
     "test_hirefire.rb",
     "test_version.rb",
     "test_web.rb",

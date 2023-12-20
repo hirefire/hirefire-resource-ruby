@@ -3,23 +3,28 @@
 module HireFire
   module Macro
     module Legacy
+      # Provides backward compatibility with the legacy Que Macro.
+      # For new implementations, refer to {HireFire::Macro::Que}.
       module Que
-        # Queries the PostgreSQL database through Que in order to
-        # count the amount of jobs in the specified queue.
+        # Retrieves the total number of jobs in the specified queue(s) using Que.
         #
-        # @example Queue Macro Usage
-        #   HireFire::Macro::Que.queue # counts all queues.
-        #   HireFire::Macro::Que.queue("email") # counts the `email` queue.
+        # This method queries the PostgreSQL database through Que. It can count jobs
+        # in specified queues or all queues if no specific queue is provided.
         #
-        # @param [String] queue the queue name to count. (default: nil # gets all queues)
-        # @return [Integer] the number of jobs in the queue(s).
-        #
+        # @param queues [Array<String>] The names of the queues to count.
+        #   Pass an empty array or no arguments to count jobs in all queues.
+        # @return [Integer] Total number of jobs in the specified queues.
+        # @example Counting jobs in all queues
+        #   HireFire::Macro::Que.queue
+        # @example Counting jobs in the 'email' queue
+        #   HireFire::Macro::Que.queue("email")
         def queue(*queues)
-          query = queues.empty? && Private.base_query || Private.base_query + " AND queue IN (#{Private.names(queues)})"
+          query = queues.empty? ? Private.base_query : "#{Private.base_query} AND queue IN (#{Private.names(queues)})"
           results = ::Que.execute(query).first
           (results[:total] || results["total"]).to_i
         end
 
+        # @!visibility private
         module Private
           extend self
 

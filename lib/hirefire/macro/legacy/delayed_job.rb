@@ -4,73 +4,53 @@ module HireFire
   module Macro
     module Legacy
       module Delayed
+        # Provides backward compatibility with the legacy Delayed::Job Macro.
+        # For new implementations, refer to {HireFire::Macro::Delayed::Job}.
         module Job
-          # Returns the job quantity for the provided queue(s).
+          # Retrieves the total number of jobs in the specified queue(s).
           #
-          # @example Delayed::Job Macro Usage
+          # This method supports querying jobs across different ORMs (Object-Relational Mappings)
+          # such as ActiveRecord and Mongoid. It allows specifying queue names and priority limits.
           #
-          #   # all queues using ActiveRecord mapper.
-          #   HireFire::Macro::Delayed::Job.queue(:mapper => :active_record)
-          #
-          #   # all queues using ActiveRecord <= 2.3.x mapper.
-          #   HireFire::Macro::Delayed::Job.queue(:mapper => :active_record_2)
-          #
-          #   # only "email" queue with Mongoid mapper.
-          #   HireFire::Macro::Delayed::Job.queue("email", :mapper => :mongoid)
-          #
-          #   # "audio" and "video" queues with ActiveRecord mapper.
-          #   HireFire::Macro::Delayed::Job.queue("audio", "video", :mapper => :active_record)
-          #
-          #   # all queues with a maximum priority of 20
-          #   HireFire::Macro::Delayed::Job.queue(:max_priority => 20, :mapper => :active_record)
-          #
-          #   # all queues with a minimum priority of 5
-          #   HireFire::Macro::Delayed::Job.queue(:min_priority => 5, :mapper => :active_record)
-          #
-          # @param [Array] queues provide one or more queue names, or none for "all".
-          #   Last argument can pass in a Hash containing :mapper => :active_record or :mapper => :mongoid
-          # @return [Integer] the number of jobs in the queue(s).
-          #
+          # @param queues [Array<String, Symbol>] Queue names to query.
+          #   The last argument can be a Hash with :mapper, :min_priority, and/or :max_priority keys.
+          # @option queues [Symbol] :mapper (:active_record, :active_record_2, :mongoid) The ORM mapper to use.
+          # @option queues [Integer, nil] :min_priority The minimum job priority to include in the count.
+          # @option queues [Integer, nil] :max_priority The maximum job priority to include in the count.
+          # @return [Integer] Total number of jobs in the specified queues.
+          # @raise [ArgumentError] Raises an error if a valid :mapper option is not provided.
+          # @example Querying all queues using ActiveRecord mapper
+          #   HireFire::Macro::Delayed::Job.queue(mapper: :active_record)
+          # @example Querying specific queues with Mongoid mapper
+          #   HireFire::Macro::Delayed::Job.queue("email", mapper: :mongoid)
+          # @example Specifying minimum and maximum priorities with ActiveRecord mapper
+          #   HireFire::Macro::Delayed::Job.queue(max_priority: 20, min_priority: 5, mapper: :active_record)
           def queue(*queues)
             queues.flatten!
-
-            options = if queues.last.is_a?(Hash)
-              queues.pop
-            else
-              {}
-            end
+            options = queues.last.is_a?(Hash) ? queues.pop : {}
 
             case options[:mapper]
             when :active_record
-              c = ::Delayed::Job
-              c = c.where(failed_at: nil)
-              c = c.where("run_at <= ?", Time.now.utc)
-              c = c.where("priority >= ?", options[:min_priority]) if options.key?(:min_priority)
-              c = c.where("priority <= ?", options[:max_priority]) if options.key?(:max_priority)
-              c = c.where(queue: queues) unless queues.empty?
-              c.count.tap { ActiveRecord::Base.clear_active_connections! }
+              query = ::Delayed::Job.where(failed_at: nil, run_at: ..Time.now.utc)
+              query = query.where(priority: options[:min_priority]..) if options.key?(:min_priority)
+              query = query.where(priority: ..options[:max_priority]) if options.key?(:max_priority)
+              query = query.where(queue: queues) unless queues.empty?
+              query.count.tap { ActiveRecord::Base.clear_active_connections! }
             when :active_record_2
-              c = ::Delayed::Job
-              c = c.scoped(conditions: ["run_at <= ? AND failed_at is NULL", Time.now.utc])
-              c = c.scoped(conditions: ["priority >= ?", options[:min_priority]]) if options.key?(:min_priority)
-              c = c.scoped(conditions: ["priority <= ?", options[:max_priority]]) if options.key?(:max_priority)
-              # There is no queue column in delayed_job <= 2.x
-              c.count.tap do
-                if ActiveRecord::Base.respond_to?(:clear_active_connections!)
-                  ActiveRecord::Base.clear_active_connections!
-                end
-              end
+              # Note: There is no queue column in delayed_job <= 2.x
+              query = ::Delayed::Job.scoped(conditions: ["run_at <= ? AND failed_at is NULL", Time.now.utc])
+              query = query.scoped(conditions: ["priority >= ?", options[:min_priority]]) if options.key?(:min_priority)
+              query = query.scoped(conditions: ["priority <= ?", options[:max_priority]]) if options.key?(:max_priority)
+              query.count.tap { ActiveRecord::Base.clear_active_connections! if ActiveRecord::Base.respond_to?(:clear_active_connections!) }
             when :mongoid
-              c = ::Delayed::Job
-              c = c.where(failed_at: nil)
-              c = c.where(:run_at.lte => Time.now.utc)
-              c = c.where(:priority.gte => options[:min_priority]) if options.key?(:min_priority)
-              c = c.where(:priority.lte => options[:max_priority]) if options.key?(:max_priority)
-              c = c.where(:queue.in => queues) unless queues.empty?
-              c.count
+              query = ::Delayed::Job.where(failed_at: nil, :run_at.lte => Time.now.utc)
+              query = query.where(:priority.gte => options[:min_priority]) if options.key?(:min_priority)
+              query = query.where(:priority.lte => options[:max_priority]) if options.key?(:max_priority)
+              query = query.where(:queue.in => queues) unless queues.empty?
+              query.count
             else
-              raise %(Must pass in :mapper => :active_record or :mapper => :mongoid\n) +
-                %{For example: HireFire::Macro::Delayed::Job.queue("worker", :mapper => :active_record)}
+              raise ArgumentError, "Must pass either :mapper => :active_record or :mapper => :mongoid. " \
+                                   "For example: HireFire::Macro::Delayed::Job.queue('worker', mapper: :active_record)"
             end
           end
         end

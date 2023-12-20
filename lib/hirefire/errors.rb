@@ -5,9 +5,5 @@ module HireFire
     class MissingQueueError < StandardError; end
 
     class JobQueueLatencyUnsupportedError < StandardError; end
-
-    class QueueMethodRenamedError < StandardError; end
-
-    class LatencyMethodRenamedError < StandardError; end
   end
 end

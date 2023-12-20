@@ -3,17 +3,23 @@
 module HireFire
   module Macro
     module Legacy
+      # Provides backward compatibility with the legacy Resque Macro.
+      # For new implementations, refer to {HireFire::Macro::Resque}.
       module Resque
-        # Counts the amount of jobs in the (provided) Resque queue(s).
+        # Retrieves the total number of jobs in the specified Resque queue(s).
         #
-        # @example Resque Macro Usage
-        #   HireFire::Macro::Resque.queue # all queues
-        #   HireFire::Macro::Resque.queue("email") # only email queue
-        #   HireFire::Macro::Resque.queue("audio", "video") # audio and video queues
+        # This method counts the number of jobs in either specific queues or all queues
+        # if none are specified. It includes both queued and in-progress jobs.
         #
-        # @param [Array] queues provide one or more queue names, or none for "all".
-        # @return [Integer] the number of jobs in the queue(s).
-        #
+        # @param queues [Array<String, Symbol>] Queue names to count jobs in.
+        #   Pass an empty array or no arguments to count jobs in all queues.
+        # @return [Integer] Total number of jobs in the specified queues.
+        # @example Counting jobs in all queues
+        #   HireFire::Macro::Resque.queue
+        # @example Counting jobs in the 'email' queue
+        #   HireFire::Macro::Resque.queue("email")
+        # @example Counting jobs in both 'audio' and 'video' queues
+        #   HireFire::Macro::Resque.queue("audio", "video")
         def queue(*queues)
           queues = queues.flatten.map(&:to_s)
           queues = ::Resque.queues if queues.empty?
@@ -21,22 +27,19 @@ module HireFire
           return 0 if queues.empty?
 
           redis = ::Resque.redis
-          ids = Array(redis.smembers(:workers)).compact
+          worker_ids = Array(redis.smembers(:workers)).compact
           raw_jobs = redis.pipelined do |redis|
-            ids.map { |id| redis.get("worker:#{id}") }
+            worker_ids.map { |id| redis.get("worker:#{id}") }
           end
-          jobs = raw_jobs.map { |raw_job| ::Resque.decode(raw_job) || {} }
+          jobs_in_progress = raw_jobs.map { |raw_job| ::Resque.decode(raw_job) || {} }
 
-          in_queues = redis.pipelined do |redis|
+          jobs_in_queues = redis.pipelined do |redis|
             queues.map { |queue| redis.llen("queue:#{queue}") }
-          end.map(&:to_i).inject(&:+)
+          end.map(&:to_i).sum
 
-          in_progress = jobs.inject(0) do |memo, job|
-            memo += 1 if queues.include?(job["queue"])
-            memo
-          end
+          in_progress_count = jobs_in_progress.count { |job| queues.include?(job["queue"]) }
 
-          in_queues + in_progress
+          jobs_in_queues + in_progress_count
         end
       end
     end

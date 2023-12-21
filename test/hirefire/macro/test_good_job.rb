@@ -110,6 +110,11 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency(:default)
   end
 
+  def test_deprecated_queue_method
+    BasicJob.perform_later
+    assert_equal 1, HireFire::Macro::GoodJob.queue(:default)
+  end
+
   private
 
   def prepare_database

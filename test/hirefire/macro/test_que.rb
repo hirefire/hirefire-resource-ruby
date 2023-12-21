@@ -99,6 +99,11 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Que.job_queue_latency(:default)
   end
 
+  def test_deprecated_queue_method
+    Que.enqueue(job_options: {job_class: "BasicJob", queue: "default"})
+    assert_equal 1, HireFire::Macro::Que.queue(:default)
+  end
+
   private
 
   def prepare_database

@@ -96,6 +96,16 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_latency(:default)
   end
 
+  def test_deprecated_queue_method
+    BasicJob.delay(queue: :default).perform
+
+    if defined?(ActiveRecord)
+      assert_equal 1, HireFire::Macro::Delayed::Job.queue(:default, mapper: :active_record)
+    elsif defined?(Mongoid)
+      assert_equal 1, HireFire::Macro::Delayed::Job.queue(:default, mapper: :mongoid)
+    end
+  end
+
   private
 
   def prepare_active_record_database

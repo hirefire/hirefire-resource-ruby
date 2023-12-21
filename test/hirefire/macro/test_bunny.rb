@@ -82,6 +82,16 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
   end
 
+  def test_deprecated_queue_method
+    with_connection(queue: :default) do |connection, channel, default|
+      with_connection(queue: :mailer) do |connection, channel, mailer|
+        [default, mailer].each { |queue| queue.publish(TEST_MESSAGE) }
+        assert_equal 1, HireFire::Macro::Bunny.queue(:default, amqp_url: AMQP_URL, durable: false)
+        assert_equal 2, HireFire::Macro::Bunny.queue(:default, :mailer, amqp_url: AMQP_URL, durable: false)
+      end
+    end
+  end
+
   private
 
   def with_connection(options = {})

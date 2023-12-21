@@ -96,6 +96,16 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_in_delta 150, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true), LATENCY_DELTA
   end
 
+  def test_deprecated_queue_method
+    populate_queue
+
+    assert_equal 4, HireFire::Macro::Sidekiq.queue(:default)
+    assert_equal 5, HireFire::Macro::Sidekiq.queue(:default, :critical)
+    assert_equal 4, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_scheduled: true)
+    assert_equal 4, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_retries: true)
+    assert_equal 4, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_working: true)
+  end
+
   private
 
   class SampleWorker

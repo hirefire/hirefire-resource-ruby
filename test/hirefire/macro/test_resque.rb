@@ -73,6 +73,11 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     end
   end
 
+  def test_deprecated_queue_method
+    Resque.enqueue_to(:default, BasicJob)
+    assert_equal 1, HireFire::Macro::Resque.queue(:default)
+  end
+
   def self.next_id
     @next_id ||= 0
     @next_id += 1

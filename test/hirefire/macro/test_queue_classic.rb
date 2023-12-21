@@ -53,6 +53,11 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_in_delta 60, HireFire::Macro::QC.job_queue_latency(:mailer), LATENCY_DELTA
   end
 
+  def test_deprecated_queue_method
+    QC::Queue.new("default").enqueue_at(1.minute.from_now.to_i, "BasicJob.perform")
+    assert_equal 1, HireFire::Macro::QC.queue(:default)
+  end
+
   private
 
   def prepare_database

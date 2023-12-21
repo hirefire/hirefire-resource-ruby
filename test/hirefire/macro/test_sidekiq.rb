@@ -106,6 +106,13 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 4, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_working: true)
   end
 
+  def test_deprecated_latency_method
+    Timecop.freeze(Time.now - 200) { enqueue }
+    Timecop.freeze(Time.now - 100) { enqueue queue: "critical" }
+    assert_in_delta 200, HireFire::Macro::Sidekiq.latency(:default), LATENCY_DELTA
+    assert_in_delta 100, HireFire::Macro::Sidekiq.latency(:critical), LATENCY_DELTA
+  end
+
   private
 
   class SampleWorker

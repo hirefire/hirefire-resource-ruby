@@ -1,54 +1,62 @@
 ## v1.0.0
 
 * `HireFire`:
-  * Rename `HireFire::Resource` to `HireFire`. `HireFire::Resource` is now an alias of `HireFire` for backwards compatibility.
-  * Add configuration option to specify a custom logger -- defaults to `Logger.new($stdout)`.
-  * Add `dyno(:web)` configuration option. This replaces the `log_queue_metrics = true` flag.
-  * Remove `log_queue_metrics` in favor of `dyno(:web)`.
+  * Deprecate `HireFire::Resource`.
+  * Use `HireFire` as the entrypoint to configure the gem. `HireFire::Resource` is now an alias for backwards compatibility.
+  * Add configuration option to specify a custom logger. The logger defaults to `Logger.new($stdout)`.
+  * Add `dyno(:web)` configuration option.
 * `HireFire::Macro::Sidekiq.job_queue_latency`:
-  * Rename `.latency` to `.job_queue_latency`.
+  * Deprecate `.latency`.
+  * Introduce `.job_queue_latency` (replaces `.latency`).
   * Take into account jobs in the scheduled and retry sets.
   * Accept the `:skip_scheduled` option (default: false).
   * Accept the `:skip_retries` option (default: false).
-  * Accept multiple queues and raise an error when no queue is provided.
+  * Accept multiple queues.
   * Raise an error when no queue is provided.
 * `HireFire::Macro::Sidekiq.job_queue_size`:
-  * Rename `.queue` method to `.job_queue_size`.
+  * Deprecate `.queue`.
+  * Add `.job_queue_size` (replaces `.queue`).
   * Accept `:server` (Boolean, default: false) to perform a query inside the Redis server using Lua.
   * Optimize client-side counting of `ScheduledSet` and `RetrySet`.
   * Raise an error when no queue is provided.
 * `HireFire::Macro::GoodJob.job_queue_latency`:
   * Add `.job_queue_latency` to measure job queue latency for GoodJob.
 * `HireFire::Macro::GoodJob.job_queue_size`:
-  * Rename `.queue` method to `.job_queue_size`.
+  * Deprecate `.queue`.
+  * Add `.job_queue_size` (replaces `.queue`).
   * Accept the `:priority` option.
   * Raise an error when no queue is provided.
 * `HireFire::Macro::Delayed::Job.job_queue_latency`:
   * Add `.job_queue_latency` to measure job queue latency for DelayedJob.
 * `HireFire::Macro::Delayed::Job.job_queue_size`:
-  * Rename `.queue` method to `.job_queue_size`.
+  * Deprecate `.queue`.
+  * Add `.job_queue_size` (replaces `.queue`).
   * Stop accepting the `:mapper` option. Mapper is now inferred from the adapter.
   * Replace options `:min_priority` and `:max_priority` with `:priority` (Integer, Range, nil).
   * Raise an error when no queue is provided.
 * `HireFire::Macro::Bunny.job_queue_size`:
-  * Rename `.queue` method to `.job_queue_size`.
+  * Deprecate `.queue`.
+  * Add `.job_queue_size` (replaces `.queue`).
   * Accept `:max_priority` in favor of `"x-max-priority"`.
   * Raise an error when no queue is provided.
 * `HireFire::Macro::Resque.job_queue_size`:
-  * Rename `.queue` method to `.job_queue_size`.
+  * Deprecate `.queue`.
+  * Add `.job_queue_size` (replaces `.queue`).
   * Take into account scheduled jobs (via resque-scheduled).
   * Take into account failed jobs that are scheduled to be retried (via resque-retry).
   * Raise an error when no queue is provided.
 * `HireFire::Macro::Que.job_queue_latency`:
   * Add `.job_queue_latency` to measure job queue latency for Que.
 * `HireFire::Macro::Que.job_queue_size`:
-  * Rename `.queue` method to `.job_queue_size`.
+  * Deprecate `.queue`.
+  * Add `.job_queue_size` (replaces `.queue`).
   * Accept `:priority` option.
   * Raise an error when no queue is provided.
 * `HireFire::Macro::QC.job_queue_latency`:
   * Add `.job_queue_latency` to measure job queue latency for QC (Queue Classic).
 * `HireFire::Macro::QC.job_queue_size`:
-  * Rename `.queue` method to `.job_queue_size`.
+  * Deprecate `.queue`.
+  * Add `.job_queue_size` (replaces `.queue`).
   * Accept multiple queues.
   * Take into account scheduled jobs.
   * Raise an error when no queue is provided.

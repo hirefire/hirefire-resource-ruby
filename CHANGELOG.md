@@ -67,6 +67,7 @@
   * Drop support for que 0.
   * Drop support for que 1.
   * Drop support for qu.
+  * Add support for all the latest versions of each macro and the MRI runtime.
 * Switch to MIT license.
 
 ### Migration - Configuration

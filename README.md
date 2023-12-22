@@ -4,7 +4,7 @@ Since 2011, [HireFire] has been a trusted partner for over 1,000 companies, auto
 
 ## Guides & Documentation
 
-For detailed instructions on how to integrate HireFire with your Ruby application, please refer to our [Ruby Guide].
+For detailed instructions on how to integrate HireFire with your Ruby application, please refer to our [Ruby Guides].
 
 ## Development
 
@@ -26,4 +26,4 @@ This gem is licensed under the MIT license. See LICENSE.
 
 [HireFire]: https://www.hirefire.io/
 [Heroku]: https://www.heroku.com/
-[Ruby Guide]: https://help.hirefire.io/TODO
+[Ruby Guides]: https://help.hirefire.io/article/100-ruby-guides

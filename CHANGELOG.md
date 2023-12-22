@@ -9,14 +9,14 @@
   * Deprecate `.latency`.
   * Introduce `.job_queue_latency` (replaces `.latency`).
   * Take into account jobs in the scheduled and retry sets.
-  * Accept the `:skip_scheduled` option (default: false).
-  * Accept the `:skip_retries` option (default: false).
+  * Accept the `:skip_scheduled` option.
+  * Accept the `:skip_retries` option.
   * Accept multiple queues.
   * Raise an error when no queue is provided.
 * `HireFire::Macro::Sidekiq.job_queue_size`:
   * Deprecate `.queue`.
   * Add `.job_queue_size` (replaces `.queue`).
-  * Accept `:server` (Boolean, default: false) to perform a query inside the Redis server using Lua.
+  * Accept `:server` to perform a query inside the Redis server using Lua.
   * Optimize client-side counting of `ScheduledSet` and `RetrySet`.
   * Raise an error when no queue is provided.
 * `HireFire::Macro::GoodJob.job_queue_latency`:
@@ -27,23 +27,23 @@
   * Accept the `:priority` option.
   * Raise an error when no queue is provided.
 * `HireFire::Macro::Delayed::Job.job_queue_latency`:
-  * Add `.job_queue_latency` to measure job queue latency for DelayedJob.
+  * Add `.job_queue_latency` to measure job queue latency for Delayed::Job.
 * `HireFire::Macro::Delayed::Job.job_queue_size`:
   * Deprecate `.queue`.
   * Add `.job_queue_size` (replaces `.queue`).
-  * Stop accepting the `:mapper` option. Mapper is now inferred from the adapter.
+  * Remove the `:mapper` option. Mapper is now inferred from the adapter.
   * Replace options `:min_priority` and `:max_priority` with `:priority` (Integer, Range, nil).
   * Raise an error when no queue is provided.
 * `HireFire::Macro::Bunny.job_queue_size`:
   * Deprecate `.queue`.
   * Add `.job_queue_size` (replaces `.queue`).
-  * Accept `:max_priority` in favor of `"x-max-priority"`.
+  * Accept `:max_priority` (replaces `:"x-max-priority"`).
   * Raise an error when no queue is provided.
 * `HireFire::Macro::Resque.job_queue_size`:
   * Deprecate `.queue`.
   * Add `.job_queue_size` (replaces `.queue`).
-  * Take into account scheduled jobs (via resque-scheduled).
-  * Take into account failed jobs that are scheduled to be retried (via resque-retry).
+  * Consider scheduled jobs (resque-scheduled).
+  * Consider failed jobs (resque-retry).
   * Raise an error when no queue is provided.
 * `HireFire::Macro::Que.job_queue_latency`:
   * Add `.job_queue_latency` to measure job queue latency for Que.
@@ -61,13 +61,13 @@
   * Take into account scheduled jobs.
   * Raise an error when no queue is provided.
 * Support
+  * Add support for the latest versions of Ruby and the worker libraries.
   * Drop support for Ruby 2.6.
   * Drop support for delayed_job 2.
   * Drop support for delayed_job_mongoid 2.
   * Drop support for que 0.
   * Drop support for que 1.
   * Drop support for qu.
-  * Add support for all the latest versions of each macro and the MRI runtime.
 * Switch to MIT license.
 
 ### Migration - Configuration

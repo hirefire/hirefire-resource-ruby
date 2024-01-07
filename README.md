@@ -2,9 +2,9 @@
 
 Since 2011, over 1,000 companies have trusted [HireFire] to autoscale more than 5,000 applications hosted on [Heroku], with over 10,000 web and worker dynos.
 
-## Guides & Documentation
+## Instructions
 
-You can find the integration instructions in-app on [HireFire] when you are setting up your Dyno Manager (Autoscaler).
+You can find the integration instructions on [HireFire] when you are setting up your Dyno Manager (Autoscaler).
 
 ## Development
 

@@ -10,6 +10,7 @@ Gem::Specification.new do |spec|
   spec.summary = "HireFire: Advanced Autoscalers for Heroku"
   spec.license = "MIT"
   spec.metadata["homepage_uri"] = "https://www.hirefire.io"
+  spec.metadata["documentation_uri"] = "https://www.rubydoc.info/gems/hirefire-resource"
   spec.metadata["changelog_uri"] = "https://github.com/hirefire/hirefire-resource-ruby/blob/master/CHANGELOG.md"
   spec.metadata["source_code_uri"] = "https://github.com/hirefire/hirefire-resource-ruby/"
   spec.metadata["bug_tracker_uri"] = "https://github.com/hirefire/hirefire-resource-ruby/issues"

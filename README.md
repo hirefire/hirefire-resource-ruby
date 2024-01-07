@@ -1,10 +1,10 @@
-## HireFire: Advanced Autoscaling for Heroku-hosted Applications
+## HireFire: Advanced autoscaling for Heroku-hosted applications
 
-Since 2011, [HireFire] has been a trusted partner for over 1,000 companies, autoscaling more than 5,000 [Heroku]-hosted applications with over 10,000 web and worker dynos.
+Since 2011, over 1,000 companies have trusted [HireFire] to autoscale more than 5,000 applications hosted on [Heroku], with over 10,000 web and worker dynos.
 
 ## Guides & Documentation
 
-For detailed instructions on how to integrate HireFire with your Ruby application, please refer to our [Ruby Guides].
+You can find the integration instructions in-app on [HireFire] when you are setting up your Dyno Manager (Autoscaler).
 
 ## Development
 
@@ -22,8 +22,7 @@ See `rake -T` for common tasks.
 
 ## License
 
-This gem is licensed under the MIT license. See LICENSE.
+This gem is licensed under the terms of the MIT license.
 
 [HireFire]: https://www.hirefire.io/
 [Heroku]: https://www.heroku.com/
-[Ruby Guides]: https://help.hirefire.io/article/100-ruby-guides

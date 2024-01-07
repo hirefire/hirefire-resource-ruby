@@ -14,8 +14,8 @@ module HireFire
         # Calculates the maximum job queue latency across the specified queues.
         # Both ActiveRecord and Mongoid are supported.
         #
-        # @param queues [Array<String, Symbol>] provide one or more queue names.
-        # @param priority [Integer, Range, nil] specific priority or a range of priorities.
+        # @param queues [Array<String, Symbol>] The names of the queues to be included in the measurement of job queue latency.
+        # @param priority [Integer, Range, nil] Specific priority or a range of priorities.
         # @return [Integer] Maximum job queue latency in seconds across the specified queues.
         # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
         # @example Job Queue Latency of the default queue
@@ -50,8 +50,8 @@ module HireFire
         # Calculates the total job queue size across the specified queues.
         # Both ActiveRecord and Mongoid are supported.
         #
-        # @param queues [Array<String, Symbol>] provide one or more queue names.
-        # @param priority [Integer, Range, nil] specific priority or a range of priorities.
+        # @param queues [Array<String, Symbol>] The names of the queues to be included in the measurement of job queue size.
+        # @param priority [Integer, Range, nil] Specific priority or a range of priorities.
         # @return [Integer] Cumulative job queue size across the specified queues.
         # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
         # @example Job Queue Size of the default queue

@@ -10,7 +10,7 @@ module HireFire
 
       # Calculates the maximum job queue latency across the specified queues.
       #
-      # @param queues [Array<String, Symbol>] the list of queues to calculate latency for.
+      # @param queues [Array<String, Symbol>] The names of the queues to be included in the measurement of job queue latency.
       # @return [Integer] Maximum job queue latency in seconds across the specified queues.
       # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
       # @example Job Queue Latency for the default queue
@@ -38,7 +38,7 @@ module HireFire
 
       # Calculates the total job queue size across the specified queues.
       #
-      # @param queues [Array<String, Symbol>] the list of queues to count.
+      # @param queues [Array<String, Symbol>] The names of the queues to be included in the measurement of job queue size.
       # @return [Integer] Cumulative job queue size across the specified queues.
       # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
       # @example Job Queue Size for the default queue

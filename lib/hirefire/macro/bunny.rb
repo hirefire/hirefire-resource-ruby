@@ -21,7 +21,7 @@ module HireFire
       #   Currently, there is no workaround for this issue. It is
       #   recommended not to use this method for queues that contain
       #   scheduled jobs.
-      # @param queues [Array<String, Symbol>] Names of the RabbitMQ queues.
+      # @param queues [Array<String, Symbol>] The names of the queues to be included in the measurement of job queue size.
       # @param connection [Bunny::Session, nil] An existing RabbitMQ connection.
       # @param amqp_url [String, nil] RabbitMQ URL for initializing a new connection.
       # @param durable [Boolean] Indicates if the queue is durable. Default is true.

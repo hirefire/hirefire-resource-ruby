@@ -11,7 +11,7 @@ module HireFire
 
       # Calculates the total job queue size across the specified queues.
       #
-      # @param queues [Array<String, Symbol>] the list of queues to count.
+      # @param queues [Array<String, Symbol>] The names of the queues to be included in the measurement of job queue size.
       # @return [Integer] Cumulative job queue size across the specified queues.
       # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
       # @example Job Queue Size in the default queue

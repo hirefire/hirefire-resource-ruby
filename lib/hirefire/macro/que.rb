@@ -10,8 +10,8 @@ module HireFire
 
       # Calculates the maximum job queue latency across the specified queues.
       #
-      # @param queues [Array<String, Symbol>] the list of queues to check latency for.
-      # @param priority [Integer, Range, nil] optional priority filter.
+      # @param queues [Array<String, Symbol>] The names of the queues to be included in the measurement of job queue latency.
+      # @param priority [Integer, Range, nil] Optional priority filter.
       # @return [Integer] Maximum job queue latency in seconds across the specified queues.
       # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
       # @example Job Queue Latency for the default queue
@@ -24,13 +24,12 @@ module HireFire
       #   HireFire::Macro::Que.job_queue_latency(priority: 3..7)
       def job_queue_latency(*queues, priority: nil)
         queues = Utility.construct_queues(queues)
-
-        query = "SELECT run_at FROM que_jobs WHERE run_at <= NOW() AND finished_at IS NULL AND expired_at IS NULL"
-
-        if queues.any?
-          queue_names = queues.map { |q| sanitize_sql(q) }.join(", ")
-          query += " AND queue IN (#{queue_names})"
-        end
+        queue_names = queues.map { |q| sanitize_sql(q) }.join(", ")
+        query = "SELECT run_at FROM que_jobs" \
+          " WHERE run_at <= NOW()" \
+          " AND finished_at IS NULL" \
+          " AND expired_at IS NULL" \
+          " AND queue IN (#{queue_names})"
 
         if priority.is_a?(Range)
           query += " AND priority BETWEEN #{priority.begin} AND #{priority.end}"
@@ -38,6 +37,8 @@ module HireFire
           query += " AND priority = #{priority}"
         end
 
+        # @TODO is this what we want? or should we just get the oldest run_at?
+        # Check other macros
         query += " ORDER BY priority ASC, run_at ASC LIMIT 1"
 
         result = ::Que.execute(query).first
@@ -46,8 +47,8 @@ module HireFire
 
       # Calculates the total job queue size across the specified queues.
       #
-      # @param queues [Array<String, Symbol>] the list of queues to count.
-      # @param priority [Integer, Range, nil] optional priority filter.
+      # @param queues [Array<String, Symbol>] The names of the queues to be included in the measurement of job queue size.
+      # @param priority [Integer, Range, nil] Optional priority filter.
       # @return [Integer] Cumulative job queue size across the specified queues.
       # @raise [HireFire::Errors::MissingQueueError] Raised when no queue names are provided.
       # @example Job Queue Size for the default queue
@@ -60,13 +61,13 @@ module HireFire
       #   HireFire::Macro::Que.job_queue_size(priority: 3..7)
       def job_queue_size(*queues, priority: nil)
         queues = Utility.construct_queues(queues)
-
-        query = "SELECT COUNT(*) AS total FROM que_jobs WHERE run_at <= NOW() AND finished_at IS NULL AND expired_at IS NULL"
-
-        if queues.any?
-          queue_names = queues.map { |q| sanitize_sql(q) }.join(", ")
-          query += " AND queue IN (#{queue_names})"
-        end
+        queue_names = queues.map { |q| sanitize_sql(q) }.join(", ")
+        query =
+          "SELECT COUNT(*) AS total FROM que_jobs" \
+          " WHERE run_at <= NOW()" \
+          " AND finished_at IS NULL" \
+          " AND expired_at IS NULL" \
+          " AND queue IN (#{queue_names})"
 
         if priority.is_a?(Range)
           query += " AND priority BETWEEN #{priority.begin} AND #{priority.end}"

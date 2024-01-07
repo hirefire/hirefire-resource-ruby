@@ -106,6 +106,7 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     queue_args = {}
     queue_args["x-max-priority"] = max_priority if max_priority
 
+    channel.queue_delete(queue_name)
     queue = channel.queue(queue_name, durable: durable, arguments: queue_args)
 
     yield connection, channel, queue

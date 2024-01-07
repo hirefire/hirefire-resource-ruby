@@ -11,7 +11,7 @@ module HireFire
 
       # Calculates the maximum job queue latency across the specified queues.
       #
-      # @param [Array<String, Symbol>] queues List of queue names.
+      # @param [Array<String, Symbol>] The names of the queues to be included in the measurement of job queue latency.
       # @param [Hash] options The options to filter and control the latency calculation.
       # @option options [Boolean] :skip_retries (false) If set to true, skips checking the RetrySet for latencies.
       # @option options [Boolean] :skip_scheduled (false) If set to true, skips checking the ScheduledSet for latencies.
@@ -31,7 +31,7 @@ module HireFire
 
       # Calculates the total job queue size across the specified queues.
       #
-      # @param [Array<String, Symbol>] queues List of queue names.
+      # @param [Array<String, Symbol>] The names of the queues to be included in the measurement of job queue size.
       # @param [Hash] options The options to filter and control the count.
       # @option options [Boolean] :server (false) If true, use server-side Lua to count jobs.
       # @option options [Boolean] :skip_retries (false) If true, skip counting jobs in retry queues.

@@ -7,8 +7,8 @@ Gem::Specification.new do |spec|
   spec.authors = ["Michael van Rooijen"]
   spec.email = ["support@hirefire.io"]
   spec.homepage = "https://www.hirefire.io"
-  spec.summary = "HireFire: Advanced autoscaling for Heroku-hosted applications"
-  spec.description = spec.summary
+  spec.summary = "HireFire: Advanced Autoscalers for Heroku"
+  spec.description = "Since 2011, over 1,000 companies have trusted HireFire to autoscale more than 5,000 applications hosted on Heroku, managing over 10,000 web and worker dynos."
   spec.license = "MIT"
   spec.metadata["homepage_uri"] = "https://www.hirefire.io"
   spec.metadata["changelog_uri"] = "https://github.com/hirefire/hirefire-resource-ruby/blob/master/CHANGELOG.md"

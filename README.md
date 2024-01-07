@@ -8,9 +8,8 @@ You can find the integration instructions in-app on [HireFire] when you are sett
 
 ## Development
 
-Run `bin/setup` to prepare the environment.
-
-See `rake -T` for common tasks.
+- Run `bin/setup` to prepare the environment.
+- See `rake -T` for common tasks.
 
 ## Release
 

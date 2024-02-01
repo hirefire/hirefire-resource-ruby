@@ -1,3 +1,7 @@
+## v1.0.1
+
+* Fix issue where jobs that were enqueued using `sidekiq < 7.2.1` and then processed with `sidekiq >= 7.2.1` (after updating) resulted in a `NoMethodError: undefined method 'queue' for Hash` error during checkups.
+
 ## v1.0.0
 
 * `HireFire`:

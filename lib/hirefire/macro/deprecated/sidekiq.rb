@@ -122,10 +122,10 @@ module HireFire
 
           if !options[:skip_working]
             in_progress = ::Sidekiq::Workers.new.count do |key, tid, job|
-              if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("7.0.0")
-                queues.include?(job.queue) && job.run_at <= now
-              else
+              if job.is_a?(Hash) # Sidekiq < 7.2.1
                 queues.include?(job["queue"]) && job["run_at"] <= now_as_i
+              else # Sidekiq >= 7.2.1
+                queues.include?(job.queue) && job.run_at <= now
               end
             end
           end

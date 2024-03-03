@@ -52,6 +52,8 @@ jobs:
           - good_job_2
           - good_job_3
           - queue_classic_4
+          - que_0
+          - que_1
           - que_2
           - rack_2
           - rack_3

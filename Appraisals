@@ -36,6 +36,18 @@ appraise "queue_classic_4" do
   gem "queue_classic", "~> 4"
 end
 
+appraise "que_0" do
+  gem "pg"
+  gem "rails", "~> 7"
+  gem "que", "~> 0", require: false
+end
+
+appraise "que_1" do
+  gem "pg"
+  gem "rails", "~> 7"
+  gem "que", "~> 1", require: false
+end
+
 appraise "que_2" do
   gem "pg"
   gem "rails", "~> 7"

@@ -53,7 +53,7 @@ APPRAISAL_VERSIONS = {
   "delayed_job_mongoid" => %w[3],
   "queue_classic" => %w[4],
   "resque" => %w[2],
-  "que" => %w[2]
+  "que" => %w[0 1 2]
 }
 
 def matrix

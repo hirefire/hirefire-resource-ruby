@@ -38,10 +38,11 @@ For more information, visit our [home page][HireFire].
 ## Release
 
 1. Update the `HireFire::VERSION` constant.
-2. Ensure that `CHANGELOG.md` is up-to-date.
-3. Commit changes with `git commit`.
-4. Create a `git tag` matching the new version (e.g., `v1.0.0`).
-5. Push the new git tag. Continuous Integration will handle the distribution process.
+2. Update Gemfile locks with `bundle` and `bundle exec appraisal`.
+3. Ensure that `CHANGELOG.md` is up-to-date.
+4. Commit changes with `git commit`.
+5. Create a `git tag` matching the new version (e.g., `v1.0.0`).
+6. Push the new git tag. Continuous Integration will handle the distribution process.
 
 ## License
 

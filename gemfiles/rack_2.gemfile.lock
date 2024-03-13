@@ -1,7 +1,7 @@
 PATH
   remote: ..
   specs:
-    hirefire-resource (1.0.1)
+    hirefire-resource (1.0.2)
 
 GEM
   remote: https://rubygems.org/

@@ -1,4 +1,4 @@
-## HEAD
+## v1.0.2
 
 * Add support for dashes in `HireFire::Worker` names to match the Procfile process naming format. `HireFire::Worker` is implicitly used when configuring HireFire using the `HireFire::Configuration#dyno` method.
 

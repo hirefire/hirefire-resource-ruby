@@ -32,6 +32,8 @@ class HireFire::Macro::ResqueTest < Minitest::Test
   def test_job_queue_size_with_working
     enqueue_to_working_with_queue :default, BasicJob
     assert_equal 1, HireFire::Macro::Resque.job_queue_size
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:mailer)
   end
 
   def test_job_queue_size_with_scheduled_jobs

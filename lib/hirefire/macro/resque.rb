@@ -21,6 +21,8 @@ module HireFire
       #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
       #   If not provided, size is measured across all queues.
+      # @param [Boolean] skip_scheduled (false) If true, scheduled jobs will not be counted.
+      # @param [Boolean] skip_working (false) If true, working jobs will not be counted.
       # @return [Integer] Total job queue size.
       # @example Calculate size across all queues
       #   HireFire::Macro::Resque.job_queue_size
@@ -28,10 +30,17 @@ module HireFire
       #   HireFire::Macro::Resque.job_queue_size(:default)
       # @example Calculate size across the "default" and "mailer" queues
       #   HireFire::Macro::Resque.job_queue_size(:default, :mailer)
-      def job_queue_size(*queues)
+      # @example Calculate size excluding scheduled jobs
+      #   HireFire::Macro::Resque.job_queue_size(skip_scheduled: true)
+      # @example Calculate size excluding jobs currently being worked on
+      #   HireFire::Macro::Resque.job_queue_size(skip_working: true)
+      def job_queue_size(*queues, skip_scheduled: false, skip_working: false)
         queues = normalize_queues(queues, allow_empty: true)
 
         SIZE_METHODS.sum do |size_method|
+          next 0 if skip_scheduled && size_method == :scheduled_size
+          next 0 if skip_working && size_method == :working_size
+
           method(size_method).call(queues)
         end
       end

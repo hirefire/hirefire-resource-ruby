@@ -37,8 +37,11 @@ class HireFire::Macro::ResqueTest < Minitest::Test
   def test_job_queue_size_with_working
     enqueue_to_working_with_queue :default, BasicJob
     assert_equal 1, HireFire::Macro::Resque.job_queue_size
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(skip_working: true)
     assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default, skip_working: true)
     assert_equal 0, HireFire::Macro::Resque.job_queue_size(:mailer)
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:mailer, skip_working: true)
   end
 
   def test_job_queue_size_with_scheduled_jobs
@@ -47,19 +50,28 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     Resque.enqueue_in_with_queue(:mailer, 300, BasicJob)
 
     assert_equal 0, HireFire::Macro::Resque.job_queue_size # uncached
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(skip_scheduled: true) # uncached
 
     Timecop.freeze(Time.now + 200) do
       assert_equal 1, HireFire::Macro::Resque.job_queue_size # uncached
+      assert_equal 0, HireFire::Macro::Resque.job_queue_size(skip_scheduled: true) # uncached
       assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default) # uncached
+      assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default, skip_scheduled: true) # uncached
       assert_equal 0, HireFire::Macro::Resque.job_queue_size(:mailer) # cached
+      assert_equal 0, HireFire::Macro::Resque.job_queue_size(:mailer, skip_scheduled: true) # cached
       assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default, :mailer) # cached
+      assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default, :mailer, skip_scheduled: true) # cached
     end
 
     Timecop.freeze(Time.now + 400) do
       assert_equal 2, HireFire::Macro::Resque.job_queue_size(:default) # expired
+      assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default, skip_scheduled: true) # expired
       assert_equal 1, HireFire::Macro::Resque.job_queue_size(:mailer) # cached
+      assert_equal 0, HireFire::Macro::Resque.job_queue_size(:mailer, skip_scheduled: true) # cached
       assert_equal 3, HireFire::Macro::Resque.job_queue_size(:default, :mailer) # cached
+      assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default, :mailer, skip_scheduled: true) # cached
       assert_equal 3, HireFire::Macro::Resque.job_queue_size # cached
+      assert_equal 0, HireFire::Macro::Resque.job_queue_size(skip_scheduled: true) # cached
     end
   end
 

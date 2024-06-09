@@ -67,9 +67,13 @@ module HireFire
       end
 
       def scheduled_size(queues)
+        cached_result = cache.fetch(queues)
+        return cached_result if cached_result
+
         cursor = 0
         batch = 1000
         total_size = 0
+        sizes = Hash.new(0)
         current_time = Time.now.to_i
 
         loop do
@@ -101,8 +105,9 @@ module HireFire
 
                 break if encoded_jobs.empty?
 
-                total_size += encoded_jobs.count do |encoded_job|
-                  queues.include?(::Resque.decode(encoded_job)["queue"])
+                encoded_jobs.each do |encoded_job|
+                  queue = ::Resque.decode(encoded_job)["queue"]
+                  sizes[queue] += 1
                 end
 
                 break if encoded_jobs.size < batch
@@ -117,13 +122,64 @@ module HireFire
           cursor += batch
         end
 
-        total_size
+        if queues.empty?
+          total_size
+        else
+          cache.store(sizes)
+          cache.fetch(queues)
+        end
       end
-
-      private
 
       def registered_queues
         ::Resque.redis.keys("queue:*").map { |key| key[6..] }.to_set
+      end
+
+      class Cache
+        EXPIRY_TIME = 5 # seconds
+
+        def initialize
+          @sizes = Hash.new(0)
+          @cached_at = expired_time
+        end
+
+        def fetch(queues)
+          return nil if expired?
+
+          if queues.empty?
+            sizes.values.sum
+          else
+            sizes.values_at(*queues).sum
+          end
+        end
+
+        def store(sizes)
+          @sizes = Hash.new(0).merge(sizes)
+          @cached_at = current_time
+        end
+
+        def expire!
+          @cached_at = expired_time
+        end
+
+        private
+
+        attr_reader :sizes, :cached_at
+
+        def current_time
+          Time.now.to_i
+        end
+
+        def expired_time
+          current_time - EXPIRY_TIME
+        end
+
+        def expired?
+          current_time - cached_at >= EXPIRY_TIME
+        end
+      end
+
+      def cache
+        @cache ||= Cache.new
       end
     end
   end

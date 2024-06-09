@@ -4,11 +4,16 @@ require "test_helper"
 
 class HireFire::Macro::ResqueTest < Minitest::Test
   def setup
+    expire_cache!
     Resque.redis = Redis.new(db: 15).tap(&:flushdb)
   end
 
   def teardown
     Resque.redis.close
+  end
+
+  def expire_cache!
+    HireFire::Macro::Resque.send(:cache).expire!
   end
 
   def test_job_queue_latency_unsupported
@@ -41,20 +46,20 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     Resque.enqueue_in_with_queue(:default, 300, BasicJob)
     Resque.enqueue_in_with_queue(:mailer, 300, BasicJob)
 
-    assert_equal 0, HireFire::Macro::Resque.job_queue_size
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size # uncached
 
     Timecop.freeze(Time.now + 200) do
-      assert_equal 1, HireFire::Macro::Resque.job_queue_size
-      assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
-      assert_equal 0, HireFire::Macro::Resque.job_queue_size(:mailer)
-      assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default, :mailer)
+      assert_equal 1, HireFire::Macro::Resque.job_queue_size # uncached
+      assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default) # uncached
+      assert_equal 0, HireFire::Macro::Resque.job_queue_size(:mailer) # cached
+      assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default, :mailer) # cached
     end
 
     Timecop.freeze(Time.now + 400) do
-      assert_equal 3, HireFire::Macro::Resque.job_queue_size
-      assert_equal 2, HireFire::Macro::Resque.job_queue_size(:default)
-      assert_equal 1, HireFire::Macro::Resque.job_queue_size(:mailer)
-      assert_equal 3, HireFire::Macro::Resque.job_queue_size(:default, :mailer)
+      assert_equal 2, HireFire::Macro::Resque.job_queue_size(:default) # expired
+      assert_equal 1, HireFire::Macro::Resque.job_queue_size(:mailer) # cached
+      assert_equal 3, HireFire::Macro::Resque.job_queue_size(:default, :mailer) # cached
+      assert_equal 3, HireFire::Macro::Resque.job_queue_size # cached
     end
   end
 

@@ -23,9 +23,9 @@ module HireFire
       #   HireFire::Macro::GoodJob.job_queue_latency(:default, :mailer)
       def job_queue_latency(*queues)
         queues = normalize_queues(queues, allow_empty: true)
-        query = ::GoodJob::Execution
+        query = base_class
         query = query.where(queue_name: queues) if queues.any?
-        query = query.where(finished_at: nil)
+        query = query.where(performed_at: nil)
         query = query.where(scheduled_at: ..Time.now).or(query.where(scheduled_at: nil))
         query = query.order(scheduled_at: :asc, created_at: :asc)
 
@@ -50,11 +50,21 @@ module HireFire
       #   HireFire::Macro::GoodJob.job_queue_size(:default, :mailer)
       def job_queue_size(*queues)
         queues = normalize_queues(queues, allow_empty: true)
-        query = ::GoodJob::Execution
+        query = base_class
         query = query.where(queue_name: queues) if queues.any?
-        query = query.where(finished_at: nil)
+        query = query.where(performed_at: nil)
         query = query.where(scheduled_at: ..Time.now).or(query.where(scheduled_at: nil))
         query.count
+      end
+
+      private
+
+      def base_class
+        version >= Gem::Version.new("4.0.0") ? ::GoodJob::Job : ::GoodJob::Execution
+      end
+
+      def version
+        Gem::Version.new(::GoodJob::VERSION)
       end
     end
   end

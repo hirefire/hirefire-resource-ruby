@@ -1,3 +1,7 @@
+## v1.0.4
+
+* Add support for `good_job ~> 4`, for the `job_queue_size`, `job_queue_latency` and `queue` (deprecated) macros.
+
 ## v1.0.3
 
 * Add support for `que ~> 0` and `que ~> 1`, in addition to `que ~> 2`, for both the `job_queue_size` and `job_queue_latency` macros.

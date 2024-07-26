@@ -1,11 +1,15 @@
 # frozen_string_literal: true
 
+require "hirefire/macro/helpers/good_job"
+
 module HireFire
   module Macro
     module Deprecated
       # Provides backward compatibility with the deprecated GoodJob macro.
       # For new implementations, refer to {HireFire::Macro::GoodJob}.
       module GoodJob
+        include HireFire::Macro::Helpers::GoodJob
+
         # Retrieves the total number of jobs in the specified queue(s) using GoodJob.
         #
         # This method queries the PostgreSQL database through GoodJob. It's capable
@@ -21,8 +25,7 @@ module HireFire
         # @example Counting jobs in the "default" queue
         #   HireFire::Macro::GoodJob.queue("default")
         def queue(*queues)
-          base_class = defined?(::GoodJob::Execution) ? ::GoodJob::Execution : ::GoodJob::Job
-          scope = base_class.only_scheduled.unfinished
+          scope = good_job_class.only_scheduled.unfinished
           scope = scope.where(queue_name: queues) if queues.any?
           scope.count
         end

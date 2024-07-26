@@ -30,6 +30,12 @@ appraise "good_job_3" do
   gem "good_job", "~> 3", require: false
 end
 
+appraise "good_job_4" do
+  gem "pg"
+  gem "rails", "~> 7"
+  gem "good_job", "~> 4", require: false
+end
+
 appraise "queue_classic_4" do
   gem "pg"
   gem "rails", "~> 7"

@@ -51,6 +51,7 @@ jobs:
           - delayed_job_mongoid_3
           - good_job_2
           - good_job_3
+          - good_job_4
           - queue_classic_4
           - que_0
           - que_1
@@ -61,6 +62,9 @@ jobs:
           - sidekiq_6
           - sidekiq_7
           - solid_queue_0
+        exclude:
+          - ruby-version: 2.7
+            appraisal: good_job_4
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

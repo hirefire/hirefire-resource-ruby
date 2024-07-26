@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
+require_relative "helpers/good_job"
 require_relative "deprecated/good_job"
 
 module HireFire
   module Macro
     module GoodJob
-      extend HireFire::Macro::Deprecated::GoodJob
       extend HireFire::Utility
+      extend HireFire::Macro::Helpers::GoodJob
+      extend HireFire::Macro::Deprecated::GoodJob
       extend self
 
       # Calculates the maximum job queue latency using GoodJob. If no queues are specified, it
@@ -23,7 +25,7 @@ module HireFire
       #   HireFire::Macro::GoodJob.job_queue_latency(:default, :mailer)
       def job_queue_latency(*queues)
         queues = normalize_queues(queues, allow_empty: true)
-        query = ::GoodJob::Execution
+        query = good_job_class
         query = query.where(queue_name: queues) if queues.any?
         query = query.where(performed_at: nil)
         query = query.where(scheduled_at: ..Time.now).or(query.where(scheduled_at: nil))
@@ -50,7 +52,7 @@ module HireFire
       #   HireFire::Macro::GoodJob.job_queue_size(:default, :mailer)
       def job_queue_size(*queues)
         queues = normalize_queues(queues, allow_empty: true)
-        query = ::GoodJob::Execution
+        query = good_job_class
         query = query.where(queue_name: queues) if queues.any?
         query = query.where(performed_at: nil)
         query = query.where(scheduled_at: ..Time.now).or(query.where(scheduled_at: nil))

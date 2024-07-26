@@ -2,14 +2,14 @@
 
 require "test_helper"
 require "good_job/version"
+require "hirefire/macro/helpers/good_job"
 
-if Gem::Version.new(::GoodJob::VERSION) >= Gem::Version.new("3.0.0")
-  require_relative "../../env/rails_good_job_3/config/environment"
-else
-  require_relative "../../env/rails_good_job_2/config/environment"
-end
+major_version = Gem::Version.new(::GoodJob::VERSION).segments[0]
+require_relative "../../env/rails_good_job_#{major_version}/config/environment"
 
 class HireFire::Macro::GoodJobTest < Minitest::Test
+  include HireFire::Macro::Helpers::GoodJob
+
   LATENCY_DELTA = 2
 
   def setup
@@ -38,7 +38,7 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
 
   def test_job_queue_latency_with_unfinished_jobs
     job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
-    GoodJob::Execution.where(active_job_id: job_id).update_all(performed_at: 1.minute.ago)
+    good_job_class.where(active_job_id: job_id).update_all(performed_at: 1.minute.ago)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
   end
 
@@ -62,7 +62,7 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
 
   def test_job_queue_size_with_unfinished_jobs
     job_id = BasicJob.perform_later.job_id
-    GoodJob::Execution.where(active_job_id: job_id).update_all(performed_at: 1.minute.ago)
+    good_job_class.where(active_job_id: job_id).update_all(performed_at: 1.minute.ago)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
   end
 
@@ -88,6 +88,6 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     ActiveRecord::Migration.verbose = false
     ActiveRecord::MigrationContext.new(Rails.root.join("db/migrate").to_s).migrate
 
-    GoodJob::Execution.delete_all
+    good_job_class.delete_all
   end
 end

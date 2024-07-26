@@ -25,7 +25,7 @@ module HireFire
         queues = normalize_queues(queues, allow_empty: true)
         query = ::GoodJob::Execution
         query = query.where(queue_name: queues) if queues.any?
-        query = query.where(finished_at: nil)
+        query = query.where(performed_at: nil)
         query = query.where(scheduled_at: ..Time.now).or(query.where(scheduled_at: nil))
         query = query.order(scheduled_at: :asc, created_at: :asc)
 
@@ -52,7 +52,7 @@ module HireFire
         queues = normalize_queues(queues, allow_empty: true)
         query = ::GoodJob::Execution
         query = query.where(queue_name: queues) if queues.any?
-        query = query.where(finished_at: nil)
+        query = query.where(performed_at: nil)
         query = query.where(scheduled_at: ..Time.now).or(query.where(scheduled_at: nil))
         query.count
       end

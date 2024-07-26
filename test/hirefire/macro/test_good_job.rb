@@ -36,9 +36,9 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_in_delta 60, HireFire::Macro::GoodJob.job_queue_latency(:mailer), LATENCY_DELTA
   end
 
-  def test_job_queue_latency_finished_jobs
+  def test_job_queue_latency_with_unfinished_jobs
     job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
-    GoodJob::Execution.where(active_job_id: job_id).update_all(finished_at: Time.now)
+    GoodJob::Execution.where(active_job_id: job_id).update_all(performed_at: 1.minute.ago)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
   end
 
@@ -60,9 +60,9 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
   end
 
-  def test_job_queue_size_with_finished_jobs
+  def test_job_queue_size_with_unfinished_jobs
     job_id = BasicJob.perform_later.job_id
-    GoodJob::Execution.where(active_job_id: job_id).update_all(finished_at: Time.now)
+    GoodJob::Execution.where(active_job_id: job_id).update_all(performed_at: 1.minute.ago)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
   end
 

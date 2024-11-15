@@ -1,3 +1,9 @@
+## v1.0.5
+
+* Increase process name length constraint from 30 to 63.
+* Add tests for `solid_queue ~> 1`.
+* Drop tests for `ruby ~> 2.7`.
+
 ## v1.0.4
 
 * Add support for `good_job ~> 4`, for the `job_queue_size`, `job_queue_latency` and `queue` (deprecated) macros.

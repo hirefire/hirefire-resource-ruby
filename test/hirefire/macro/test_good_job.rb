@@ -76,17 +76,14 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   def prepare_database
     db_config = Rails.configuration.database_configuration[Rails.env]
 
-    ActiveRecord::Base.establish_connection(db_config)
-
     begin
-      ActiveRecord::Base.connection
+      ActiveRecord::Base.establish_connection(db_config)
+      ActiveRecord::Migration.verbose = false
+      ActiveRecord::MigrationContext.new(Rails.root.join("db/migrate").to_s).migrate
     rescue ActiveRecord::NoDatabaseError
       ActiveRecord::Tasks::DatabaseTasks.create(db_config)
-      ActiveRecord::Base.establish_connection(db_config)
+      retry
     end
-
-    ActiveRecord::Migration.verbose = false
-    ActiveRecord::MigrationContext.new(Rails.root.join("db/migrate").to_s).migrate
 
     good_job_class.delete_all
   end

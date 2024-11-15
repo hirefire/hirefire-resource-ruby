@@ -87,3 +87,9 @@ appraise "solid_queue_0" do
   gem "rails", "~> 7.1"
   gem "solid_queue", "~> 0", require: false
 end
+
+appraise "solid_queue_1" do
+  gem "pg"
+  gem "rails", "~> 7.1"
+  gem "solid_queue", "~> 1", require: false
+end

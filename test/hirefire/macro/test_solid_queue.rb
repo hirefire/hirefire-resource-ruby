@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 require "test_helper"
-
-require_relative "../../env/rails_solid_queue_0/config/environment"
+require "solid_queue/version"
 
 class HireFire::Macro::SolidQueueTest < Minitest::Test
+  MAJOR_VERSION = Gem::Version.new(::SolidQueue::VERSION).segments[0]
+  require_relative "../../env/rails_solid_queue_#{MAJOR_VERSION}/config/environment"
+
   LATENCY_DELTA = 2
 
   def setup
@@ -138,19 +140,16 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
   def prepare_database
     db_config = Rails.configuration.database_configuration[Rails.env]
 
-    ActiveRecord::Base.establish_connection(db_config)
-
     begin
-      ActiveRecord::Base.connection
+      ActiveRecord::Base.establish_connection(db_config)
+      ActiveRecord::Migration.verbose = false
+      ActiveRecord::MigrationContext.new(Rails.root.join("db/migrate").to_s).migrate
     rescue ActiveRecord::NoDatabaseError
       ActiveRecord::Tasks::DatabaseTasks.create(db_config)
-      ActiveRecord::Base.establish_connection(db_config)
+      retry
     end
 
-    ActiveRecord::Migration.verbose = false
-    ActiveRecord::MigrationContext.new(Rails.root.join("db/migrate").to_s).migrate
-
-    SolidQueue::Job.delete_all # Cascades deletion to all executions.
+    SolidQueue::Job.delete_all
     SolidQueue::Pause.delete_all
   end
 
@@ -179,11 +178,29 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     claimed_count = SolidQueue::ClaimedExecution.count
     ready_count = SolidQueue::ReadyExecution.count
     job = job_class.set(**options).perform_later
-    process = SolidQueue::Process.create!(pid: 1, kind: "Worker", last_heartbeat_at: Time.now)
+
+    process_attributes = if MAJOR_VERSION >= 1
+      {
+        pid: 1,
+        kind: "Worker",
+        last_heartbeat_at: Time.now,
+        name: "test-worker-1" # Required in 1.x
+      }
+    else
+      {
+        pid: 1,
+        kind: "Worker",
+        last_heartbeat_at: Time.now
+      }
+    end
+
+    process = SolidQueue::Process.create!(process_attributes)
+
     SolidQueue::Job.transaction do
       SolidQueue::ReadyExecution.find_by(job_id: job.provider_job_id).destroy!
       SolidQueue::ClaimedExecution.create!(job_id: job.provider_job_id, process_id: process.id)
     end
+
     assert_equal (job_count + 1), SolidQueue::Job.count
     assert_equal (claimed_count + 1), SolidQueue::ClaimedExecution.count
     assert_equal ready_count, SolidQueue::ReadyExecution.count

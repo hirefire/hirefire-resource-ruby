@@ -45,7 +45,7 @@ APPRAISAL_FILES = {
 
 APPRAISAL_VERSIONS = {
   "rack" => %w[2 3],
-  "solid_queue" => %w[0],
+  "solid_queue" => %w[0 1],
   "sidekiq" => %w[6 7],
   "bunny" => %w[2],
   "good_job" => %w[2 3 4],

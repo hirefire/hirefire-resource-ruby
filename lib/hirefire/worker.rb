@@ -6,7 +6,7 @@ module HireFire
 
     class MissingDynoBlockError < StandardError; end
 
-    PROCESS_NAME_PATTERN = /\A[a-zA-Z][a-zA-Z0-9_-]{0,29}\z/
+    PROCESS_NAME_PATTERN = /\A[a-zA-Z][a-zA-Z0-9_-]{0,62}\z/
 
     attr_reader :name
 

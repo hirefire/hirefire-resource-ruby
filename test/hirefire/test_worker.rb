@@ -12,7 +12,7 @@ class HireFire::WorkerTest < Minitest::Test
       "Worker_123",
       "worker-123",
       "w",
-      "a" * 30
+      "a" * 63
     ]
 
     valid_names.each do |name|
@@ -31,7 +31,7 @@ class HireFire::WorkerTest < Minitest::Test
       "worker!", # Contains an invalid character
       " worker", # Starts with a space
       "worker ", # Ends with a space
-      "a" * 31 # Exceeds maximum length
+      "a" * 64 # Exceeds maximum length
     ]
 
     invalid_names.each do |name|

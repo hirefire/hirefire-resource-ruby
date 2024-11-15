@@ -37,13 +37,13 @@ module HireFire
               query = query.where(priority: options[:min_priority]..) if options.key?(:min_priority)
               query = query.where(priority: ..options[:max_priority]) if options.key?(:max_priority)
               query = query.where(queue: queues) unless queues.empty?
-              query.count.tap { ActiveRecord::Base.clear_active_connections! }
+              query.count
             when :active_record_2
               # Note: There is no queue column in delayed_job <= 2.x
               query = ::Delayed::Job.scoped(conditions: ["run_at <= ? AND failed_at is NULL", Time.now.utc])
               query = query.scoped(conditions: ["priority >= ?", options[:min_priority]]) if options.key?(:min_priority)
               query = query.scoped(conditions: ["priority <= ?", options[:max_priority]]) if options.key?(:max_priority)
-              query.count.tap { ActiveRecord::Base.clear_active_connections! if ActiveRecord::Base.respond_to?(:clear_active_connections!) }
+              query.count
             when :mongoid
               query = ::Delayed::Job.where(:failed_at => nil, :run_at.lte => Time.now.utc)
               query = query.where(:priority.gte => options[:min_priority]) if options.key?(:min_priority)

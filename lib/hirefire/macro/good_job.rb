@@ -28,6 +28,10 @@ module HireFire
         query = good_job_class
         query = query.where(queue_name: queues) if queues.any?
         query = query.where(performed_at: nil)
+
+        # Scenario: Jobs discarded before they ever ran or jobs discarded before the retry limit.
+        query = query.where.not(error_event: "discarded").or(query.where(error_event: nil))
+
         query = query.where(scheduled_at: ..Time.now).or(query.where(scheduled_at: nil))
         query = query.order(scheduled_at: :asc, created_at: :asc)
 
@@ -55,6 +59,10 @@ module HireFire
         query = good_job_class
         query = query.where(queue_name: queues) if queues.any?
         query = query.where(performed_at: nil)
+
+        # Scenario: Jobs discarded before they ever ran or jobs discarded before the retry limit.
+        query = query.where.not(error_event: "discarded").or(query.where(error_event: nil))
+
         query = query.where(scheduled_at: ..Time.now).or(query.where(scheduled_at: nil))
         query.count
       end

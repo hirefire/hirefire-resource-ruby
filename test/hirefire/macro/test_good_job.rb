@@ -42,6 +42,31 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
   end
 
+  def test_job_queue_latency_with_discarded_jobs
+    skip "GoodJob #{::GoodJob::VERSION} does not support error events" unless error_event_supported?
+    job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
+    good_job_class.where(active_job_id: job_id).update_all(
+      performed_at: nil,
+      scheduled_at: 1.minute.ago,
+      finished_at: 1.minute.ago,
+      error_event: discarded_enum
+    )
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
+  end
+
+  def test_job_queue_latency_with_retried_jobs
+    skip "GoodJob #{::GoodJob::VERSION} does not support error events" unless error_event_supported?
+    job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
+    good_job_class.where(active_job_id: job_id).update_all(
+      performed_at: nil,
+      scheduled_at: 1.minute.ago,
+      error_event: retried_enum
+    )
+    assert_in_delta 60, HireFire::Macro::GoodJob.job_queue_latency, LATENCY_DELTA
+    good_job_class.where(active_job_id: job_id).update_all(performed_at: Time.now)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
+  end
+
   def test_job_queue_size_without_jobs
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
   end
@@ -63,6 +88,31 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   def test_job_queue_size_with_unfinished_jobs
     job_id = BasicJob.perform_later.job_id
     good_job_class.where(active_job_id: job_id).update_all(performed_at: 1.minute.ago)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
+  end
+
+  def test_job_queue_size_with_discarded_jobs
+    skip "GoodJob #{::GoodJob::VERSION} does not support error events" unless error_event_supported?
+    job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
+    good_job_class.where(active_job_id: job_id).update_all(
+      performed_at: nil,
+      scheduled_at: 1.minute.ago,
+      finished_at: 1.minute.ago,
+      error_event: discarded_enum
+    )
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
+  end
+
+  def test_job_queue_size_with_retried_jobs
+    skip "GoodJob #{::GoodJob::VERSION} does not support error events" unless error_event_supported?
+    job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
+    good_job_class.where(active_job_id: job_id).update_all(
+      performed_at: nil,
+      scheduled_at: 1.minute.ago,
+      error_event: retried_enum
+    )
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
+    good_job_class.where(active_job_id: job_id).update_all(performed_at: Time.now)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
   end
 

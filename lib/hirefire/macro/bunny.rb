@@ -25,6 +25,16 @@ module HireFire
       #   with the accurate counting of jobs that are currently scheduled to run, leading to
       #   premature upscaling. If you want to be able to schedule jobs to run in the future,
       #   consider using the Delayed Message Plugin for RabbitMQ.
+      #
+      # @note The method relies on the `message_count` metric to determine the number of "Ready" messages
+      #   in the queue. When using auto-acknowledgment, messages are acknowledged immediately upon delivery,
+      #   causing the `message_count` to drop to zero, even if the consumer is processing messages. To ensure
+      #   accurate metrics:
+      #   - Enable manual acknowledgment (`manual_ack: true`) so that RabbitMQ tracks unacknowledged messages.
+      #   - Set a reasonable prefetch limit (`channel.prefetch(x)`) to control the number of messages delivered
+      #     to the consumer, allowing a measurable backlog to remain in the "Ready" state.
+      #   This configuration ensures accurate scaling metrics and prevents premature depletion of the queue.
+      #
       # @param queues [Array<String, Symbol>] Names of the queues for size measurement.
       # @param amqp_url [String, nil] (optional) RabbitMQ URL for establishing a new connection.
       # @return [Integer] Total job queue size.

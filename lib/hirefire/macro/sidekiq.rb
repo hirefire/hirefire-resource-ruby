@@ -128,10 +128,15 @@ module HireFire
 
           max_latencies = oldest_jobs.map do |job_payload|
             job = job_payload ? JSON.parse(job_payload) : {}
-            job["enqueued_at"] ? Time.now.to_f - job["enqueued_at"] : 0.0
+
+            if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("8.0.0")
+              job["enqueued_at"] ? Time.now.to_i - job["enqueued_at"] / 1000 : 0
+            else
+              job["enqueued_at"] ? Time.now.to_f - job["enqueued_at"] : 0.0
+            end
           end
 
-          max_latencies.max || 0.0
+          Integer(max_latencies.max || 0)
         end
 
         def set_latency(set, queues)
@@ -156,80 +161,6 @@ module HireFire
         extend Common
         extend HireFire::Utility
         extend self
-
-        def call(*queues, server: false, **options)
-          require "sidekiq/api"
-
-          queues = normalize_queues(queues, allow_empty: true)
-
-          if server
-            server_lookup(queues, **options)
-          else
-            client_lookup(queues, **options)
-          end
-        end
-
-        private
-
-        def client_lookup(queues, skip_retries: false, skip_scheduled: false, skip_working: false, max_scheduled: nil)
-          size = enqueued_size(queues)
-          size += scheduled_size(queues, max_scheduled) unless skip_scheduled
-          size += retry_size(queues) unless skip_retries
-          size += working_size(queues) unless skip_working
-          size
-        end
-
-        def enqueued_size(queues)
-          queues = registered_queues if queues.empty?
-
-          ::Sidekiq.redis do |conn|
-            conn.pipelined do |pipeline|
-              queues.each { |name| pipeline.llen("queue:#{name}") }
-            end
-          end.sum
-        end
-
-        def scheduled_size(queues, max = nil)
-          size, now = 0, Time.now
-
-          find_each_in_set(::Sidekiq::ScheduledSet.new) do |job|
-            if job.at > now || max && size >= max
-              break
-            elsif queues.empty? || queues.include?(job["queue"])
-              size += 1
-            end
-          end
-
-          size
-        end
-
-        def retry_size(queues)
-          size = 0
-          now = Time.now
-
-          find_each_in_set(::Sidekiq::RetrySet.new) do |job|
-            if job.at > now
-              break
-            elsif queues.empty? || queues.include?(job["queue"])
-              size += 1
-            end
-          end
-
-          size
-        end
-
-        def working_size(queues)
-          now = Time.now
-          now_as_i = now.to_i
-
-          ::Sidekiq::Workers.new.count do |key, tid, job|
-            if job.is_a?(Hash) # Sidekiq < 7.2.1
-              (queues.empty? || queues.include?(job["queue"])) && job["run_at"] <= now_as_i
-            else # Sidekiq >= 7.2.1
-              (queues.empty? || queues.include?(job.queue)) && job.run_at <= now
-            end
-          end
-        end
 
         SERVER_SIDE_SCRIPT = <<~LUA
           local tonumber = tonumber
@@ -329,6 +260,80 @@ module HireFire
         LUA
 
         SERVER_SIDE_SCRIPT_SHA = Digest::SHA1.hexdigest(SERVER_SIDE_SCRIPT).freeze
+
+        def call(*queues, server: false, **options)
+          require "sidekiq/api"
+
+          queues = normalize_queues(queues, allow_empty: true)
+
+          if server
+            server_lookup(queues, **options)
+          else
+            client_lookup(queues, **options)
+          end
+        end
+
+        private
+
+        def client_lookup(queues, skip_retries: false, skip_scheduled: false, skip_working: false, max_scheduled: nil)
+          size = enqueued_size(queues)
+          size += scheduled_size(queues, max_scheduled) unless skip_scheduled
+          size += retry_size(queues) unless skip_retries
+          size += working_size(queues) unless skip_working
+          size
+        end
+
+        def enqueued_size(queues)
+          queues = registered_queues if queues.empty?
+
+          ::Sidekiq.redis do |conn|
+            conn.pipelined do |pipeline|
+              queues.each { |name| pipeline.llen("queue:#{name}") }
+            end
+          end.sum
+        end
+
+        def scheduled_size(queues, max = nil)
+          size, now = 0, Time.now
+
+          find_each_in_set(::Sidekiq::ScheduledSet.new) do |job|
+            if job.at > now || max && size >= max
+              break
+            elsif queues.empty? || queues.include?(job["queue"])
+              size += 1
+            end
+          end
+
+          size
+        end
+
+        def retry_size(queues)
+          size = 0
+          now = Time.now
+
+          find_each_in_set(::Sidekiq::RetrySet.new) do |job|
+            if job.at > now
+              break
+            elsif queues.empty? || queues.include?(job["queue"])
+              size += 1
+            end
+          end
+
+          size
+        end
+
+        def working_size(queues)
+          now = Time.now
+          now_as_i = now.to_i
+
+          ::Sidekiq::Workers.new.count do |key, tid, job|
+            if job.is_a?(Hash) # Sidekiq < 7.2.1
+              (queues.empty? || queues.include?(job["queue"])) && job["run_at"] <= now_as_i
+            else # Sidekiq >= 7.2.1
+              (queues.empty? || queues.include?(job.queue)) && job.run_at <= now
+            end
+          end
+        end
 
         def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: false, max_scheduled: 0)
           ::Sidekiq.redis do |connection|

@@ -82,6 +82,10 @@ appraise "sidekiq_7" do
   gem "sidekiq", "~> 7"
 end
 
+appraise "sidekiq_8" do
+  gem "sidekiq", "~> 8"
+end
+
 appraise "solid_queue_0" do
   gem "pg"
   gem "rails", "~> 7.1"

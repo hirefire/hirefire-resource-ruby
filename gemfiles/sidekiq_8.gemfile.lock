@@ -1,5 +1,5 @@
 PATH
-  remote: .
+  remote: ..
   specs:
     hirefire-resource (1.0.6)
 
@@ -14,6 +14,7 @@ GEM
       thor (>= 0.14.0)
     ast (2.4.3)
     bigdecimal (3.1.9)
+    connection_pool (2.5.0)
     crack (1.0.0)
       bigdecimal
       rexml
@@ -31,6 +32,7 @@ GEM
     json (2.10.2)
     language_server-protocol (3.17.0.4)
     lint_roller (1.1.0)
+    logger (1.6.6)
     minitest (5.25.5)
     mocha (2.7.1)
       ruby2_keywords (>= 0.0.5)
@@ -51,6 +53,8 @@ GEM
     rake (13.2.1)
     rdoc (6.13.0)
       psych (>= 4.0.0)
+    redis-client (0.24.0)
+      connection_pool
     regexp_parser (2.10.0)
     reline (0.6.0)
       io-console (~> 0.5)
@@ -74,6 +78,12 @@ GEM
       rubocop-ast (>= 1.38.0, < 2.0)
     ruby-progressbar (1.13.0)
     ruby2_keywords (0.0.5)
+    sidekiq (8.0.1)
+      connection_pool (>= 2.5.0)
+      json (>= 2.9.0)
+      logger (>= 1.6.2)
+      rack (>= 3.1.0)
+      redis-client (>= 0.23.2)
     simplecov (0.22.0)
       docile (~> 1.1)
       simplecov-html (~> 0.11)
@@ -108,12 +118,7 @@ GEM
     yard (0.9.37)
 
 PLATFORMS
-  arm64-darwin-21
-  arm64-darwin-22
-  arm64-darwin-23
   arm64-darwin-24
-  x86_64-darwin-20
-  x86_64-linux
 
 DEPENDENCIES
   appraisal (~> 2)
@@ -123,6 +128,7 @@ DEPENDENCIES
   mocha
   rack
   rake
+  sidekiq (~> 8)
   simplecov
   standardrb
   timecop

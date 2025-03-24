@@ -174,7 +174,12 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert job, "Job not found in queue"
 
     payload = job.item
-    payload["failed_at"] = Time.now.utc
+
+    payload["failed_at"] = if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("8.0.0")
+      Time.now.to_i * 1000
+    else
+      Time.now.to_i
+    end
 
     job.delete
 

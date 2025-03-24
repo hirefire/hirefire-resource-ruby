@@ -60,6 +60,7 @@ jobs:
           - resque_2
           - sidekiq_6
           - sidekiq_7
+          - sidekiq_8
           - solid_queue_0
           - solid_queue_1
     steps:

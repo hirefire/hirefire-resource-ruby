@@ -18,6 +18,8 @@ require "mocha/minitest"
 require "webmock/minitest"
 require "timecop"
 
+Timecop.mock_process_clock = true
+
 class Minitest::Test
   def setup
     ENV["HIREFIRE_TOKEN"] = nil

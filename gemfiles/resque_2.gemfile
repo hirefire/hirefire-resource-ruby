@@ -13,6 +13,7 @@ gem "yard"
 gem "rack"
 gem "webrick"
 gem "simplecov", require: false
+gem "base64"
 gem "resque", "~> 2"
 gem "resque-retry", "~> 1"
 gem "resque-scheduler", "~> 4"

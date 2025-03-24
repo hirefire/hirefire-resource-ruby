@@ -17,3 +17,5 @@ gem "yard"
 gem "rack"
 gem "webrick"
 gem "simplecov", require: false
+
+gem "base64"

@@ -13,6 +13,7 @@ gem "yard"
 gem "rack"
 gem "webrick"
 gem "simplecov", require: false
+gem "base64"
 gem "rails", "~> 7"
 gem "mongoid", "~> 8"
 gem "delayed_job_mongoid", "~> 3"

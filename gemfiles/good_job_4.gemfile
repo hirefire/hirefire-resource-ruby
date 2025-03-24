@@ -13,6 +13,7 @@ gem "yard"
 gem "rack"
 gem "webrick"
 gem "simplecov", require: false
+gem "base64"
 gem "pg"
 gem "rails", "~> 7"
 gem "good_job", "~> 4", require: false

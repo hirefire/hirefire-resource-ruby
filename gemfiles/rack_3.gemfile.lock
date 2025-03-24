@@ -13,6 +13,7 @@ GEM
       rake
       thor (>= 0.14.0)
     ast (2.4.2)
+    base64 (0.2.0)
     bigdecimal (3.1.8)
     crack (1.0.0)
       bigdecimal
@@ -104,6 +105,7 @@ PLATFORMS
 
 DEPENDENCIES
   appraisal (~> 2)
+  base64
   debug
   hirefire-resource!
   minitest

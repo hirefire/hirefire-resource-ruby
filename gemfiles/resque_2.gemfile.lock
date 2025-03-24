@@ -152,6 +152,7 @@ PLATFORMS
 
 DEPENDENCIES
   appraisal (~> 2)
+  base64
   debug
   hirefire-resource!
   minitest

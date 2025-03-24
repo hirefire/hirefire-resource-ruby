@@ -43,6 +43,7 @@ jobs:
           - 3.1
           - 3.2
           - 3.3
+          - 3.4
         appraisal:
           - default
           - bunny_2
@@ -63,6 +64,11 @@ jobs:
           - sidekiq_8
           - solid_queue_0
           - solid_queue_1
+        exclude:
+          - ruby-version: 3.0
+            appraisal: sidekiq_8
+          - ruby-version: 3.1
+            appraisal: sidekiq_8
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -95,7 +101,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.3
+          ruby-version: 3.4
           bundler-cache: true
       - name: Release Gem
         uses: rubygems/release-gem@v1

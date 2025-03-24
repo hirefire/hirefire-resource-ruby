@@ -13,5 +13,6 @@ gem "yard"
 gem "rack", "~> 2"
 gem "webrick"
 gem "simplecov", require: false
+gem "base64"
 
 gemspec path: "../"

@@ -1,3 +1,7 @@
+## v1.0.7
+
+* Add support for Sidekiq 8.
+
 ## v1.0.6
 
 * Ensure that discarded jobs are not used when measuring queue size and latency with Good Job v3 and v4.

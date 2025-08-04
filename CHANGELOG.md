@@ -1,3 +1,7 @@
+## v1.0.8
+
+* Fix issue with range notation in ActiveRecord queries for old Rails versions that caused Delayed Job and Good Job macros to always return 0.
+
 ## v1.0.7
 
 * Add support for Sidekiq 8.

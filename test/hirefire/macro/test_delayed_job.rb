@@ -48,11 +48,11 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_latency
   end
 
-  def job_queue_size_without_jobs
+  def test_job_queue_size_without_jobs
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size
   end
 
-  def job_queue_size_with_jobs
+  def test_job_queue_size_with_jobs
     BasicJob.delay(queue: :default).perform
     BasicJob.delay(queue: :mailer).perform
     assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_size
@@ -60,13 +60,13 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_size(:default, :mailer)
   end
 
-  def job_queue_size_with_scheduled_jobs
+  def test_job_queue_size_with_scheduled_jobs
     BasicJob.delay(queue: :default, run_at: 1.minute.ago).perform
     BasicJob.delay(queue: :default, run_at: 1.minute.from_now).perform
     assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size
   end
 
-  def job_queue_size_with_failed_jobs
+  def test_job_queue_size_with_failed_jobs
     BasicJob.delay.perform.update(failed_at: Time.now)
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size
   end

@@ -29,7 +29,7 @@ module HireFire
         query = query.where(queue_name: queues) if queues.any?
         query = query.where(performed_at: nil)
         query = query.where.not(error_event: discarded_enum).or(query.where(error_event: nil)) if error_event_supported?
-        query = query.where(scheduled_at: ..Time.now).or(query.where(scheduled_at: nil))
+        query = query.where("scheduled_at <= ?", Time.now).or(query.where(scheduled_at: nil))
         query = query.order(scheduled_at: :asc, created_at: :asc)
 
         if (job = query.first)
@@ -57,7 +57,7 @@ module HireFire
         query = query.where(queue_name: queues) if queues.any?
         query = query.where(performed_at: nil)
         query = query.where.not(error_event: discarded_enum).or(query.where(error_event: nil)) if error_event_supported?
-        query = query.where(scheduled_at: ..Time.now).or(query.where(scheduled_at: nil))
+        query = query.where("scheduled_at <= ?", Time.now).or(query.where(scheduled_at: nil))
         query.count
       end
     end

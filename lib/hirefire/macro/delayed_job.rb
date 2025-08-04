@@ -27,20 +27,15 @@ module HireFire
         #   HireFire::Macro::Delayed::Job.job_queue_latency(:default, :mailer)
         def job_queue_latency(*queues)
           queues = normalize_queues(queues, allow_empty: true)
+          query = ::Delayed::Job.where(failed_at: nil).order(run_at: :asc)
 
-          query =
-            ::Delayed::Job
-              .where(run_at: ..Time.now)
-              .where(failed_at: nil)
-              .order(run_at: :asc)
-
-          if queues.any?
-            case mapper
-            when :active_record
-              query = query.where(queue: queues)
-            when :mongoid
-              query = query.in(queue: queues.to_a)
-            end
+          case mapper
+          when :active_record
+            query = query.where("run_at <= ?", Time.now)
+            query = query.where(queue: queues) if queues.any?
+          when :mongoid
+            query = query.where(run_at: {"$lte" => Time.now})
+            query = query.in(queue: queues.to_a) if queues.any?
           end
 
           if (job = query.first)
@@ -65,19 +60,15 @@ module HireFire
         #   HireFire::Macro::Delayed::Job.job_queue_size(:default, :mailer)
         def job_queue_size(*queues)
           queues = normalize_queues(queues, allow_empty: true)
+          query = ::Delayed::Job.where(failed_at: nil)
 
-          query =
-            ::Delayed::Job
-              .where(run_at: ..Time.now)
-              .where(failed_at: nil)
-
-          if queues.any?
-            case mapper
-            when :active_record
-              query = query.where(queue: queues)
-            when :mongoid
-              query = query.in(queue: queues.to_a)
-            end
+          case mapper
+          when :active_record
+            query = query.where("run_at <= ?", Time.now)
+            query = query.where(queue: queues) if queues.any?
+          when :mongoid
+            query = query.where(run_at: {"$lte" => Time.now})
+            query = query.in(queue: queues.to_a) if queues.any?
           end
 
           query.count

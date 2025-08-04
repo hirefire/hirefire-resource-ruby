@@ -33,9 +33,9 @@ module HireFire
 
             case options[:mapper]
             when :active_record
-              query = ::Delayed::Job.where(failed_at: nil, run_at: ..Time.now.utc)
-              query = query.where(priority: options[:min_priority]..) if options.key?(:min_priority)
-              query = query.where(priority: ..options[:max_priority]) if options.key?(:max_priority)
+              query = ::Delayed::Job.where(failed_at: nil).where("run_at <= ?", Time.now.utc)
+              query = query.where("priority >= ?", options[:min_priority]) if options.key?(:min_priority)
+              query = query.where("priority <= ?", options[:max_priority]) if options.key?(:max_priority)
               query = query.where(queue: queues) unless queues.empty?
               query.count
             when :active_record_2

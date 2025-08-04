@@ -15,7 +15,7 @@ gem "webrick"
 gem "simplecov", require: false
 gem "base64"
 gem "pg"
-gem "rails", "~> 7"
+gem "rails", "~> 8"
 gem "delayed_job_active_record", "~> 4"
 
 gemspec path: "../"

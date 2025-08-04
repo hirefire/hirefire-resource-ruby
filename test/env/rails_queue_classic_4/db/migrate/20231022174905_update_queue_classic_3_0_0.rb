@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class UpdateQueueClassic300 < ActiveRecord::Migration[4.2]
+class UpdateQueueClassic300 < ActiveRecord::Migration[8.0]
   def self.up
     QC::Setup.update_to_3_0_0
   end

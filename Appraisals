@@ -8,55 +8,55 @@ end
 
 appraise "delayed_job_active_record_4" do
   gem "pg"
-  gem "rails", "~> 7"
+  gem "rails", "~> 8"
   gem "delayed_job_active_record", "~> 4"
 end
 
 appraise "delayed_job_mongoid_3" do
-  gem "rails", "~> 7"
+  gem "rails", "~> 8"
   gem "mongoid", "~> 8"
   gem "delayed_job_mongoid", "~> 3"
 end
 
 appraise "good_job_2" do
   gem "pg"
-  gem "rails", "~> 7"
+  gem "rails", "~> 8"
   gem "good_job", "~> 2"
 end
 
 appraise "good_job_3" do
   gem "pg"
-  gem "rails", "~> 7"
+  gem "rails", "~> 8"
   gem "good_job", "~> 3", require: false
 end
 
 appraise "good_job_4" do
   gem "pg"
-  gem "rails", "~> 7"
+  gem "rails", "~> 8"
   gem "good_job", "~> 4", require: false
 end
 
 appraise "queue_classic_4" do
   gem "pg"
-  gem "rails", "~> 7"
+  gem "rails", "~> 8"
   gem "queue_classic", "~> 4"
 end
 
 appraise "que_0" do
   gem "pg"
-  gem "rails", "~> 7"
+  gem "rails", "~> 8"
   gem "que", "~> 0", require: false
 end
 
 appraise "que_1" do
   gem "pg"
-  gem "rails", "~> 7"
+  gem "rails", "~> 8"
   gem "que", "~> 1", require: false
 end
 
 appraise "que_2" do
   gem "pg"
-  gem "rails", "~> 7"
+  gem "rails", "~> 8"
   gem "que", "~> 2", require: false
 end
 
@@ -88,12 +88,12 @@ end
 
 appraise "solid_queue_0" do
   gem "pg"
-  gem "rails", "~> 7.1"
+  gem "rails", "~> 8"
   gem "solid_queue", "~> 0", require: false
 end
 
 appraise "solid_queue_1" do
   gem "pg"
-  gem "rails", "~> 7.1"
+  gem "rails", "~> 8"
   gem "solid_queue", "~> 1", require: false
 end

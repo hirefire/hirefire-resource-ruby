@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class CreateQueSchema < ActiveRecord::Migration[5.0]
+class CreateQueSchema < ActiveRecord::Migration[8.0]
   def up
     Que.migrate!(version: 5)
   end

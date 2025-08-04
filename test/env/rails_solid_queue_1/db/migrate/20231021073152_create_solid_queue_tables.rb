@@ -1,4 +1,4 @@
-class CreateSolidQueueTables < ActiveRecord::Migration[7.0]
+class CreateSolidQueueTables < ActiveRecord::Migration[8.0]
   def change
     create_table "solid_queue_blocked_executions", force: :cascade do |t|
       t.bigint "job_id", null: false

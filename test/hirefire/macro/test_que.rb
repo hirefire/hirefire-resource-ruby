@@ -35,7 +35,7 @@ class HireFire::Macro::QueTest < Minitest::Test
 
   def test_job_queue_latency_with_jobs
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 60})
-    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now})
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
     enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 120})
     assert_in_delta 120, HireFire::Macro::Que.job_queue_latency, LATENCY_DELTA
     assert_in_delta 60, HireFire::Macro::Que.job_queue_latency(:default), LATENCY_DELTA
@@ -67,8 +67,8 @@ class HireFire::Macro::QueTest < Minitest::Test
   end
 
   def test_job_queue_size_with_jobs
-    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now})
-    enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now})
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 1})
     assert_equal 2, HireFire::Macro::Que.job_queue_size
     assert_equal 1, HireFire::Macro::Que.job_queue_size(:default)
     assert_equal 2, HireFire::Macro::Que.job_queue_size(:default, :mailer)
@@ -82,20 +82,20 @@ class HireFire::Macro::QueTest < Minitest::Test
 
   def test_job_queue_size_skip_finished_jobs
     return if VERSION_QUE < VERSION_1_0_0
-    job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now})
+    job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
     Que.execute("UPDATE que_jobs SET finished_at = NOW() WHERE id = #{job.que_attrs[:id]};")
     assert_equal 0, HireFire::Macro::Que.job_queue_size
   end
 
   def test_job_queue_size_skip_expired_jobs
     return if VERSION_QUE < VERSION_1_0_0
-    job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now})
+    job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
     Que.execute("UPDATE que_jobs SET expired_at = NOW() WHERE id = #{job.que_attrs[:id]};")
     assert_equal 0, HireFire::Macro::Que.job_queue_size
   end
 
   def test_deprecated_queue_method
-    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now})
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
     assert_equal 1, HireFire::Macro::Que.queue(:default)
   end
 

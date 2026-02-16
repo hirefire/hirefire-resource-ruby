@@ -5,6 +5,7 @@ require "rack/mock"
 
 class HireFire::MiddlewareTest < Minitest::Test
   def setup
+    super
     @app = proc { |_| [200, {}, ["Hello"]] }
     @middleware = HireFire::Middleware.new(@app)
     @request = Rack::MockRequest.new(@middleware)
@@ -37,7 +38,7 @@ class HireFire::MiddlewareTest < Minitest::Test
 
     HireFire.configuration.dispatcher.stubs(:start)
 
-    Time.stub :now, Time.at(1) do
+    Timecop.freeze Time.at(1) do
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
       @middleware.call(request)
 
@@ -55,7 +56,7 @@ class HireFire::MiddlewareTest < Minitest::Test
 
     HireFire.configuration.dispatcher.expects(:start).once
 
-    Time.stub :now, Time.at(1) do
+    Timecop.freeze Time.at(1) do
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
       @middleware.call(request)
     end
@@ -76,7 +77,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     original_stdout = $stdout
     $stdout = StringIO.new
 
-    Time.stub :now, Time.at(1) do
+    Timecop.freeze Time.at(1) do
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
       @middleware.call(request)
     end
@@ -94,7 +95,7 @@ class HireFire::MiddlewareTest < Minitest::Test
       config.log_queue_metrics = true
     end
 
-    Time.stub :now, Time.at(1) do
+    Timecop.freeze Time.at(1) do
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
       @middleware.call(request)
     end

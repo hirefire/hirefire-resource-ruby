@@ -17,6 +17,7 @@ jobs:
     env:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      POSTGRES_PORT: 5432
     services:
       postgres:
         image: postgres:latest
@@ -42,6 +43,7 @@ jobs:
           - 3.2
           - 3.3
           - 3.4
+          - 4.0
         appraisal:
           - default
           - bunny_2
@@ -70,6 +72,8 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
+      - name: Fix gem directory permissions
+        run: chmod +t "$(ruby -e 'puts Gem.dir')/gems"
       - name: Appraisal setup
         run: bundle install
         env:
@@ -94,7 +98,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.4
+          ruby-version: 4.0
           bundler-cache: true
       - name: Release Gem
         uses: rubygems/release-gem@v1

@@ -8,7 +8,7 @@ class HireFire::BufferTest < Minitest::Test
   end
 
   def test_sample_web
-    Time.stub :now, Time.at(100) do
+    Timecop.freeze Time.at(100) do
       buffer.sample_web(12)
       buffer.sample_web(8)
     end
@@ -18,11 +18,11 @@ class HireFire::BufferTest < Minitest::Test
   end
 
   def test_sample_web_groups_by_timestamp
-    Time.stub :now, Time.at(100) do
+    Timecop.freeze Time.at(100) do
       buffer.sample_web(12)
     end
 
-    Time.stub :now, Time.at(101) do
+    Timecop.freeze Time.at(101) do
       buffer.sample_web(8)
     end
 
@@ -42,7 +42,7 @@ class HireFire::BufferTest < Minitest::Test
   end
 
   def test_flush_returns_both_and_resets
-    Time.stub :now, Time.at(100) do
+    Timecop.freeze Time.at(100) do
       buffer.sample_web(5)
     end
 
@@ -58,7 +58,7 @@ class HireFire::BufferTest < Minitest::Test
   end
 
   def test_repopulate_web_within_ttl
-    Time.stub :now, Time.at(100) do
+    Timecop.freeze Time.at(100) do
       buffer.repopulate_web({90 => [5], 30 => [10]})
     end
 
@@ -68,11 +68,11 @@ class HireFire::BufferTest < Minitest::Test
   end
 
   def test_repopulate_web_merges_with_existing
-    Time.stub :now, Time.at(100) do
+    Timecop.freeze Time.at(100) do
       buffer.sample_web(1)
     end
 
-    Time.stub :now, Time.at(100) do
+    Timecop.freeze Time.at(100) do
       buffer.repopulate_web({100 => [2, 3]})
     end
 

@@ -8,6 +8,7 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def setup
+    super
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
     ENV["HIREFIRE_DISPATCH_URL"] = nil
     WebMock.reset_executed_requests!
@@ -72,7 +73,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
     dispatcher = configure_web_only
 
-    Time.stub :now, Time.at(1000) do
+    Timecop.freeze Time.at(1000) do
       HireFire.configuration.buffer.sample_web(12)
       HireFire.configuration.buffer.sample_web(8)
       dispatcher.send(:tick)
@@ -113,7 +114,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
     dispatcher = configure_web_only
 
-    Time.stub :now, Time.at(1000) do
+    Timecop.freeze Time.at(1000) do
       HireFire.configuration.buffer.sample_web(7)
       dispatcher.send(:tick)
     end
@@ -136,7 +137,7 @@ class HireFire::DispatcherTest < Minitest::Test
       }
       .to_return(status: 200)
 
-    Time.stub :now, Time.at(1000) do
+    Timecop.freeze Time.at(1000) do
       dispatcher = configure_web_and_workers
       HireFire.configuration.buffer.sample_web(5)
       dispatcher.send(:tick)

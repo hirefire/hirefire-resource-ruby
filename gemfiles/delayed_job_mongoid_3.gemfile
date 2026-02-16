@@ -17,5 +17,6 @@ gem "base64"
 gem "rails", "~> 8"
 gem "mongoid", "~> 8"
 gem "delayed_job_mongoid", "~> 3"
+gem "ostruct"
 
 gemspec path: "../"

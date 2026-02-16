@@ -7,29 +7,17 @@ APPRAISAL_FILES = {
   "default" => [
     "test_buffer.rb",
     "test_client.rb",
-    "test_workers.rb",
     "test_configuration.rb",
     "test_dispatcher.rb",
     "test_hirefire.rb",
     "test_lease.rb",
     "test_version.rb",
     "test_web.rb",
-    "test_worker.rb"
-  ],
-  "rack" => [
-    "test_middleware.rb"
-  ],
-  "solid_queue" => [
-    "macro/test_solid_queue.rb"
-  ],
-  "sidekiq" => [
-    "macro/test_sidekiq.rb"
+    "test_worker.rb",
+    "test_workers.rb"
   ],
   "bunny" => [
     "macro/test_bunny.rb"
-  ],
-  "good_job" => [
-    "macro/test_good_job.rb"
   ],
   "delayed_job_active_record" => [
     "macro/test_delayed_job.rb"
@@ -37,28 +25,40 @@ APPRAISAL_FILES = {
   "delayed_job_mongoid" => [
     "macro/test_delayed_job.rb"
   ],
+  "good_job" => [
+    "macro/test_good_job.rb"
+  ],
+  "que" => [
+    "macro/test_que.rb"
+  ],
   "queue_classic" => [
     "macro/test_queue_classic.rb"
+  ],
+  "rack" => [
+    "test_middleware.rb"
   ],
   "resque" => [
     "macro/test_resque.rb"
   ],
-  "que" => [
-    "macro/test_que.rb"
+  "sidekiq" => [
+    "macro/test_sidekiq.rb"
+  ],
+  "solid_queue" => [
+    "macro/test_solid_queue.rb"
   ]
 }
 
 APPRAISAL_VERSIONS = {
-  "rack" => %w[2 3],
-  "solid_queue" => %w[0 1],
-  "sidekiq" => %w[6 7 8],
   "bunny" => %w[2],
-  "good_job" => %w[2 3 4],
   "delayed_job_active_record" => %w[4],
   "delayed_job_mongoid" => %w[3],
+  "good_job" => %w[2 3 4],
+  "que" => %w[0 1 2],
   "queue_classic" => %w[4],
+  "rack" => %w[2 3],
   "resque" => %w[2],
-  "que" => %w[0 1 2]
+  "sidekiq" => %w[6 7 8],
+  "solid_queue" => %w[0 1]
 }
 
 def matrix

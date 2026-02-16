@@ -153,7 +153,7 @@ class HireFire::LeaseTest < Minitest::Test
       })
 
     lease.request_if_due
-    lease.sample_if_due { } # first sample — due immediately
+    lease.sample_if_due {} # first sample — due immediately
 
     sampled = false
     lease.sample_if_due { sampled = true } # second — not yet due
@@ -169,7 +169,7 @@ class HireFire::LeaseTest < Minitest::Test
       })
 
     lease.request_if_due
-    lease.sample_if_due { }
+    lease.sample_if_due {}
 
     expected = Time.now + 10
     actual = lease.instance_variable_get(:@next_sample_at)

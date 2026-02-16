@@ -3,13 +3,18 @@
 module HireFire
   extend self
 
-  attr_writer :configuration
-
   def configure
     yield configuration
+    configuration.dispatcher.start if configuration.token
+    configuration
   end
 
   def configuration
     @configuration ||= Configuration.new
+  end
+
+  def reset
+    @configuration&.dispatcher&.stop
+    @configuration = nil
   end
 end

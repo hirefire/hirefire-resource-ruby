@@ -5,8 +5,13 @@ require "standard/rake"
 
 APPRAISAL_FILES = {
   "default" => [
+    "test_buffer.rb",
+    "test_client.rb",
+    "test_workers.rb",
     "test_configuration.rb",
+    "test_dispatcher.rb",
     "test_hirefire.rb",
+    "test_lease.rb",
     "test_version.rb",
     "test_web.rb",
     "test_worker.rb"

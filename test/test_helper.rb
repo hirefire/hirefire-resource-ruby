@@ -23,13 +23,13 @@ Timecop.mock_process_clock = true
 class Minitest::Test
   def setup
     ENV["HIREFIRE_TOKEN"] = nil
-    HireFire.configuration = HireFire::Configuration.new
+    HireFire.reset
     super
   end
 
   def teardown
     ENV["HIREFIRE_TOKEN"] = nil
-    HireFire.configuration = HireFire::Configuration.new
+    HireFire.reset
     super
   end
 

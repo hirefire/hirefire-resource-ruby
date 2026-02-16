@@ -21,5 +21,6 @@ Gem::Specification.new do |spec|
     end
   end
   spec.required_ruby_version = ">= 2.7.0"
+  spec.add_dependency "logger"
   spec.add_development_dependency "appraisal", "~> 2"
 end

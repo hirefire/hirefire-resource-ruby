@@ -59,6 +59,7 @@ jobs:
           - rack_2
           - rack_3
           - resque_2
+          - resque_3
           - sidekiq_6
           - sidekiq_7
           - sidekiq_8

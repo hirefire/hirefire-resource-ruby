@@ -56,7 +56,7 @@ APPRAISAL_VERSIONS = {
   "que" => %w[0 1 2],
   "queue_classic" => %w[4],
   "rack" => %w[2 3],
-  "resque" => %w[2],
+  "resque" => %w[2 3],
   "sidekiq" => %w[6 7 8],
   "solid_queue" => %w[0 1]
 }

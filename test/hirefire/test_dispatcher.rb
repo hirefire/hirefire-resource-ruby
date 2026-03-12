@@ -10,7 +10,7 @@ class HireFire::DispatcherTest < Minitest::Test
   def setup
     super
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
-    ENV["HIREFIRE_DISPATCH_URL"] = nil
+    ENV["HIREFIRE_DATA_URL"] = nil
     WebMock.reset_executed_requests!
     HireFire.configuration.logger = Logger.new(log)
   end

@@ -63,7 +63,7 @@ module HireFire
     end
 
     def base_url
-      ENV.fetch("HIREFIRE_DISPATCH_URL", "https://data.hirefire.io")
+      ENV.fetch("HIREFIRE_DATA_URL", "https://data.hirefire.io")
     end
 
     def token

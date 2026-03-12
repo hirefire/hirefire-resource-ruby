@@ -13,7 +13,7 @@ class HireFire::ClientTest < Minitest::Test
 
   def setup
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
-    ENV["HIREFIRE_DISPATCH_URL"] = nil
+    ENV["HIREFIRE_DATA_URL"] = nil
     WebMock.reset_executed_requests!
     HireFire.configuration.logger = Logger.new(log)
   end
@@ -118,8 +118,8 @@ class HireFire::ClientTest < Minitest::Test
 
   # -- Custom URL --
 
-  def test_custom_dispatch_url
-    ENV["HIREFIRE_DISPATCH_URL"] = "https://custom.hirefire.io"
+  def test_custom_data_url
+    ENV["HIREFIRE_DATA_URL"] = "https://custom.hirefire.io"
     custom_client = HireFire::Client.new
 
     request = stub_request(:post, "https://custom.hirefire.io/metrics/ingest")

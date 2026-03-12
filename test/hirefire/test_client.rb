@@ -37,6 +37,15 @@ class HireFire::ClientTest < Minitest::Test
     assert_requested request
   end
 
+  def test_submit_samples_returns_nil_on_unauthorized
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_return(status: 401)
+
+    result = client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+
+    assert_nil result
+  end
+
   def test_submit_samples_raises_on_server_error
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .to_return(status: 500)

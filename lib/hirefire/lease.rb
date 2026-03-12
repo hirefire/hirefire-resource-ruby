@@ -33,6 +33,11 @@ module HireFire
       response = @client.request_lease(@process_id)
       @expires_at = Time.now + @ttl
 
+      if response.is_a?(Net::HTTPUnauthorized)
+        @granted = false
+        return
+      end
+
       unless response.is_a?(Net::HTTPSuccess)
         @granted = false
         raise Client::RequestError, "Lease request failed with #{response.code} status."

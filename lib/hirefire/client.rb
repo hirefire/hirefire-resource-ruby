@@ -24,6 +24,8 @@ module HireFire
       case response
       when Net::HTTPSuccess
         response
+      when Net::HTTPUnauthorized
+        nil
       when Net::HTTPServerError
         raise RequestError, "Server responded with #{response.code} status."
       else

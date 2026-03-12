@@ -107,6 +107,34 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
   end
 
+  def test_lease_unauthorized_does_not_log_error
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 401)
+
+    dispatcher = configure_workers_only
+    dispatcher.send(:tick)
+
+    assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
+    refute_includes log.string, "401"
+  end
+
+  def test_web_buffer_discarded_on_unauthorized
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_return(status: 401)
+
+    dispatcher = configure_web_only
+
+    Timecop.freeze Time.at(1000) do
+      HireFire.configuration.buffer.sample_web(7)
+      dispatcher.send(:tick)
+    end
+
+    data = HireFire.configuration.buffer.flush
+    assert_empty data[:web]
+    refute_includes log.string, "Dispatch error"
+  end
+
   def test_web_buffer_repopulated_on_dispatch_failure
     stub_lease
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")

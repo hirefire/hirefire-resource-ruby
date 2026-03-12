@@ -83,6 +83,31 @@ class HireFire::LeaseTest < Minitest::Test
     assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 1)
   end
 
+  def test_silently_denied_on_unauthorized
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 401)
+
+    lease.request_if_due
+
+    refute lease.granted?
+  end
+
+  def test_revokes_granted_lease_on_unauthorized
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(
+        {status: 200, headers: {"HireFire-Lease-Granted" => "true", "HireFire-Sample-Frequency" => "15"}},
+        {status: 401}
+      )
+
+    lease.request_if_due
+    assert lease.granted?
+
+    Timecop.travel(Time.now + 15) do
+      lease.request_if_due
+      refute lease.granted?
+    end
+  end
+
   def test_raises_on_server_error
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 500)

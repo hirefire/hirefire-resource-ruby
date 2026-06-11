@@ -20,8 +20,11 @@ require "timecop"
 Timecop.mock_process_clock = true
 
 class Minitest::Test
+  IDENTITY_ENV = %w[HIREFIRE_SERVICE_NAME DYNO RENDER_SERVICE_NAME].freeze
+
   def setup
     ENV["HIREFIRE_TOKEN"] = nil
+    IDENTITY_ENV.each { |key| ENV[key] = nil }
     HireFire.reset
     HireFire.configuration.logger = Logger.new(File::NULL)
     super
@@ -29,6 +32,7 @@ class Minitest::Test
 
   def teardown
     ENV["HIREFIRE_TOKEN"] = nil
+    IDENTITY_ENV.each { |key| ENV[key] = nil }
     HireFire.reset
     super
   end

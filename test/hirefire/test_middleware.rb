@@ -13,7 +13,7 @@ class HireFire::MiddlewareTest < Minitest::Test
 
   def test_pass_through_without_HIREFIRE_TOKEN
     HireFire.configure do |config|
-      config.dyno(:web)
+      config.dyno(:web, :rqt)
     end
 
     response = @request.get("/")
@@ -33,7 +33,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
 
     HireFire.configure do |config|
-      config.dyno(:web)
+      config.dyno(:web, :rqt)
     end
 
     HireFire.configuration.dispatcher.stubs(:start)
@@ -51,7 +51,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
 
     HireFire.configure do |config|
-      config.dyno(:web)
+      config.dyno(:web, :rqt)
     end
 
     HireFire.configuration.dispatcher.expects(:start).once
@@ -64,7 +64,7 @@ class HireFire::MiddlewareTest < Minitest::Test
 
   def test_does_not_start_dispatcher_without_token
     HireFire.configure do |config|
-      config.dyno(:web)
+      config.dyno(:web, :rqt)
     end
 
     HireFire::Dispatcher.any_instance.expects(:start).never

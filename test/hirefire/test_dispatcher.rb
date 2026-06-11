@@ -34,20 +34,26 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def configure_web_and_workers
-    HireFire.configuration.dyno(:web)
-    HireFire.configuration.dyno(:worker) { 42 }
-    HireFire.configuration.dyno(:mailer) { 18 }
+    HireFire.configuration.dyno(:web, :rqt)
+    HireFire.configuration.dyno(:worker, :jql) { 42 }
+    HireFire.configuration.dyno(:mailer, :jql) { 18 }
     HireFire.configuration.dispatcher
   end
 
   def configure_web_only
-    HireFire.configuration.dyno(:web)
+    HireFire.configuration.dyno(:web, :rqt)
     HireFire.configuration.dispatcher
   end
 
   def configure_workers_only
-    HireFire.configuration.dyno(:worker) { 42 }
-    HireFire.configuration.dyno(:mailer) { 18 }
+    HireFire.configuration.dyno(:worker, :jql) { 42 }
+    HireFire.configuration.dyno(:mailer, :jql) { 18 }
+    HireFire.configuration.dispatcher
+  end
+
+  def configure_cpu_only(name = "clock")
+    ENV["HIREFIRE_SERVICE_NAME"] = name
+    HireFire.configuration.dyno(name.to_sym, :cpu)
     HireFire.configuration.dispatcher
   end
 
@@ -286,5 +292,123 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher.send(:tick)
 
     assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
+  end
+
+  # -- CPU dispatch --
+
+  def test_dispatches_cpu_samples_in_the_samples_format
+    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::CPU::Usage.stubs(:total_seconds).returns(0.0, 0.5)
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_cpu_only("clock")
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # seeds baseline only
+    Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) } # 0.5 core over 1s => 50%
+
+    assert_equal 1, bodies.size
+    entry = bodies[0][0]
+    assert_equal "clock", entry["name"]
+    assert_equal({"1001" => [50.0]}, entry["samples"])
+  end
+
+  def test_cpu_first_tick_seeds_baseline_without_dispatching
+    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::CPU::Usage.stubs(:total_seconds).returns(0.0)
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_cpu_only("clock")
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+
+    # No previous reading to diff against, and CPU sends no heartbeat, so there
+    # is nothing to dispatch yet.
+    assert_empty bodies
+  end
+
+  def test_cpu_samples_are_not_repopulated_on_dispatch_failure
+    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::CPU::Usage.stubs(:total_seconds).returns(0.0, 0.5)
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 500)
+
+    dispatcher = configure_cpu_only("clock")
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) } # 500 — sample is dropped
+
+    # Unlike web, CPU is not re-buffered on failure: a missed second thins the
+    # fleet mean rather than biasing it.
+    data = HireFire.configuration.buffer.flush
+    assert_empty data[:cpu]
+  end
+
+  # -- http liveness soft gate --
+
+  def test_non_web_process_does_not_heartbeat_the_web_name
+    stub_lease
+    ENV["DYNO"] = "worker.1"
+    HireFire.configuration.dyno(:web, :rqt)
+    dispatcher = HireFire.configuration.dispatcher
+
+    dispatcher.send(:tick)
+
+    # An idle worker process must not claim "web alive, zero traffic" seconds —
+    # that would satisfy an additive metric's coverage check during a web outage.
+    assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
+  end
+
+  def test_non_web_process_still_delivers_real_web_samples
+    stub_lease
+    ENV["DYNO"] = "worker.1"
+    HireFire.configuration.dyno(:web, :rqt)
+    dispatcher = HireFire.configuration.dispatcher
+    bodies = capture_ingest_bodies
+
+    Timecop.freeze(Time.at(1000)) do
+      HireFire.configuration.buffer.sample_web(12)
+      dispatcher.send(:tick)
+    end
+
+    # Real data is never dropped — only synthesized liveness is suppressed.
+    assert_equal({"1000" => [12]}, bodies[0][0]["samples"])
+  end
+
+  def test_matching_identity_keeps_heartbeat_and_backfill
+    stub_lease
+    ENV["DYNO"] = "web.1"
+    HireFire.configuration.dyno(:web, :rqt)
+    dispatcher = HireFire.configuration.dispatcher
+    bodies = capture_ingest_bodies
+
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1002)) { dispatcher.send(:tick) }
+
+    assert_equal({"1000" => []}, bodies[0][0]["samples"])
+    assert_equal({"1001" => [], "1002" => []}, bodies[1][0]["samples"])
+  end
+
+  def test_unresolved_identity_keeps_heartbeat
+    stub_lease
+    HireFire.configuration.dyno(:web, :rqt)
+    dispatcher = HireFire.configuration.dispatcher
+    bodies = capture_ingest_bodies
+
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+
+    # Soft gate: without a resolver the http collector keeps current behavior.
+    assert_equal({"1000" => []}, bodies[0][0]["samples"])
+  end
+
+  def test_mismatched_cpu_collector_stays_dormant_through_the_tick
+    stub_lease
+    bodies = capture_ingest_bodies
+
+    ENV["HIREFIRE_SERVICE_NAME"] = "web"
+    HireFire.configuration.dyno(:web, :rqt)
+    HireFire.configuration.dyno(:worker, :cpu) # dormant here: identity is "web"
+    dispatcher = HireFire.configuration.dispatcher
+
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+
+    # Identity is "web", so the "worker" CPU collector never samples; only the
+    # web heartbeat is emitted.
+    assert_equal ["web"], bodies[0].map { |e| e["name"] }
   end
 end

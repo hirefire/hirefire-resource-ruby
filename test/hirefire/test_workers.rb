@@ -9,8 +9,8 @@ class HireFire::WorkersTest < Minitest::Test
 
   def test_sample
     HireFire.configure do |config|
-      config.dyno(:worker) { 42 }
-      config.dyno(:mailer) { 18 }
+      config.dyno(:worker, :jql) { 42 }
+      config.dyno(:mailer, :jql) { 18 }
     end
 
     HireFire.configuration.workers.sample
@@ -24,7 +24,7 @@ class HireFire::WorkersTest < Minitest::Test
 
   def test_accumulates_across_multiple_samples
     HireFire.configure do |config|
-      config.dyno(:worker) { 5 }
+      config.dyno(:worker, :jql) { 5 }
     end
 
     HireFire.configuration.workers.sample

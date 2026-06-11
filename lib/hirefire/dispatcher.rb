@@ -8,9 +8,11 @@ module HireFire
     # suspended longer than this must not assert liveness for that time.
     WEB_BACKFILL_LIMIT = 60
 
-    def initialize(web: nil, workers: Workers.new)
+    def initialize(web: nil, workers: Workers.new, cpu: [], web_liveness: true)
       @web = web
       @workers = workers
+      @cpu = cpu
+      @web_liveness = web_liveness
       @client = Client.new
       @lease = Lease.new(enabled: workers.any?)
       @mutex = Mutex.new
@@ -63,6 +65,7 @@ module HireFire
     def tick
       @lease.request_if_due
       @lease.sample_if_due { @workers.sample }
+      @cpu.each(&:sample)
       dispatch
     rescue => e
       logger.error "[HireFire] #{e.message}"
@@ -88,13 +91,25 @@ module HireFire
     def build_payload(data)
       entries = []
 
-      if @web
+      if @web && @web_liveness
         samples = backfill_web_seconds(data[:web])
         @web_watermark = samples.keys.max
         entries << {"name" => @web.name, "samples" => samples.transform_keys(&:to_s)}
+      elsif @web && data[:web].any?
+        # Identity says this is not the http-serving process: real samples are
+        # still delivered (data must never be dropped), but no liveness is
+        # synthesized — this process must not claim the web name's seconds.
+        entries << {"name" => @web.name, "samples" => data[:web].transform_keys(&:to_s)}
       end
 
       entries.concat(data[:workers])
+
+      # CPU is pushed raw in the samples format under each declared name, with
+      # no heartbeat or backfill: a missed second thins the fleet mean rather
+      # than biasing it, so synthesizing empty seconds would be wrong here.
+      data[:cpu].each do |name, samples|
+        entries << {"name" => name, "samples" => samples.transform_keys(&:to_s)}
+      end
 
       entries
     end

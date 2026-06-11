@@ -5,6 +5,7 @@ module HireFire
     def initialize(ttl: 60)
       @web = {}
       @workers = []
+      @cpu = {}
       @mutex = Mutex.new
       @ttl = ttl
     end
@@ -23,11 +24,20 @@ module HireFire
       end
     end
 
+    def sample_cpu(name, value)
+      timestamp = Time.now.to_i
+      @mutex.synchronize do
+        @cpu[name] ||= {}
+        @cpu[name][timestamp] ||= []
+        @cpu[name][timestamp] << value
+      end
+    end
+
     def flush
       @mutex.synchronize do
-        web, workers = @web, @workers
-        @web, @workers = {}, []
-        {web: web, workers: workers}
+        web, workers, cpu = @web, @workers, @cpu
+        @web, @workers, @cpu = {}, [], {}
+        {web: web, workers: workers, cpu: cpu}
       end
     end
 

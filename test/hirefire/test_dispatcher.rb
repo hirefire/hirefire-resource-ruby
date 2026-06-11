@@ -23,6 +23,16 @@ class HireFire::DispatcherTest < Minitest::Test
       })
   end
 
+  def capture_ingest_bodies
+    bodies = []
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_return do |request|
+        bodies << JSON.parse(request.body)
+        {status: 200}
+      end
+    bodies
+  end
+
   def configure_web_and_workers
     HireFire.configuration.dyno(:web)
     HireFire.configuration.dyno(:worker) { 42 }
@@ -105,6 +115,83 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher.send(:tick)
 
     assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
+  end
+
+  # -- Web backfill (per-second liveness claims) --
+
+  def test_first_dispatch_claims_only_the_current_second
+    stub_lease
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+
+    # No watermark yet: a fresh process must not assert liveness for time
+    # before it existed (deploy/restart gaps stay genuinely visible).
+    assert_equal({"1000" => []}, bodies[0][0]["samples"])
+  end
+
+  def test_backfills_seconds_skipped_between_dispatches
+    stub_lease
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1003)) { dispatcher.send(:tick) }
+
+    # The skipped seconds (1001, 1002) are claimed as empty — alive, no traffic —
+    # so a stalled dispatch loop never leaves unreported gaps.
+    assert_equal({"1001" => [], "1002" => [], "1003" => []}, bodies[1][0]["samples"])
+  end
+
+  def test_backfill_preserves_buffered_samples
+    stub_lease
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1003)) do
+      HireFire.configuration.buffer.sample_web(5)
+      dispatcher.send(:tick)
+    end
+
+    assert_equal({"1001" => [], "1002" => [], "1003" => [5]}, bodies[1][0]["samples"])
+  end
+
+  def test_seconds_from_a_failed_dispatch_are_reclaimed_by_the_next_success
+    stub_lease
+    bodies = []
+    calls = 0
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_return do |request|
+        calls += 1
+        bodies << JSON.parse(request.body)
+        {status: (calls == 2) ? 500 : 200}
+      end
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # 200 — watermark 1000
+    Timecop.freeze(Time.at(1003)) { dispatcher.send(:tick) } # 500 — watermark must not advance
+    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) } # 200 — re-claims the failed seconds
+
+    assert_equal %w[1001 1002 1003 1004 1005], bodies[2][0]["samples"].keys.sort
+  end
+
+  def test_backfill_is_capped_at_the_limit
+    stub_lease
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1000 + 100)) { dispatcher.send(:tick) }
+
+    # A 100s gap claims only the last WEB_BACKFILL_LIMIT seconds: older claims
+    # would be rejected by the server anyway, and a process suspended that long
+    # must not assert liveness for the suspension.
+    keys = bodies[1][0]["samples"].keys.map(&:to_i)
+    assert_equal 1100 - HireFire::Dispatcher::WEB_BACKFILL_LIMIT, keys.min
+    assert_equal 1100, keys.max
+    assert_equal HireFire::Dispatcher::WEB_BACKFILL_LIMIT + 1, keys.size
   end
 
   def test_lease_unauthorized_does_not_log_error

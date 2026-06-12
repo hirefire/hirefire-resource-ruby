@@ -50,6 +50,16 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_equal 1, HireFire::Macro::QC.job_queue_size
   end
 
+  def test_job_queue_size_with_comma_in_queue_name
+    QC::Queue.new("a,b").enqueue("BasicJob.perform")
+    assert_equal 1, HireFire::Macro::QC.job_queue_size(:"a,b")
+  end
+
+  def test_job_queue_latency_with_comma_in_queue_name
+    QC::Queue.new("a,b").enqueue_at(1.minute.ago.to_i, "BasicJob.perform")
+    assert_in_delta 60, HireFire::Macro::QC.job_queue_latency(:"a,b"), LATENCY_DELTA
+  end
+
   def test_deprecated_queue_method
     QC::Queue.new("default").enqueue_at(1.minute.from_now.to_i, "BasicJob.perform")
     assert_equal 1, HireFire::Macro::QC.queue

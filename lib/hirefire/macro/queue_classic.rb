@@ -36,7 +36,7 @@ module HireFire
         connection = ::QC.default_conn_adapter
 
         result = if queues.any?
-          connection.execute(query, "{#{queues.to_a.join(",")}}")
+          connection.execute(query, *queues.to_a)
         else
           connection.execute(query)
         end
@@ -68,7 +68,7 @@ module HireFire
         connection = ::QC.default_conn_adapter
 
         result = if queues.any?
-          connection.execute(query, "{#{queues.to_a.join(",")}}")
+          connection.execute(query, *queues.to_a)
         else
           connection.execute(query)
         end
@@ -78,8 +78,13 @@ module HireFire
 
       private
 
+      # One bind placeholder per queue. The previous "{a,b}" array-literal
+      # param mis-parsed any queue name containing a comma (or array-literal
+      # special characters) into multiple names.
       def filter_by_queues_if_any(queues)
-        queues.any? ? "AND q_name = ANY($1::text[])" : ""
+        return "" unless queues.any?
+        placeholders = (1..queues.size).map { |i| "$#{i}" }.join(", ")
+        "AND q_name IN (#{placeholders})"
       end
     end
   end

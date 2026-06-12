@@ -145,6 +145,29 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: 0, skip_retries: true, skip_working: true)
   end
 
+  def test_server_lookup_pages_and_caps_across_the_zrange_boundary
+    # The Lua scan pages the sorted set 1000 entries at a time. Insert several
+    # pages of due jobs to exercise the cursor advance, and confirm the count
+    # and the cap are both exact across page boundaries (and agree with client).
+    total = 2_300
+    at = Time.now.to_i - 100
+
+    Sidekiq.redis do |conn|
+      conn.pipelined do |pipeline|
+        total.times do |i|
+          payload = Sidekiq.dump_json("queue" => "default", "class" => "SampleWorker", "args" => [], "jid" => "j#{i}")
+          pipeline.zadd("schedule", at, payload)
+        end
+      end
+    end
+
+    options = {skip_retries: true, skip_working: true}
+    assert_equal total, HireFire::Macro::Sidekiq.job_queue_size(server: true, **options)
+    assert_equal total, HireFire::Macro::Sidekiq.job_queue_size(**options)
+    assert_equal 1_500, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: 1_500, **options)
+    assert_equal 1_500, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 1_500, **options)
+  end
+
   def test_server_lookup_negative_max_scheduled_counts_none_like_client
     5.times { enqueue_scheduled }
     enqueue

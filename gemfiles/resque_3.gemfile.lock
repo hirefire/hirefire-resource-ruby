@@ -100,10 +100,12 @@ GEM
     resque-retry (1.9.0)
       resque (>= 1.25, < 4.0)
       resque-scheduler (>= 4.0, < 6.0)
-    resque-scheduler (4.11.0)
+    resque-scheduler (5.0.0)
+      base64 (~> 0.1)
+      logger
       mono_logger (~> 1.0)
-      redis (>= 3.3)
-      resque (>= 1.27)
+      redis (>= 4.0)
+      resque (>= 3.0)
       rufus-scheduler (~> 3.2, != 3.3)
     rexml (3.4.4)
     rubocop (1.87.0)
@@ -187,7 +189,7 @@ DEPENDENCIES
   rake
   resque (~> 3)
   resque-retry (~> 1)
-  resque-scheduler (~> 4)
+  resque-scheduler (~> 5)
   simplecov
   standardrb
   timecop
@@ -246,7 +248,7 @@ CHECKSUMS
   reline (0.6.3) sha256=1198b04973565b36ec0f11542ab3f5cfeeec34823f4e54cebde90968092b1835
   resque (3.0.0) sha256=ee6f02b61b2af48c587587dd6fb3b9b5eca94e348c568aed8e9d7e7872b2f713
   resque-retry (1.9.0) sha256=4c26de2951bf97206173833f50733ac967086ef09c21644d45fbdd93e74cc10c
-  resque-scheduler (4.11.0) sha256=4e8bf3acdccc2cfe02141d2717fc03dc6e0cdd887c0d6c0fa92b394aa70f32a1
+  resque-scheduler (5.0.0) sha256=f199df7ae73b5c7972acd27c7e2f8a1f1ff4339eca5b794d0b2ba74c3d998aff
   rexml (3.4.4) sha256=19e0a2c3425dfbf2d4fc1189747bdb2f849b6c5e74180401b15734bc97b5d142
   rubocop (1.87.0) sha256=b9d9ddf55116a513f8ef2c7ae660662d8b49301f118d3f0df61865b33a5c188d
   rubocop-ast (1.49.1) sha256=4412f3ee70f6fe4546cc489548e0f6fcf76cafcfa80fa03af67098ffed755035

@@ -23,6 +23,7 @@
 * `HireFire::Macro::Bunny.job_queue_size` no longer masks broker errors: querying a missing queue raises `Bunny::NotFound` instead of the `Bunny::ChannelAlreadyClosed` that previously came from closing the broker-closed channel (which also leaked the connection). The channel and connection closes are isolated, and the connection is closed if opening the channel fails.
 * `HireFire::Macro::Bunny.job_queue_size` accepts a `connection:` option to reuse a long-lived `Bunny::Session` instead of opening a new connection (a full TCP + AMQP handshake) on every call; the supplied connection is left open for the caller and takes precedence over `amqp_url`.
 * Add Bunny 3.x to the test matrix. `HireFire::Macro::Bunny` works unchanged against the new client; both 2.x and 3.x are now covered.
+* Bump the `resque_3` appraisal to `resque-scheduler ~> 5`. resque-scheduler 5 requires `resque >= 3.0`, so `resque_2` stays on `~> 4`; the two appraisals now cover both resque-scheduler majors. `HireFire::Macro::Resque` works unchanged — the scheduled-jobs storage contract is identical.
 
 ## v1.0.8
 

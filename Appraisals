@@ -82,7 +82,7 @@ end
 appraise "resque_3" do
   gem "resque", "~> 3"
   gem "resque-retry", "~> 1"
-  gem "resque-scheduler", "~> 4"
+  gem "resque-scheduler", "~> 5"
 end
 
 appraise "sidekiq_6" do

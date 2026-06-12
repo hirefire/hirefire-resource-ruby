@@ -16,6 +16,6 @@ gem "simplecov", require: false
 gem "base64"
 gem "resque", "~> 3"
 gem "resque-retry", "~> 1"
-gem "resque-scheduler", "~> 4"
+gem "resque-scheduler", "~> 5"
 
 gemspec path: "../"

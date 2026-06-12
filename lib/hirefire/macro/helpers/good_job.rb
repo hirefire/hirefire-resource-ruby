@@ -14,8 +14,11 @@ module HireFire
           end
         end
 
+        # The error_event column arrived in GoodJob 3.16, so a version check is
+        # wrong for 3.0-3.15 and for gem upgrades whose migration has not run.
+        # Check the live schema instead.
         def error_event_supported?
-          Gem::Version.new(::GoodJob::VERSION) >= Gem::Version.new("3.0.0")
+          good_job_class.column_names.include?("error_event")
         end
 
         [

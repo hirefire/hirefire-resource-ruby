@@ -129,6 +129,20 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
   end
 
+  def test_error_event_support_follows_schema_not_version
+    # The error_event column only arrived in GoodJob 3.16. Support must track the
+    # live schema, not the gem version: an app on 3.0-3.15, or one that upgraded
+    # the gem without running the migration, has no such column even though its
+    # version is >= 3.0. A version-based gate would generate SQL referencing a
+    # missing column and raise.
+    real_columns = good_job_class.column_names
+    good_job_class.stubs(:column_names).returns(real_columns - ["error_event"])
+    refute error_event_supported?
+
+    good_job_class.unstub(:column_names)
+    assert_equal real_columns.include?("error_event"), error_event_supported?
+  end
+
   def test_deprecated_queue_method
     BasicJob.perform_later
     assert_equal 1, HireFire::Macro::GoodJob.queue(:default)

@@ -56,6 +56,35 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
   end
 
+  def test_job_queue_size_reuses_provided_connection
+    connection = ::Bunny.new(AMQP_URL).tap(&:start)
+
+    with_connection(queue: :reuse_queue, durable: true) do |_conn, _channel, queue|
+      queue.publish(TEST_MESSAGE)
+
+      # The provided connection is reused (not reopened) and left open across calls.
+      assert_equal 1, HireFire::Macro::Bunny.job_queue_size(:reuse_queue, connection: connection)
+      assert connection.open?, "provided connection must stay open for reuse"
+      assert_equal 1, HireFire::Macro::Bunny.job_queue_size(:reuse_queue, connection: connection)
+      assert connection.open?
+    end
+  ensure
+    connection&.close
+  end
+
+  def test_reused_connection_survives_missing_queue_error
+    connection = ::Bunny.new(AMQP_URL).tap(&:start)
+
+    assert_raises ::Bunny::NotFound do
+      HireFire::Macro::Bunny.job_queue_size("missing_#{rand(1_000_000)}", connection: connection)
+    end
+
+    # A 404 closes only the channel; a reused connection must remain usable.
+    assert connection.open?, "a channel-level 404 must not close a reused connection"
+  ensure
+    connection&.close
+  end
+
   def test_connection_close_failure_does_not_mask_body_error
     # If connection.close raises (e.g. broken socket), it must not replace the
     # real error raised by the body (here, NotFound from the missing queue).

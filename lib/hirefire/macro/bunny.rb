@@ -37,6 +37,10 @@ module HireFire
       #
       # @param queues [Array<String, Symbol>] Names of the queues for size measurement.
       # @param amqp_url [String, nil] (optional) RabbitMQ URL for establishing a new connection.
+      # @param connection [Bunny::Session, nil] (optional) An existing, started connection to
+      #   reuse. When given, it is left open (the caller owns it) and only a per-call channel is
+      #   opened and closed; otherwise a new connection is opened and closed on each call. Reusing
+      #   a long-lived connection avoids a TCP + AMQP handshake on every poll.
       # @return [Integer] Total job queue size.
       # @raise [HireFire::Errors::MissingQueueError] If no queue names are specified.
       # @example Retrieve job queue size for the "default" queue
@@ -45,17 +49,22 @@ module HireFire
       #   HireFire::Macro::Bunny.job_queue_size(:default, :mailer)
       # @example Use a new connection on each call using a AMQP URL
       #   HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url)
-      def job_queue_size(*queues, amqp_url: nil)
+      # @example Reuse a long-lived connection across calls
+      #   HireFire::Macro::Bunny.job_queue_size(:default, connection: connection)
+      def job_queue_size(*queues, amqp_url: nil, connection: nil)
         require "bunny"
 
         queues = normalize_queues(queues, allow_empty: false)
-        channel, connection = setup_channel(amqp_url)
+
+        owned_connection = connection.nil?
+        connection ||= acquire_connection(amqp_url)
+        channel = open_channel(connection, close_connection_on_failure: owned_connection)
 
         begin
           queues.sum { |name| channel.queue(name, passive: true).message_count }
         ensure
           close_channel(channel)
-          close_connection(connection)
+          close_connection(connection) if owned_connection
         end
       end
 
@@ -79,24 +88,14 @@ module HireFire
         nil
       end
 
-      def setup_channel(amqp_url)
-        connection = acquire_connection(amqp_url)
-
-        unless connection
-          raise ConnectionError, <<~ERROR_MSG
-            Unable to establish connection with RabbitMQ.
-            Ensure that a valid AMQP URL is provided.
-          ERROR_MSG
-        end
-
-        begin
-          [connection.create_channel, connection]
-        rescue
-          # create_channel runs before the caller's begin/ensure, so close the
-          # connection here — otherwise a channel-open failure leaks it.
-          close_connection(connection)
-          raise
-        end
+      def open_channel(connection, close_connection_on_failure:)
+        connection.create_channel
+      rescue
+        # create_channel runs before the caller's begin/ensure, so a channel-open
+        # failure on a connection we own would leak it. A borrowed connection is
+        # left for its owner to manage.
+        close_connection(connection) if close_connection_on_failure
+        raise
       end
 
       def acquire_connection(amqp_url)

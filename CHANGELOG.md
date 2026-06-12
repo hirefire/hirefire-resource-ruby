@@ -22,6 +22,7 @@
 * `HireFire::Macro::Resque` enumerates queues via `Resque.queues` (`SMEMBERS`) instead of `KEYS queue:*`, avoiding a full-keyspace scan on every all-queues size check.
 * `HireFire::Macro::Bunny.job_queue_size` no longer masks broker errors: querying a missing queue raises `Bunny::NotFound` instead of the `Bunny::ChannelAlreadyClosed` that previously came from closing the broker-closed channel (which also leaked the connection). The channel and connection closes are isolated, and the connection is closed if opening the channel fails.
 * `HireFire::Macro::Bunny.job_queue_size` accepts a `connection:` option to reuse a long-lived `Bunny::Session` instead of opening a new connection (a full TCP + AMQP handshake) on every call; the supplied connection is left open for the caller and takes precedence over `amqp_url`.
+* Add Bunny 3.x to the test matrix. `HireFire::Macro::Bunny` works unchanged against the new client; both 2.x and 3.x are now covered.
 
 ## v1.0.8
 

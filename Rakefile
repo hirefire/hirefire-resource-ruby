@@ -51,7 +51,7 @@ APPRAISAL_FILES = {
 }
 
 APPRAISAL_VERSIONS = {
-  "bunny" => %w[2],
+  "bunny" => %w[2 3],
   "delayed_job_active_record" => %w[4],
   "delayed_job_mongoid" => %w[3],
   "good_job" => %w[2 3 4],

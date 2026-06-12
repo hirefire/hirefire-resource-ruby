@@ -6,6 +6,10 @@ appraise "bunny_2" do
   gem "bunny", "~> 2"
 end
 
+appraise "bunny_3" do
+  gem "bunny", "~> 3"
+end
+
 appraise "delayed_job_active_record_4" do
   gem "pg"
   gem "rails", "~> 8"

@@ -57,6 +57,39 @@ class HireFire::BufferTest < Minitest::Test
     assert_empty data[:workers]
   end
 
+  def test_sample_worker_latest_wins_per_name
+    buffer.sample_worker("worker", 42)
+    buffer.sample_worker("mailer", 18)
+    buffer.sample_worker("worker", 7)
+
+    data = buffer.flush
+    assert_equal [
+      {"name" => "mailer", "sample" => 18},
+      {"name" => "worker", "sample" => 7}
+    ], data[:workers]
+  end
+
+  def test_sample_web_bounded_when_dispatch_is_starved
+    (1000..1070).each do |second|
+      Timecop.freeze(Time.at(second)) { buffer.sample_web(1) }
+    end
+
+    data = buffer.flush
+    assert_operator data[:web].size, :<=, 66
+    assert_equal 1006, data[:web].keys.min # seconds beyond the TTL pruned
+    assert_equal 1070, data[:web].keys.max
+  end
+
+  def test_sample_cpu_bounded_when_dispatch_is_starved
+    (1000..1070).each do |second|
+      Timecop.freeze(Time.at(second)) { buffer.sample_cpu("clock", 50.0) }
+    end
+
+    data = buffer.flush
+    assert_operator data[:cpu]["clock"].size, :<=, 66
+    assert_equal 1070, data[:cpu]["clock"].keys.max
+  end
+
   def test_repopulate_web_within_ttl
     Timecop.freeze Time.at(100) do
       buffer.repopulate_web({90 => [5], 30 => [10]})

@@ -61,4 +61,10 @@ class HireFire::IdentityTest < Minitest::Test
     ENV["HIREFIRE_SERVICE_NAME"] = "web"
     refute HireFire::Identity.heroku_conflict?
   end
+
+  def test_no_heroku_conflict_when_names_differ_only_in_case
+    ENV["HIREFIRE_SERVICE_NAME"] = "Worker"
+    ENV["DYNO"] = "worker.1"
+    refute HireFire::Identity.heroku_conflict?
+  end
 end

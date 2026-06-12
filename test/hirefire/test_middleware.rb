@@ -38,12 +38,12 @@ class HireFire::MiddlewareTest < Minitest::Test
 
     HireFire.configuration.dispatcher.stubs(:start)
 
-    Timecop.freeze Time.at(1) do
-      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
       @middleware.call(request)
 
       data = HireFire.configuration.buffer.flush
-      assert_equal({1 => [1000]}, data[:web])
+      assert_equal({1_700_000_001 => [1000]}, data[:web])
     end
   end
 
@@ -56,8 +56,8 @@ class HireFire::MiddlewareTest < Minitest::Test
 
     HireFire.configuration.dispatcher.expects(:start).once
 
-    Timecop.freeze Time.at(1) do
-      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
       @middleware.call(request)
     end
   end
@@ -95,13 +95,79 @@ class HireFire::MiddlewareTest < Minitest::Test
       config.log_queue_metrics = true
     end
 
-    Timecop.freeze Time.at(1) do
-      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
       @middleware.call(request)
     end
 
     assert_equal("[hirefire:router] queue=1000ms", $stdout.string.strip)
   ensure
     $stdout = original_stdout
+  end
+
+  # -- X-Request-Start formats --
+
+  def test_parses_nginx_seconds_format
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web, :rqt)
+    end
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "t=1700000000.000")
+      @middleware.call(request)
+
+      data = HireFire.configuration.buffer.flush
+      assert_equal({1_700_000_001 => [1000]}, data[:web])
+    end
+  end
+
+  def test_parses_apache_microseconds_format
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web, :rqt)
+    end
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "t=1700000000000000")
+      @middleware.call(request)
+
+      data = HireFire.configuration.buffer.flush
+      assert_equal({1_700_000_001 => [1000]}, data[:web])
+    end
+  end
+
+  def test_ignores_unparseable_request_start
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web, :rqt)
+    end
+
+    request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "garbage")
+    @middleware.call(request)
+
+    # An unparseable router timestamp must not produce an absurd queue-time
+    # sample (epoch-now milliseconds) that would trigger a max scale-up.
+    assert_empty HireFire.configuration.buffer.flush[:web]
+  end
+
+  def test_ignores_implausible_request_start
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web, :rqt)
+    end
+
+    request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "t=0.05")
+    @middleware.call(request)
+
+    assert_empty HireFire.configuration.buffer.flush[:web]
   end
 end

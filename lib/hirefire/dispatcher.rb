@@ -17,21 +17,27 @@ module HireFire
       @lease = Lease.new(enabled: workers.any?)
       @mutex = Mutex.new
       @running = false
+      @pid = nil
       @last_web_second = nil
     end
 
+    # Fork-aware: a forked child inherits @running == true from a parent that
+    # started the dispatcher (e.g. HireFire.configure under Puma's
+    # preload_app!), but threads do not survive fork — so "running" only counts
+    # in the process that started the thread. In a child the pid check fails,
+    # start runs again (the middleware calls it per request), and a fresh
+    # thread is created for this process.
     def start
-      return false if @running
-
       @mutex.synchronize do
-        return false if @running
-        @running = true
-      end
+        return false if @running && @pid == Process.pid
 
-      @thread = Thread.new do
-        while running?
-          tick
-          sleep 1
+        @running = true
+        @pid = Process.pid
+        @thread = Thread.new do
+          while running?
+            tick
+            sleep 1
+          end
         end
       end
 
@@ -41,13 +47,20 @@ module HireFire
     end
 
     def stop
+      thread = nil
+
       @mutex.synchronize do
         return false unless @running
+
         @running = false
+        # Only join a thread this process created; an inherited Thread object
+        # in a forked child references a thread that no longer exists.
+        thread = @thread if @pid == Process.pid
+        @thread = nil
+        @pid = nil
       end
 
-      @thread&.join(5)
-      @thread = nil
+      thread&.join(5)
 
       dispatch
 
@@ -57,16 +70,25 @@ module HireFire
     end
 
     def running?
-      @mutex.synchronize { @running }
+      @mutex.synchronize { @running && @pid == Process.pid }
     end
 
     private
 
+    # Each stage is isolated: a failure in one (a lease renewal timing out, a
+    # job sampler raising) must not starve the stages after it — most
+    # importantly dispatch, which drains the buffer. Without isolation a
+    # persistently failing early stage would abort every tick and let the web
+    # buffer grow without bound.
     def tick
-      @lease.request_if_due
-      @lease.sample_if_due { @workers.sample }
-      @cpu.each(&:sample)
+      guard { @lease.request_if_due }
+      guard { @lease.sample_if_due { @workers.sample } }
+      @cpu.each { |collector| guard { collector.sample } }
       dispatch
+    end
+
+    def guard
+      yield
     rescue => e
       logger.error "[HireFire] #{e.message}"
     end

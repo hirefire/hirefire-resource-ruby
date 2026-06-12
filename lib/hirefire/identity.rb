@@ -48,9 +48,11 @@ module HireFire
 
     # Heroku config vars are app-wide, so a dashboard-set HIREFIRE_SERVICE_NAME
     # makes every dyno identify as the same name. True when an explicit name is
-    # present alongside a DYNO whose prefix disagrees — the footgun to warn about.
+    # present alongside a DYNO whose prefix disagrees — the footgun to warn
+    # about. Case-insensitive, matching the dispatcher's identity gates: names
+    # differing only in case would gate identically, so they are no conflict.
     def heroku_conflict?
-      explicit && heroku_dyno && explicit != heroku_dyno
+      explicit && heroku_dyno && !explicit.casecmp?(heroku_dyno)
     end
 
     def presence(value)

@@ -39,10 +39,17 @@ module HireFire
       wall_delta = time - previous_time
       return if wall_delta <= 0
 
+      # A negative usage delta means the usage source changed between reads
+      # (e.g. a cgroup file vanished and a lower-layered source answered, with
+      # an unrelated counter). The fresh baseline is already seeded above, so
+      # skip this second rather than buffering a fabricated clamped value.
+      usage_delta = usage - previous_usage
+      return if usage_delta < 0
+
       available = Usage.available_cpus
       return if available.nil? || available <= 0
 
-      cores_used = (usage - previous_usage) / wall_delta
+      cores_used = usage_delta / wall_delta
       percentage = (cores_used / available * 100.0).clamp(0.0, 100.0)
 
       HireFire.configuration.buffer.sample_cpu(@name, percentage.round(2))

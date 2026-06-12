@@ -51,6 +51,20 @@ class HireFire::CPUTest < Minitest::Test
     assert_equal({"clock" => {1001 => [100.0]}}, buffer.flush[:cpu])
   end
 
+  def test_negative_usage_delta_skips_and_reseeds_the_baseline
+    HireFire::CPU::Usage.stubs(:total_seconds).returns(10.0, 5.0, 5.5)
+    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+
+    collector = HireFire::CPU.new("clock")
+    Timecop.freeze(Time.at(1000)) { collector.sample }
+    # The usage source switched between reads (10.0 -> 5.0): no fabricated 0.0.
+    Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
+    # The next read diffs against the new source's baseline.
+    Timecop.freeze(Time.at(1002)) { collector.sample }
+
+    assert_equal({"clock" => {1002 => [50.0]}}, buffer.flush[:cpu])
+  end
+
   def test_skips_sample_when_usage_unavailable
     HireFire::CPU::Usage.stubs(:total_seconds).returns(nil)
     HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)

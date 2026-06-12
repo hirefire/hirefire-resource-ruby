@@ -83,6 +83,37 @@ class HireFire::ConfigurationTest < Minitest::Test
     end
   end
 
+  def test_duplicate_name_check_is_case_insensitive
+    @configuration.dyno(:worker, :jql) { 1 }
+    assert_raises(HireFire::Configuration::DuplicateDynoError) do
+      @configuration.dyno("Worker", :cpu)
+    end
+  end
+
+  def test_second_http_strategy_raises
+    @configuration.dyno(:web, :rqt)
+    error = assert_raises(HireFire::Configuration::DuplicateDynoError) do
+      @configuration.dyno(:api, :rpm)
+    end
+    assert_includes error.message, "web"
+  end
+
+  def test_empty_name_raises
+    assert_raises(ArgumentError) { @configuration.dyno(nil, :rqt) }
+    assert_raises(ArgumentError) { @configuration.dyno("", :rqt) }
+  end
+
+  def test_nil_strategy_raises_unknown_strategy
+    assert_raises(HireFire::Configuration::UnknownStrategyError) do
+      @configuration.dyno(:web, nil)
+    end
+  end
+
+  def test_string_strategy_accepted
+    @configuration.dyno(:web, "rqt")
+    assert_instance_of HireFire::Web, @configuration.web
+  end
+
   def test_job_strategy_requires_a_sampler
     assert_raises(HireFire::Configuration::MissingSamplerError) do
       @configuration.dyno(:worker, :jql)

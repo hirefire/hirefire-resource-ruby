@@ -2,6 +2,7 @@
 
 require "json"
 require "net/http"
+require "openssl"
 
 module HireFire
   class Client
@@ -52,8 +53,10 @@ module HireFire
       http.request(request)
     rescue Timeout::Error
       raise RequestError, "Request timed out."
-    rescue SocketError => e
-      raise RequestError, "Network error (#{e.message})."
+    rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError => e
+      # Map the whole transport failure family (DNS, refused/reset connections,
+      # broken pipes, TLS) to RequestError so callers handle one error type.
+      raise RequestError, "Network error (#{e.class}: #{e.message})."
     end
 
     def ingest_uri

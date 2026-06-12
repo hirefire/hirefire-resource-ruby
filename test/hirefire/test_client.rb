@@ -87,6 +87,28 @@ class HireFire::ClientTest < Minitest::Test
     assert_includes error.message, "Network error"
   end
 
+  def test_submit_samples_raises_on_connection_refused
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_raise(Errno::ECONNREFUSED)
+
+    error = assert_raises(HireFire::Client::RequestError) do
+      client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+    end
+
+    assert_includes error.message, "Network error"
+  end
+
+  def test_submit_samples_raises_on_ssl_error
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_raise(OpenSSL::SSL::SSLError.new("certificate verify failed"))
+
+    error = assert_raises(HireFire::Client::RequestError) do
+      client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+    end
+
+    assert_includes error.message, "Network error"
+  end
+
   # -- request_lease --
 
   def test_request_lease_sends_process_id

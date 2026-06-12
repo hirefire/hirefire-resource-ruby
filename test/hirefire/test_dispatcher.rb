@@ -411,4 +411,59 @@ class HireFire::DispatcherTest < Minitest::Test
     # web heartbeat is emitted.
     assert_equal ["web"], bodies[0].map { |e| e["name"] }
   end
+
+  # -- Fork awareness --
+
+  def test_forked_child_restarts_the_dispatcher
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    assert dispatcher.start
+
+    # Simulate a fork: the child inherits @running == true from the parent
+    # (e.g. Puma preload_app!), but threads do not survive fork.
+    child_pid = Process.pid + 1
+    Process.stubs(:pid).returns(child_pid)
+
+    refute dispatcher.running?
+    assert dispatcher.start # the middleware's per-request start recovers
+    assert dispatcher.running?
+
+    dispatcher.stop
+  end
+
+  # -- Tick stage isolation --
+
+  def test_tick_dispatches_when_the_lease_request_fails
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_raise(Errno::ECONNREFUSED)
+    bodies = capture_ingest_bodies
+
+    Timecop.freeze Time.at(1000) do
+      dispatcher = configure_web_and_workers
+      HireFire.configuration.buffer.sample_web(12)
+      dispatcher.send(:tick)
+    end
+
+    # The failed lease renewal is logged, but must not starve dispatch.
+    assert_equal 1, bodies.size
+    assert_includes log.string, "Network error"
+  end
+
+  def test_tick_dispatches_when_a_sampler_raises
+    stub_lease(granted: true)
+    bodies = capture_ingest_bodies
+
+    Timecop.freeze Time.at(1000) do
+      HireFire.configuration.dyno(:web, :rqt)
+      HireFire.configuration.dyno(:worker, :jql) { raise "Redis down" }
+      HireFire.configuration.dispatcher.send(:tick)
+    end
+
+    # The raising sampler is logged, but the web heartbeat still goes out.
+    assert_equal 1, bodies.size
+    assert_equal ["web"], bodies[0].map { |e| e["name"] }
+    assert_includes log.string, "Redis down"
+  end
 end

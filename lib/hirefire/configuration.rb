@@ -37,6 +37,7 @@ module HireFire
       @logger = Logger.new($stdout)
       @token = nil
       @log_queue_metrics = false
+      @mutex = Mutex.new
     end
 
     def token
@@ -50,13 +51,21 @@ module HireFire
     # macro call); :rqt/:rpm/:cpu reject one (their values are collected for you).
     def dyno(name, strategy, &sampler)
       name = name.to_s
-      collector = STRATEGIES.fetch(strategy.to_sym) do
+
+      if name.empty?
+        raise ArgumentError,
+          "config.dyno requires a dyno name as its first argument (got #{name.inspect})."
+      end
+
+      collector = STRATEGIES.fetch(strategy.to_s.to_sym) do
         raise UnknownStrategyError,
           "Unknown strategy #{strategy.inspect} for config.dyno(:#{name}, ...). " \
           "Expected one of: #{STRATEGIES.keys.map(&:inspect).join(", ")}."
       end
 
-      if @names.include?(name)
+      # Case-insensitive, matching the identity gates: two names differing only
+      # in case would both match one process identity and emit under two names.
+      if @names.any? { |existing| existing.casecmp?(name) }
         raise DuplicateDynoError,
           "Duplicate declaration for config.dyno(:#{name}, ...). " \
           "Each dyno name maps to exactly one strategy."
@@ -66,6 +75,12 @@ module HireFire
       case collector
       when :http
         reject_sampler!(name, strategy, sampler)
+        if @web
+          raise DuplicateDynoError,
+            "config.dyno(:#{name}, :#{strategy}) conflicts with the earlier http declaration " \
+            "for #{@web.name.inspect}. Request metrics are collected from this process's own " \
+            "http traffic, so only one :rqt/:rpm dyno can be declared."
+        end
         @web = Web.new(name: name)
       when :job
         raise MissingSamplerError, "Missing sampler for config.dyno(:#{name}, :#{strategy}) { ... }" unless sampler
@@ -76,17 +91,22 @@ module HireFire
       end
     end
 
+    # Both memoizations are synchronized: the middleware touches them from
+    # concurrent request threads, and an unsynchronized ||= could build (and
+    # start) two dispatchers, leaving one running but unreachable.
     def buffer
-      @buffer ||= Buffer.new
+      @buffer || @mutex.synchronize { @buffer ||= Buffer.new }
     end
 
     def dispatcher
-      @dispatcher ||= Dispatcher.new(
-        web: @web,
-        workers: @workers,
-        cpu: active_cpu_collectors,
-        web_liveness: web_liveness?
-      )
+      @dispatcher || @mutex.synchronize do
+        @dispatcher ||= Dispatcher.new(
+          web: @web,
+          workers: @workers,
+          cpu: active_cpu_collectors,
+          web_liveness: web_liveness?
+        )
+      end
     end
 
     private

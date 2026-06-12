@@ -22,16 +22,48 @@ class HireFire::WorkersTest < Minitest::Test
     ], data[:workers]
   end
 
-  def test_accumulates_across_multiple_samples
+  def test_latest_sample_wins_across_multiple_samples
+    values = [5, 9].each
     HireFire.configure do |config|
-      config.dyno(:worker, :jql) { 5 }
+      config.dyno(:worker, :jql) { values.next }
     end
 
     HireFire.configuration.workers.sample
     HireFire.configuration.workers.sample
 
     data = buffer.flush
-    assert_equal 2, data[:workers].size
+    assert_equal [{"name" => "worker", "sample" => 9}], data[:workers]
+  end
+
+  def test_raising_sampler_is_isolated_and_logged
+    log = StringIO.new
+    HireFire.configure do |config|
+      config.dyno(:worker, :jql) { raise "Redis down" }
+      config.dyno(:mailer, :jql) { 18 }
+    end
+    HireFire.configuration.logger = Logger.new(log)
+
+    HireFire.configuration.workers.sample
+
+    data = buffer.flush
+    assert_equal [{"name" => "mailer", "sample" => 18}], data[:workers]
+    assert_includes log.string, "Redis down"
+  end
+
+  def test_invalid_sample_values_are_dropped_and_logged
+    log = StringIO.new
+    values = ["10", -1, Float::INFINITY, 7].each
+    HireFire.configure do |config|
+      config.dyno(:worker, :jql) { values.next }
+    end
+    HireFire.configuration.logger = Logger.new(log)
+
+    3.times { HireFire.configuration.workers.sample }
+    assert_empty buffer.flush[:workers]
+    assert_includes log.string, "expected a non-negative number"
+
+    HireFire.configuration.workers.sample
+    assert_equal [{"name" => "worker", "sample" => 7}], buffer.flush[:workers]
   end
 
   def test_enumerable

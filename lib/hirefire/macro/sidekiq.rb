@@ -168,16 +168,18 @@ module HireFire
 
           local function enqueued_size(queues)
              local size = 0
+             local names = queues
 
              if next(queues) == nil then
-                queues = redis.call("keys", "queue:*")
+                names = {}
+                local registered = redis.call("smembers", "queues")
 
-                for _, name in ipairs(queues) do
-                   queues[string.sub(name, 7)] = true
+                for _, name in ipairs(registered) do
+                   names[name] = true
                 end
              end
 
-             for queue, _ in pairs(queues) do
+             for queue, _ in pairs(names) do
                 size = size + redis.call("llen", "queue:" .. queue)
              end
 
@@ -186,22 +188,30 @@ module HireFire
 
           local function set_size(queues, set, now, max)
              local size = 0
-             local limit = 100
-             local offset = 0
+             local limit = 1000
+             local cursor = 0
              local jobs
 
              repeat
-                jobs = redis.call("zrangebyscore", set, "-inf", now, "LIMIT", offset, limit)
-                offset = offset + limit
+                jobs = redis.call("zrange", set, cursor, cursor + limit - 1, "WITHSCORES")
+                cursor = cursor + limit
 
-                for i = 1, #jobs do
+                for i = 1, #jobs, 2 do
+                   if max >= 0 and size >= max then
+                      return size
+                   end
+
+                   if tonumber(jobs[i + 1]) > now then
+                      return size
+                   end
+
                    local job = cjson_decode(jobs[i])
 
                    if job and (next(queues) == nil or queues[job.queue]) then
                       size = size + 1
                    end
                 end
-             until #jobs == 0 or (max > 0 and size >= max)
+             until #jobs == 0
 
              return size
           end
@@ -249,7 +259,7 @@ module HireFire
           end
 
           if not skip_retries then
-             size = size + set_size(queues, "retry", now, 0)
+             size = size + set_size(queues, "retry", now, -1)
           end
 
           if not skip_working then
@@ -335,7 +345,11 @@ module HireFire
           end
         end
 
-        def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: false, max_scheduled: 0)
+        def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: false, max_scheduled: nil)
+          # Match the client path: nil means "no limit", 0 means "count none".
+          # The Lua script can't receive a nil argv, so "no limit" is encoded as
+          # -1; any explicit integer (including 0) passes through unchanged.
+          max_scheduled = max_scheduled.nil? ? -1 : max_scheduled.to_i
           ::Sidekiq.redis do |connection|
             now = Time.now.to_i
             skip_scheduled = skip_scheduled ? 1 : 0

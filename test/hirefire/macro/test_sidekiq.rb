@@ -110,6 +110,50 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, server: true, skip_working: true) # 2
   end
 
+  def test_server_lookup_does_not_double_count_numeric_queue_names
+    enqueue(queue: "1")
+    enqueue(queue: "1")
+    enqueue(queue: "2")
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(server: true)
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size
+  end
+
+  def test_server_lookup_accepts_explicit_nil_max_scheduled
+    populate_queue
+    assert_equal 6, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: nil)
+  end
+
+  def test_server_lookup_caps_scheduled_exactly_like_client
+    10.times { enqueue_scheduled }
+
+    # Without a cap both paths count every due scheduled job.
+    assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_retries: true, skip_working: true)
+
+    # The cap is exact (not rounded up to a batch) and identical across paths.
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 3, skip_retries: true, skip_working: true)
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: 3, skip_retries: true, skip_working: true)
+  end
+
+  def test_server_lookup_max_scheduled_zero_counts_no_scheduled_like_client
+    5.times { enqueue_scheduled }
+    enqueue
+
+    # max_scheduled: 0 means "count no scheduled jobs" on both paths, leaving
+    # only the single enqueued job. (0 must not be read as "no limit".)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 0, skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: 0, skip_retries: true, skip_working: true)
+  end
+
+  def test_server_lookup_still_counts_retries_after_zero_means_none
+    enqueue_retry
+    enqueue_retry
+
+    # Retries have no cap; the internal -1 sentinel keeps them unlimited even
+    # though scheduled now treats 0 as "none".
+    assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_scheduled: true, skip_working: true)
+  end
+
   def test_deprecated_queue_method
     populate_queue
 

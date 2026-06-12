@@ -36,6 +36,19 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_in_delta 60, HireFire::Macro::GoodJob.job_queue_latency(:mailer), LATENCY_DELTA
   end
 
+  def test_job_queue_latency_prefers_oldest_by_coalesced_timestamp
+    # An immediate job (scheduled_at NULL) created 10 minutes ago is the true
+    # oldest, but a newer scheduled job has a non-NULL scheduled_at. Ordering by
+    # scheduled_at alone sorts the NULL row last and under-reports latency.
+    old_id = BasicJob.perform_later.job_id
+    good_job_class.where(active_job_id: old_id).update_all(scheduled_at: nil, created_at: 10.minutes.ago)
+
+    new_id = BasicJob.perform_later.job_id
+    good_job_class.where(active_job_id: new_id).update_all(scheduled_at: 1.minute.ago, created_at: 1.minute.ago)
+
+    assert_in_delta 600, HireFire::Macro::GoodJob.job_queue_latency, LATENCY_DELTA
+  end
+
   def test_job_queue_latency_with_unfinished_jobs
     job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
     good_job_class.where(active_job_id: job_id).update_all(performed_at: 1.minute.ago)

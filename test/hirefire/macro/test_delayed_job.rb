@@ -71,6 +71,20 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size
   end
 
+  def test_job_queue_size_counts_locked_jobs
+    # A locked (in-progress) job is still pending work and is counted, matching
+    # how the other macros treat running jobs.
+    BasicJob.delay.perform.update(locked_at: Time.now, locked_by: "worker-1")
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size
+  end
+
+  def test_job_queue_latency_counts_locked_jobs
+    Timecop.freeze(1.minute.ago) do
+      BasicJob.delay.perform.update(locked_at: Time.now, locked_by: "worker-1")
+    end
+    assert_in_delta 60, HireFire::Macro::Delayed::Job.job_queue_latency, LATENCY_DELTA
+  end
+
   def test_deprecated_queue_method
     BasicJob.delay(queue: :default).perform
 

@@ -62,6 +62,31 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     # Claimed jobs are not counted in latency.
   end
 
+  def test_job_queue_latency_with_paused_queues
+    Timecop.freeze(1.minute.ago) { BasicJob.perform_later }
+    Timecop.freeze(2.minutes.ago) { BasicJob.set(queue: :mailer).perform_later }
+
+    assert_in_delta 120, HireFire::Macro::SolidQueue.job_queue_latency, LATENCY_DELTA
+
+    pause_queue(:mailer)
+    # The paused queue drops out of the all-queues measurement and out of an
+    # explicit request for it.
+    assert_in_delta 60, HireFire::Macro::SolidQueue.job_queue_latency, LATENCY_DELTA
+    assert_in_delta 0, HireFire::Macro::SolidQueue.job_queue_latency(:mailer), LATENCY_DELTA
+
+    resume_queue(:mailer)
+    assert_in_delta 120, HireFire::Macro::SolidQueue.job_queue_latency, LATENCY_DELTA
+  end
+
+  def test_job_queue_latency_with_wildcard_queues
+    Timecop.freeze(1.minute.ago) { BasicJob.set(queue: :mailer_notification).perform_later }
+    Timecop.freeze(2.minutes.ago) { BasicJob.set(queue: :mailer_newsletter).perform_later }
+    Timecop.freeze(30.seconds.ago) { BasicJob.set(queue: :other).perform_later }
+
+    # mailer_* expands to the two mailer_ queues; "other" is excluded.
+    assert_in_delta 120, HireFire::Macro::SolidQueue.job_queue_latency(:"mailer_*"), LATENCY_DELTA
+  end
+
   def test_job_queue_size_without_jobs
     assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size
     assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size(:default)

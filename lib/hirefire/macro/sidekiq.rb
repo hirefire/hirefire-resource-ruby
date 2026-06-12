@@ -130,13 +130,14 @@ module HireFire
             job = job_payload ? JSON.parse(job_payload) : {}
 
             if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("8.0.0")
-              job["enqueued_at"] ? Time.now.to_i - job["enqueued_at"] / 1000 : 0
+              # Sidekiq 8 stores timestamps as epoch milliseconds.
+              job["enqueued_at"] ? Time.now.to_f - job["enqueued_at"] / 1000.0 : 0.0
             else
               job["enqueued_at"] ? Time.now.to_f - job["enqueued_at"] : 0.0
             end
           end
 
-          Integer(max_latencies.max || 0)
+          (max_latencies.max || 0.0).to_f
         end
 
         def set_latency(set, queues)

@@ -16,7 +16,7 @@ module HireFire
         :scheduled_size
       ].freeze
 
-      # Calculates the maximum job queue size using Resque. If no queues are specified, it
+      # Calculates the total job queue size using Resque. If no queues are specified, it
       # measures size across all available queues.
       #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
@@ -119,8 +119,6 @@ module HireFire
 
         total_size
       end
-
-      private
 
       # Resque maintains a set of registered queue names (SMEMBERS), which is
       # what Resque.queues reads. KEYS queue:* would scan the entire keyspace —

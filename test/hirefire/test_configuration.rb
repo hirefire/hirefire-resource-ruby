@@ -32,8 +32,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_empty @configuration.cpu
   end
 
-  # -- Strategy mapping --
-
   def test_rqt_configures_web
     @configuration.dyno(:web, :rqt)
     assert_instance_of HireFire::Web, @configuration.web
@@ -67,8 +65,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_instance_of HireFire::CPU, @configuration.cpu.first
     assert_equal "clock", @configuration.cpu.first.name
   end
-
-  # -- Validation --
 
   def test_unknown_strategy_raises
     assert_raises(HireFire::Configuration::UnknownStrategyError) do
@@ -132,8 +128,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     end
   end
 
-  # -- Lazily-built collaborators --
-
   def test_dispatcher_returns_instance
     assert_instance_of HireFire::Dispatcher, @configuration.dispatcher
   end
@@ -167,8 +161,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_same @configuration.buffer, @configuration.buffer
   end
 
-  # -- CPU identity gating --
-
   def test_cpu_collector_active_when_identity_matches
     ENV["HIREFIRE_SERVICE_NAME"] = "clock"
     @configuration.dyno(:clock, :cpu)
@@ -198,8 +190,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     @configuration.dyno(:worker, :jql) { 1 }
     @configuration.dispatcher
   end
-
-  # -- http liveness soft gate --
 
   def test_web_liveness_allowed_when_identity_matches
     ENV["DYNO"] = "web.1"
@@ -246,8 +236,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     @configuration.dispatcher
     assert_includes log.string, "app-wide"
   end
-
-  # -- Settings --
 
   def test_log_queue_metrics_defaults_to_false
     refute @configuration.log_queue_metrics

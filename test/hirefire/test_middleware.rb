@@ -74,38 +74,30 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_pass_through_without_log_queue_metrics
-    original_stdout = $stdout
-    $stdout = StringIO.new
-
-    Timecop.freeze Time.at(1) do
-      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
-      @middleware.call(request)
+    output = capture do
+      Timecop.freeze Time.at(1) do
+        request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => 0)
+        @middleware.call(request)
+      end
     end
 
-    assert_empty $stdout.string
-  ensure
-    $stdout = original_stdout
+    assert_empty output
   end
 
   def test_pass_through_and_process_log_queue_metrics
-    original_stdout = $stdout
-    $stdout = StringIO.new
-
     HireFire.configure do |config|
       config.log_queue_metrics = true
     end
 
-    Timecop.freeze Time.at(1_700_000_001) do
-      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
-      @middleware.call(request)
+    output = capture do
+      Timecop.freeze Time.at(1_700_000_001) do
+        request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+        @middleware.call(request)
+      end
     end
 
-    assert_equal("[hirefire:router] queue=1000ms", $stdout.string.strip)
-  ensure
-    $stdout = original_stdout
+    assert_equal("[hirefire:router] queue=1000ms", output.strip)
   end
-
-  # -- X-Request-Start formats --
 
   def test_parses_nginx_seconds_format
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
@@ -152,8 +144,6 @@ class HireFire::MiddlewareTest < Minitest::Test
     request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "garbage")
     @middleware.call(request)
 
-    # An unparseable router timestamp must not produce an absurd queue-time
-    # sample (epoch-now milliseconds) that would trigger a max scale-up.
     assert_empty HireFire.configuration.buffer.flush[:web]
   end
 

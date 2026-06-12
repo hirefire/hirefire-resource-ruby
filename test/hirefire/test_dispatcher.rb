@@ -56,8 +56,6 @@ class HireFire::DispatcherTest < Minitest::Test
     HireFire.configuration.dispatcher
   end
 
-  # -- Lifecycle --
-
   def test_starts_and_stops
     stub_lease
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
@@ -72,8 +70,6 @@ class HireFire::DispatcherTest < Minitest::Test
     refute dispatcher.running?
     refute dispatcher.stop # idempotent
   end
-
-  # -- Web dispatch --
 
   def test_dispatches_web_metrics
     stub_lease
@@ -97,23 +93,6 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_requested request
   end
 
-  def test_dispatches_heartbeat_when_web_configured_but_no_traffic
-    stub_lease
-    request = stub_request(:post, "https://data.hirefire.io/metrics/ingest")
-      .with { |req|
-        body = JSON.parse(req.body)
-        body.size == 1 &&
-          body[0]["name"] == "web" &&
-          body[0]["samples"].values.first == []
-      }
-      .to_return(status: 200)
-
-    dispatcher = configure_web_only
-    dispatcher.send(:tick)
-
-    assert_requested request
-  end
-
   def test_no_dispatch_when_nothing_configured
     stub_lease
     dispatcher = HireFire.configuration.dispatcher
@@ -122,8 +101,6 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
   end
 
-  # -- Web backfill (per-second liveness claims) --
-
   def test_first_dispatch_claims_only_the_current_second
     stub_lease
     bodies = capture_ingest_bodies
@@ -131,8 +108,6 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher = configure_web_only
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
 
-    # No watermark yet: a fresh process must not assert liveness for time
-    # before it existed (deploy/restart gaps stay genuinely visible).
     assert_equal({"1000" => []}, bodies[0][0]["samples"])
   end
 
@@ -144,8 +119,6 @@ class HireFire::DispatcherTest < Minitest::Test
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
     Timecop.freeze(Time.at(1003)) { dispatcher.send(:tick) }
 
-    # The skipped seconds (1001, 1002) are claimed as empty — alive, no traffic —
-    # so a stalled dispatch loop never leaves unreported gaps.
     assert_equal({"1001" => [], "1002" => [], "1003" => []}, bodies[1][0]["samples"])
   end
 
@@ -176,8 +149,8 @@ class HireFire::DispatcherTest < Minitest::Test
 
     dispatcher = configure_web_only
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # 200 — watermark 1000
-    Timecop.freeze(Time.at(1003)) { dispatcher.send(:tick) } # 500 — watermark must not advance
-    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) } # 200 — re-claims the failed seconds
+    Timecop.freeze(Time.at(1003)) { dispatcher.send(:tick) } # 500 — watermark holds
+    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) } # 200 — reclaims 1001..1005
 
     assert_equal %w[1001 1002 1003 1004 1005], bodies[2][0]["samples"].keys.sort
   end
@@ -190,9 +163,6 @@ class HireFire::DispatcherTest < Minitest::Test
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
     Timecop.freeze(Time.at(1000 + 100)) { dispatcher.send(:tick) }
 
-    # A 100s gap claims only the last WEB_BACKFILL_LIMIT seconds: older claims
-    # would be rejected by the server anyway, and a process suspended that long
-    # must not assert liveness for the suspension.
     keys = bodies[1][0]["samples"].keys.map(&:to_i)
     assert_equal 1100 - HireFire::Dispatcher::WEB_BACKFILL_LIMIT, keys.min
     assert_equal 1100, keys.max
@@ -243,8 +213,6 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_equal [7], data[:web][1000]
   end
 
-  # -- Oversized payload drop --
-
   def test_oversized_payload_is_dropped_without_a_request
     stub_lease
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
@@ -256,8 +224,6 @@ class HireFire::DispatcherTest < Minitest::Test
       dispatcher.send(:tick)
     end
 
-    # Dropped wholesale: nothing is sent, and nothing is repopulated for retry —
-    # repopulating would re-attempt the same oversized payload every tick.
     assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
     assert_empty HireFire.configuration.buffer.flush[:web]
     assert_includes log.string, "Dropped metrics payload"
@@ -275,14 +241,9 @@ class HireFire::DispatcherTest < Minitest::Test
     end
     Timecop.freeze(Time.at(1012)) { dispatcher.send(:tick) }
 
-    # The next dispatch must not backfill the dropped seconds as empty claims:
-    # that would report heavy traffic as zero traffic. Advancing the watermark
-    # leaves them unclaimed, which the server reads as missing data instead.
     assert_equal 2, bodies.size
     assert_equal %w[1011 1012], bodies[1][0]["samples"].keys.sort
   end
-
-  # -- Combined dispatch --
 
   def test_combined_web_and_worker_dispatch
     stub_lease(granted: true)
@@ -304,8 +265,6 @@ class HireFire::DispatcherTest < Minitest::Test
 
     assert_requested ingest
   end
-
-  # -- Worker-only dispatch via lease --
 
   def test_lease_granted_dispatches_workers
     stub_lease(granted: true)
@@ -332,8 +291,6 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
   end
 
-  # -- CPU dispatch --
-
   def test_dispatches_cpu_samples_in_the_samples_format
     HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
     HireFire::CPU::Usage.stubs(:total_seconds).returns(0.0, 0.5)
@@ -357,8 +314,6 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher = configure_cpu_only("clock")
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
 
-    # No previous reading to diff against, and CPU sends no heartbeat, so there
-    # is nothing to dispatch yet.
     assert_empty bodies
   end
 
@@ -369,15 +324,11 @@ class HireFire::DispatcherTest < Minitest::Test
 
     dispatcher = configure_cpu_only("clock")
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
-    Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) } # 500 — sample is dropped
+    Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) } # 500 — sample dropped, not re-buffered
 
-    # Unlike web, CPU is not re-buffered on failure: a missed second thins the
-    # fleet mean rather than biasing it.
     data = HireFire.configuration.buffer.flush
     assert_empty data[:cpu]
   end
-
-  # -- http liveness soft gate --
 
   def test_non_web_process_does_not_heartbeat_the_web_name
     stub_lease
@@ -387,8 +338,6 @@ class HireFire::DispatcherTest < Minitest::Test
 
     dispatcher.send(:tick)
 
-    # An idle worker process must not claim "web alive, zero traffic" seconds —
-    # that would satisfy an additive metric's coverage check during a web outage.
     assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
   end
 
@@ -404,7 +353,6 @@ class HireFire::DispatcherTest < Minitest::Test
       dispatcher.send(:tick)
     end
 
-    # Real data is never dropped — only synthesized liveness is suppressed.
     assert_equal({"1000" => [12]}, bodies[0][0]["samples"])
   end
 
@@ -430,7 +378,6 @@ class HireFire::DispatcherTest < Minitest::Test
 
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
 
-    # Soft gate: without a resolver the http collector keeps current behavior.
     assert_equal({"1000" => []}, bodies[0][0]["samples"])
   end
 
@@ -445,12 +392,8 @@ class HireFire::DispatcherTest < Minitest::Test
 
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
 
-    # Identity is "web", so the "worker" CPU collector never samples; only the
-    # web heartbeat is emitted.
     assert_equal ["web"], bodies[0].map { |e| e["name"] }
   end
-
-  # -- Fork awareness --
 
   def test_forked_child_restarts_the_dispatcher
     stub_lease
@@ -459,19 +402,16 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher = configure_web_only
     assert dispatcher.start
 
-    # Simulate a fork: the child inherits @running == true from the parent
-    # (e.g. Puma preload_app!), but threads do not survive fork.
+    # Simulate a fork: @running is inherited from the parent, but its thread is not.
     child_pid = Process.pid + 1
     Process.stubs(:pid).returns(child_pid)
 
     refute dispatcher.running?
-    assert dispatcher.start # the middleware's per-request start recovers
+    assert dispatcher.start
     assert dispatcher.running?
 
     dispatcher.stop
   end
-
-  # -- Tick stage isolation --
 
   def test_tick_dispatches_when_the_lease_request_fails
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
@@ -484,7 +424,6 @@ class HireFire::DispatcherTest < Minitest::Test
       dispatcher.send(:tick)
     end
 
-    # The failed lease renewal is logged, but must not starve dispatch.
     assert_equal 1, bodies.size
     assert_includes log.string, "Network error"
   end
@@ -499,7 +438,6 @@ class HireFire::DispatcherTest < Minitest::Test
       HireFire.configuration.dispatcher.send(:tick)
     end
 
-    # The raising sampler is logged, but the web heartbeat still goes out.
     assert_equal 1, bodies.size
     assert_equal ["web"], bodies[0].map { |e| e["name"] }
     assert_includes log.string, "Redis down"

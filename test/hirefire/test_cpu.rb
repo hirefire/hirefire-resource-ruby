@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "tempfile"
 
 class HireFire::CPUTest < Minitest::Test
   def buffer
@@ -57,9 +58,8 @@ class HireFire::CPUTest < Minitest::Test
 
     collector = HireFire::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) { collector.sample }
-    # The usage source switched between reads (10.0 -> 5.0): no fabricated 0.0.
+    # Source dropped 10.0 -> 5.0 between reads: skip, then re-baseline against 5.0.
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
-    # The next read diffs against the new source's baseline.
     Timecop.freeze(Time.at(1002)) { collector.sample }
 
     assert_equal({"clock" => {1002 => [50.0]}}, buffer.flush[:cpu])
@@ -177,5 +177,34 @@ class HireFire::CPU::UsageTest < Minitest::Test
     Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("90000 100000") # Fir 1c plan
     Usage.stubs(:read).with(Usage::CEDAR_MEMORY_LIMIT).returns("536870912")
     assert_in_delta 0.9, Usage.available_cpus, 0.0001
+  end
+
+  def test_read_returns_stripped_file_contents
+    Tempfile.create("usage") do |file|
+      file.write(" 42\n")
+      file.flush
+      assert_equal "42", Usage.read(file.path)
+    end
+  end
+
+  def test_read_returns_nil_for_missing_path
+    assert_nil Usage.read("/nonexistent/cgroup/file")
+  end
+
+  def test_read_returns_nil_when_the_file_disappears_between_check_and_read
+    File.stubs(:readable?).returns(true)
+    File.stubs(:read).raises(Errno::ENOENT)
+    assert_nil Usage.read("/proc/1/stat")
+  end
+
+  def test_clock_ticks_reads_sysconf
+    ticks = Usage.clock_ticks
+    assert_kind_of Integer, ticks
+    assert_operator ticks, :>, 0
+  end
+
+  def test_clock_ticks_falls_back_to_100
+    Etc.stubs(:sysconf).raises(NotImplementedError)
+    assert_equal 100, Usage.clock_ticks
   end
 end

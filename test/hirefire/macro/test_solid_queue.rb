@@ -59,7 +59,6 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
   def test_job_queue_latency_with_claimed_jobs
     Timecop.freeze(1.minute.ago) { insert_claimed_job(BasicJob) }
     assert_in_delta 0, HireFire::Macro::SolidQueue.job_queue_latency(:default), LATENCY_DELTA
-    # Claimed jobs are not counted in latency.
   end
 
   def test_job_queue_latency_with_paused_queues
@@ -69,8 +68,6 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     assert_in_delta 120, HireFire::Macro::SolidQueue.job_queue_latency, LATENCY_DELTA
 
     pause_queue(:mailer)
-    # The paused queue drops out of the all-queues measurement and out of an
-    # explicit request for it.
     assert_in_delta 60, HireFire::Macro::SolidQueue.job_queue_latency, LATENCY_DELTA
     assert_in_delta 0, HireFire::Macro::SolidQueue.job_queue_latency(:mailer), LATENCY_DELTA
 
@@ -83,7 +80,6 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     Timecop.freeze(2.minutes.ago) { BasicJob.set(queue: :mailer_newsletter).perform_later }
     Timecop.freeze(30.seconds.ago) { BasicJob.set(queue: :other).perform_later }
 
-    # mailer_* expands to the two mailer_ queues; "other" is excluded.
     assert_in_delta 120, HireFire::Macro::SolidQueue.job_queue_latency(:"mailer_*"), LATENCY_DELTA
   end
 
@@ -150,6 +146,19 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
       assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size(:default)
       assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size(:default, :mailer)
     end
+  end
+
+  def test_job_queue_size_with_mixed_literal_and_wildcard_queues
+    BasicJob.perform_later
+    BasicJob.set(queue: :mailer_notification).perform_later
+    BasicJob.set(queue: :mailer_newsletter).perform_later
+    BasicJob.set(queue: :other).perform_later
+
+    assert_equal 3, HireFire::Macro::SolidQueue.job_queue_size(:default, :"mailer_*") # default + the two mailer_ queues
+  end
+
+  def test_railtie_inserts_middleware_at_the_front_of_the_stack
+    assert_equal HireFire::Middleware, Rails.application.middleware.first.klass
   end
 
   def test_job_queue_size_with_claimed_jobs

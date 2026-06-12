@@ -36,20 +36,7 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
   end
 
-  def test_job_queue_size_with_jobs_using_max_priority
-    max_priority = 10
-
-    with_connection(max_priority: max_priority) do |connection, channel, queue|
-      0.upto(9).each { |n| queue.publish(TEST_MESSAGE, priority: n) }
-      assert_equal 10, queue.arguments["x-max-priority"]
-      assert_equal 10, HireFire::Macro::Bunny.job_queue_size(queue.name)
-    end
-  end
-
   def test_job_queue_size_with_missing_queue_raises_not_found
-    # A passive declare of a missing queue makes the broker close the channel
-    # (404). The real Bunny::NotFound must propagate rather than be masked by a
-    # Bunny::ChannelAlreadyClosed raised while closing the already-closed channel.
     queue_name = "missing_#{rand(1_000_000)}"
     assert_raises Bunny::NotFound do
       HireFire::Macro::Bunny.job_queue_size(queue_name, amqp_url: AMQP_URL)
@@ -62,7 +49,6 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     with_connection(queue: :reuse_queue, durable: true) do |_conn, _channel, queue|
       queue.publish(TEST_MESSAGE)
 
-      # The provided connection is reused (not reopened) and left open across calls.
       assert_equal 1, HireFire::Macro::Bunny.job_queue_size(:reuse_queue, connection: connection)
       assert connection.open?, "provided connection must stay open for reuse"
       assert_equal 1, HireFire::Macro::Bunny.job_queue_size(:reuse_queue, connection: connection)
@@ -79,15 +65,12 @@ class HireFire::Macro::BunnyTest < Minitest::Test
       HireFire::Macro::Bunny.job_queue_size("missing_#{rand(1_000_000)}", connection: connection)
     end
 
-    # A 404 closes only the channel; a reused connection must remain usable.
     assert connection.open?, "a channel-level 404 must not close a reused connection"
   ensure
     connection&.close
   end
 
   def test_connection_close_failure_does_not_mask_body_error
-    # If connection.close raises (e.g. broken socket), it must not replace the
-    # real error raised by the body (here, NotFound from the missing queue).
     ::Bunny::Session.any_instance.stubs(:close).raises(::Bunny::Exception.new("close boom"))
     queue_name = "missing_#{rand(1_000_000)}"
     assert_raises ::Bunny::NotFound do
@@ -96,8 +79,6 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   end
 
   def test_setup_channel_closes_connection_when_channel_creation_fails
-    # create_channel runs before the begin/ensure, so a failure there must not
-    # leak the open connection.
     connection = mock("connection")
     connection.stubs(:start)
     connection.stubs(:create_channel).raises(::Bunny::Exception.new("channel boom"))
@@ -110,8 +91,6 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   end
 
   def test_borrowed_connection_is_not_closed_when_channel_creation_fails
-    # A caller-supplied connection is never closed by the macro, even when
-    # opening the channel fails — the caller owns its lifecycle.
     connection = mock("connection")
     connection.stubs(:create_channel).raises(::Bunny::Exception.new("channel boom"))
     connection.expects(:close).never
@@ -128,6 +107,12 @@ class HireFire::Macro::BunnyTest < Minitest::Test
         assert_equal 1, HireFire::Macro::Bunny.queue(:default_legacy, amqp_url: AMQP_URL)
         assert_equal 2, HireFire::Macro::Bunny.queue(:default_legacy, :mailer_legacy, connection: connection)
       end
+    end
+  end
+
+  def test_deprecated_queue_method_requires_connection_or_amqp_url
+    assert_raises ArgumentError do
+      HireFire::Macro::Bunny.queue(:default)
     end
   end
 

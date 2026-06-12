@@ -111,6 +111,12 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Que.queue(:default)
   end
 
+  def test_deprecated_queue_method_without_queues_counts_all
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 1})
+    assert_equal 2, HireFire::Macro::Que.queue
+  end
+
   def test_deprecated_queue_method_with_special_character_queue_names
     enqueue(job_options: {job_class: "BasicJob", queue: "o'brien", run_at: Time.now - 1})
     assert_equal 1, HireFire::Macro::Que.queue(:"o'brien")

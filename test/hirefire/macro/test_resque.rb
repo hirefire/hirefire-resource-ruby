@@ -72,6 +72,37 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     end
   end
 
+  def test_job_queue_size_pages_scheduled_timestamps_across_the_batch_boundary
+    # 1_001 timestamps span two of the schedule scan's 1000-per-page batches.
+    now = Time.now.to_i
+
+    Resque.redis.pipelined do |pipeline|
+      1_001.times do |i|
+        timestamp = now - 2_000 + i
+        pipeline.zadd("delayed_queue_schedule", timestamp, timestamp)
+        pipeline.rpush("delayed:#{timestamp}", Resque.encode("class" => "BasicJob", "args" => [], "queue" => "default"))
+      end
+    end
+
+    assert_equal 1_001, HireFire::Macro::Resque.job_queue_size
+  end
+
+  def test_job_queue_size_pages_scheduled_jobs_within_a_timestamp_across_the_batch_boundary
+    # 1_500 jobs in one timestamp span two of the per-timestamp LRANGE pages.
+    timestamp = Time.now.to_i - 100
+
+    Resque.redis.pipelined do |pipeline|
+      pipeline.zadd("delayed_queue_schedule", timestamp, timestamp)
+      1_500.times do |i|
+        queue = (i % 3 == 0) ? "mailer" : "default"
+        pipeline.rpush("delayed:#{timestamp}", Resque.encode("class" => "BasicJob", "args" => [], "queue" => queue))
+      end
+    end
+
+    assert_equal 1_000, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 500, HireFire::Macro::Resque.job_queue_size(:mailer)
+  end
+
   def test_deprecated_queue_method
     Resque.enqueue_to(:default, BasicJob)
     assert_equal 1, HireFire::Macro::Resque.queue(:default)

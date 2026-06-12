@@ -90,7 +90,9 @@ module HireFire
 
       def clock_ticks
         Etc.sysconf(Etc::SC_CLK_TCK)
-      rescue
+      rescue StandardError, NotImplementedError
+        # Etc.sysconf raises NotImplementedError (not a StandardError) on
+        # platforms without sysconf; 100 is the universal USER_HZ default.
         100
       end
 

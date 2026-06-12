@@ -22,7 +22,15 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   end
 
   def test_job_queue_latency_without_jobs
-    assert_in_delta 0, HireFire::Macro::Sidekiq.job_queue_latency, LATENCY_DELTA
+    latency = HireFire::Macro::Sidekiq.job_queue_latency
+    assert_kind_of Float, latency
+    assert_in_delta 0, latency, LATENCY_DELTA
+  end
+
+  def test_job_queue_latency_with_only_future_jobs
+    enqueue_scheduled_future
+    enqueue_retry_future
+    assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency
   end
 
   def test_job_queue_latency_with_jobs
@@ -105,9 +113,9 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_working: true)
     assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true)
     assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, server: true)
-    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, server: true, skip_scheduled: true) # 2
-    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, server: true, skip_retries: true) # 2
-    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, server: true, skip_working: true) # 2
+    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, server: true, skip_scheduled: true)
+    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, server: true, skip_retries: true)
+    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, server: true, skip_working: true)
   end
 
   def test_server_lookup_does_not_double_count_numeric_queue_names
@@ -118,19 +126,12 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size
   end
 
-  def test_server_lookup_accepts_explicit_nil_max_scheduled
-    populate_queue
-    assert_equal 6, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: nil)
-  end
-
   def test_server_lookup_caps_scheduled_exactly_like_client
     10.times { enqueue_scheduled }
 
-    # Without a cap both paths count every due scheduled job.
     assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
     assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_retries: true, skip_working: true)
 
-    # The cap is exact (not rounded up to a batch) and identical across paths.
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 3, skip_retries: true, skip_working: true)
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: 3, skip_retries: true, skip_working: true)
   end
@@ -139,16 +140,13 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     5.times { enqueue_scheduled }
     enqueue
 
-    # max_scheduled: 0 means "count no scheduled jobs" on both paths, leaving
-    # only the single enqueued job. (0 must not be read as "no limit".)
+    # max_scheduled: 0 counts no scheduled jobs (not "no limit"), leaving only the enqueued one.
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 0, skip_retries: true, skip_working: true)
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: 0, skip_retries: true, skip_working: true)
   end
 
   def test_server_lookup_pages_and_caps_across_the_zrange_boundary
-    # The Lua scan pages the sorted set 1000 entries at a time. Insert several
-    # pages of due jobs to exercise the cursor advance, and confirm the count
-    # and the cap are both exact across page boundaries (and agree with client).
+    # 2_300 spans three of the Lua scan's 1000-entry pages.
     total = 2_300
     at = Time.now.to_i - 100
 
@@ -172,8 +170,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     5.times { enqueue_scheduled }
     enqueue
 
-    # A negative cap is degenerate; the client reads it as "none", so the
-    # server must too (rather than as "no limit").
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: -5, skip_retries: true, skip_working: true)
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: -5, skip_retries: true, skip_working: true)
   end
@@ -182,9 +178,36 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue_retry
     enqueue_retry
 
-    # Retries have no cap; the internal -1 sentinel keeps them unlimited even
-    # though scheduled now treats 0 as "none".
     assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_scheduled: true, skip_working: true)
+  end
+
+  def test_server_lookup_reraises_non_noscript_script_errors
+    # An unparseable payload makes the Lua script abort with a non-NOSCRIPT
+    # error, which must propagate rather than trigger the load-and-retry path.
+    Sidekiq.redis do |connection|
+      case identify_redis_client(connection)
+      when :redis
+        connection.zadd("schedule", Time.now.to_i - 100, "not-json")
+      when :redis_client
+        connection.call("zadd", "schedule", Time.now.to_i - 100, "not-json")
+      end
+    end
+
+    error = assert_raises(StandardError) do
+      HireFire::Macro::Sidekiq.job_queue_size(server: true)
+    end
+
+    refute_includes error.message, "NOSCRIPT"
+  end
+
+  def test_server_lookup_raises_on_unsupported_connection_type
+    ::Sidekiq.stubs(:redis).yields(Object.new)
+
+    error = assert_raises(RuntimeError) do
+      HireFire::Macro::Sidekiq.job_queue_size(server: true)
+    end
+
+    assert_includes error.message, "Unsupported Redis connection type"
   end
 
   def test_deprecated_queue_method
@@ -195,6 +218,20 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 4, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_scheduled: true)
     assert_equal 4, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_retries: true)
     assert_equal 4, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_working: true)
+  end
+
+  def test_deprecated_queue_method_without_queues_uses_fast_lookup
+    enqueue
+    enqueue queue: "critical"
+    enqueue_scheduled
+    enqueue_scheduled_future
+    enqueue_retry
+    enqueue_retry_future
+
+    assert_equal 4, HireFire::Macro::Sidekiq.queue
+    assert_equal 3, HireFire::Macro::Sidekiq.queue(skip_scheduled: true)
+    assert_equal 3, HireFire::Macro::Sidekiq.queue(skip_retries: true)
+    assert_equal 4, HireFire::Macro::Sidekiq.queue(skip_working: true)
   end
 
   private

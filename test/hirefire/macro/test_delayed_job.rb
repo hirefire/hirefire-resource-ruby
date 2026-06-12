@@ -72,8 +72,6 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
   end
 
   def test_job_queue_size_counts_locked_jobs
-    # A locked (in-progress) job is still pending work and is counted, matching
-    # how the other macros treat running jobs.
     BasicJob.delay.perform.update(locked_at: Time.now, locked_by: "worker-1")
     assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size
   end
@@ -85,6 +83,14 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_in_delta 60, HireFire::Macro::Delayed::Job.job_queue_latency, LATENCY_DELTA
   end
 
+  def test_raises_when_no_mapper_is_detected
+    ::Delayed::Job.stubs(:ancestors).returns([Object])
+
+    assert_raises HireFire::Macro::Delayed::Job::MapperNotDetectedError do
+      HireFire::Macro::Delayed::Job.job_queue_size
+    end
+  end
+
   def test_deprecated_queue_method
     BasicJob.delay(queue: :default).perform
 
@@ -92,6 +98,23 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
       assert_equal 1, HireFire::Macro::Delayed::Job.queue(:default, mapper: :active_record)
     elsif defined?(Mongoid)
       assert_equal 1, HireFire::Macro::Delayed::Job.queue(:default, mapper: :mongoid)
+    end
+  end
+
+  def test_deprecated_queue_method_with_priority_range
+    BasicJob.delay(queue: :default, priority: 1).perform
+    BasicJob.delay(queue: :default, priority: 5).perform
+
+    mapper = defined?(ActiveRecord) ? :active_record : :mongoid
+
+    assert_equal 1, HireFire::Macro::Delayed::Job.queue(mapper: mapper, min_priority: 3)
+    assert_equal 1, HireFire::Macro::Delayed::Job.queue(mapper: mapper, max_priority: 3)
+    assert_equal 2, HireFire::Macro::Delayed::Job.queue(mapper: mapper, min_priority: 0, max_priority: 10)
+  end
+
+  def test_deprecated_queue_method_requires_a_mapper
+    assert_raises ArgumentError do
+      HireFire::Macro::Delayed::Job.queue(:default)
     end
   end
 

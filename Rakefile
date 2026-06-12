@@ -13,7 +13,7 @@ APPRAISAL_FILES = {
     "test_hirefire.rb",
     "test_identity.rb",
     "test_lease.rb",
-    "test_version.rb",
+    "test_utility.rb",
     "test_web.rb",
     "test_worker.rb",
     "test_workers.rb"

@@ -18,8 +18,6 @@ class HireFire::ClientTest < Minitest::Test
     HireFire.configuration.logger = Logger.new(log)
   end
 
-  # -- submit_samples --
-
   def test_submit_samples_sends_payload
     request = stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .with(
@@ -76,40 +74,23 @@ class HireFire::ClientTest < Minitest::Test
     assert_includes error.message, "timed out"
   end
 
-  def test_submit_samples_raises_on_network_error
-    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
-      .to_raise(SocketError.new("Failed"))
+  def test_submit_samples_raises_on_transport_errors
+    [
+      SocketError.new("Failed"),
+      Errno::ECONNREFUSED,
+      IOError.new("broken pipe"),
+      OpenSSL::SSL::SSLError.new("certificate verify failed")
+    ].each do |transport_error|
+      stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+        .to_raise(transport_error)
 
-    error = assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+      error = assert_raises(HireFire::Client::RequestError) do
+        client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+      end
+
+      assert_includes error.message, "Network error"
     end
-
-    assert_includes error.message, "Network error"
   end
-
-  def test_submit_samples_raises_on_connection_refused
-    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
-      .to_raise(Errno::ECONNREFUSED)
-
-    error = assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
-    end
-
-    assert_includes error.message, "Network error"
-  end
-
-  def test_submit_samples_raises_on_ssl_error
-    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
-      .to_raise(OpenSSL::SSL::SSLError.new("certificate verify failed"))
-
-    error = assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
-    end
-
-    assert_includes error.message, "Network error"
-  end
-
-  # -- request_lease --
 
   def test_request_lease_sends_process_id
     request = stub_request(:post, "https://data.hirefire.io/metrics/lease")
@@ -135,8 +116,6 @@ class HireFire::ClientTest < Minitest::Test
     end
   end
 
-  # -- Token --
-
   def test_raises_without_token
     ENV["HIREFIRE_TOKEN"] = nil
 
@@ -146,8 +125,6 @@ class HireFire::ClientTest < Minitest::Test
 
     assert_includes error.message, "HIREFIRE_TOKEN"
   end
-
-  # -- Custom URL --
 
   def test_custom_data_url
     ENV["HIREFIRE_DATA_URL"] = "https://custom.hirefire.io"

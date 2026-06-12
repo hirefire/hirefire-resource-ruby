@@ -37,9 +37,8 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   end
 
   def test_job_queue_latency_prefers_oldest_by_coalesced_timestamp
-    # An immediate job (scheduled_at NULL) created 10 minutes ago is the true
-    # oldest, but a newer scheduled job has a non-NULL scheduled_at. Ordering by
-    # scheduled_at alone sorts the NULL row last and under-reports latency.
+    # The true-oldest job is immediate (scheduled_at NULL, created 10 min ago);
+    # ordering by scheduled_at alone would sort its NULL last and miss it.
     old_id = BasicJob.perform_later.job_id
     good_job_class.where(active_job_id: old_id).update_all(scheduled_at: nil, created_at: 10.minutes.ago)
 
@@ -130,11 +129,8 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   end
 
   def test_error_event_support_follows_schema_not_version
-    # The error_event column only arrived in GoodJob 3.16. Support must track the
-    # live schema, not the gem version: an app on 3.0-3.15, or one that upgraded
-    # the gem without running the migration, has no such column even though its
-    # version is >= 3.0. A version-based gate would generate SQL referencing a
-    # missing column and raise.
+    # error_event arrived in GoodJob 3.16, so support must track the live schema:
+    # a gem >= 3.0 whose migration has not run has no such column.
     real_columns = good_job_class.column_names
     good_job_class.stubs(:column_names).returns(real_columns - ["error_event"])
     refute error_event_supported?

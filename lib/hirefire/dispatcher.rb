@@ -8,6 +8,9 @@ module HireFire
     # suspended longer than this must not assert liveness for that time.
     WEB_BACKFILL_LIMIT = 60
 
+    # Mirrors the server's request body cap; larger payloads are rejected with 413.
+    PAYLOAD_SIZE_LIMIT = 65_536
+
     def initialize(web: nil, workers: Workers.new, cpu: [], web_liveness: true)
       @web = web
       @workers = workers
@@ -98,8 +101,11 @@ module HireFire
       payload = build_payload(data)
       return if payload.empty?
 
-      logger.info "[HireFire] Dispatching metrics: #{payload}" if ENV["HIREFIRE_VERBOSE"]
-      @client.submit_samples(payload)
+      body = JSON.generate(payload)
+      return drop_oversized_payload(body) if body.bytesize > PAYLOAD_SIZE_LIMIT
+
+      logger.info "[HireFire] Dispatching metrics: #{body}" if ENV["HIREFIRE_VERBOSE"]
+      @client.submit_samples(body)
       # Advance only after a successful submit: a failed dispatch leaves the
       # watermark behind, so the next success re-claims (and the server
       # re-receives) the seconds whose delivery failed. Duplicate empty claims
@@ -108,6 +114,15 @@ module HireFire
     rescue => e
       buffer.repopulate_web(data[:web]) if data && data[:web].any?
       logger.error "[HireFire] Dispatch error: #{e.message}"
+    end
+
+    # Repopulating would retry the same oversized payload every tick, so it is
+    # dropped outright. Advancing the watermark leaves the dropped seconds
+    # unclaimed (missing data) rather than backfilled as empty (zero traffic).
+    def drop_oversized_payload(body)
+      @last_web_second = @web_watermark if @web_watermark
+      logger.error "[HireFire] Dropped metrics payload: #{body.bytesize} bytes exceeds " \
+        "the #{PAYLOAD_SIZE_LIMIT}-byte limit. Resuming from the current second."
     end
 
     def build_payload(data)

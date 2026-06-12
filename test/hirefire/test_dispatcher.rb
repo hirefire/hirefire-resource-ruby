@@ -244,6 +244,45 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_equal [7], data[:web][1000]
   end
 
+  # -- Oversized payload drop --
+
+  def test_oversized_payload_is_dropped_without_a_request
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+
+    Timecop.freeze Time.at(1000) do
+      15_000.times { HireFire.configuration.buffer.sample_web(12345) }
+      dispatcher.send(:tick)
+    end
+
+    # Dropped wholesale: nothing is sent, and nothing is repopulated for retry —
+    # repopulating would re-attempt the same oversized payload every tick.
+    assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
+    assert_empty HireFire.configuration.buffer.flush[:web]
+    assert_includes log.string, "Dropped metrics payload"
+  end
+
+  def test_oversized_drop_advances_the_watermark_past_the_hole
+    stub_lease
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # watermark 1000
+    Timecop.freeze Time.at(1010) do
+      15_000.times { HireFire.configuration.buffer.sample_web(12345) }
+      dispatcher.send(:tick) # oversized — dropped, watermark advances to 1010
+    end
+    Timecop.freeze(Time.at(1012)) { dispatcher.send(:tick) }
+
+    # The next dispatch must not backfill the dropped seconds as empty claims:
+    # that would report heavy traffic as zero traffic. Advancing the watermark
+    # leaves them unclaimed, which the server reads as missing data instead.
+    assert_equal 2, bodies.size
+    assert_equal %w[1011 1012], bodies[1][0]["samples"].keys.sort
+  end
+
   # -- Combined dispatch --
 
   def test_combined_web_and_worker_dispatch

@@ -32,7 +32,7 @@ class HireFire::ClientTest < Minitest::Test
       )
       .to_return(status: 200)
 
-    client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+    client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
 
     assert_requested request
   end
@@ -41,7 +41,7 @@ class HireFire::ClientTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .to_return(status: 401)
 
-    result = client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+    result = client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
 
     assert_nil result
   end
@@ -51,7 +51,7 @@ class HireFire::ClientTest < Minitest::Test
       .to_return(status: 500)
 
     error = assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
     end
 
     assert_includes error.message, "500"
@@ -62,7 +62,7 @@ class HireFire::ClientTest < Minitest::Test
       .to_return(status: 422)
 
     assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
     end
   end
 
@@ -70,7 +70,7 @@ class HireFire::ClientTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_timeout
 
     error = assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
     end
 
     assert_includes error.message, "timed out"
@@ -81,7 +81,7 @@ class HireFire::ClientTest < Minitest::Test
       .to_raise(SocketError.new("Failed"))
 
     error = assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
     end
 
     assert_includes error.message, "Network error"
@@ -92,7 +92,7 @@ class HireFire::ClientTest < Minitest::Test
       .to_raise(Errno::ECONNREFUSED)
 
     error = assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
     end
 
     assert_includes error.message, "Network error"
@@ -103,7 +103,7 @@ class HireFire::ClientTest < Minitest::Test
       .to_raise(OpenSSL::SSL::SSLError.new("certificate verify failed"))
 
     error = assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
     end
 
     assert_includes error.message, "Network error"
@@ -141,7 +141,7 @@ class HireFire::ClientTest < Minitest::Test
     ENV["HIREFIRE_TOKEN"] = nil
 
     error = assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples([])
+      client.submit_samples("[]")
     end
 
     assert_includes error.message, "HIREFIRE_TOKEN"
@@ -156,7 +156,7 @@ class HireFire::ClientTest < Minitest::Test
     request = stub_request(:post, "https://custom.hirefire.io/metrics/ingest")
       .to_return(status: 200)
 
-    custom_client.submit_samples([{"name" => "web", "samples" => {"1000" => []}}])
+    custom_client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
 
     assert_requested request
   end

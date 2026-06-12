@@ -12,14 +12,16 @@ module HireFire
       @timeout = timeout
     end
 
-    def submit_samples(payload)
+    # Takes the JSON-encoded body; the dispatcher encodes it to enforce
+    # PAYLOAD_SIZE_LIMIT before submitting.
+    def submit_samples(body)
       require_token!
       uri = ingest_uri
       request = Net::HTTP::Post.new(uri.request_uri)
       request["Content-Type"] = "application/json"
       request["HireFire-Token"] = token
       request["HireFire-Agent"] = "Ruby-#{HireFire::VERSION}"
-      request.body = payload.to_json
+      request.body = body
       response = execute(uri, request)
 
       case response

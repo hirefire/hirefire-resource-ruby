@@ -54,6 +54,7 @@ module HireFire
       private
 
       def job_queue_latency_v0(*queues)
+        queues = normalize_queues(queues, allow_empty: true)
         query = <<~SQL
           SELECT run_at
           FROM que_jobs
@@ -63,10 +64,11 @@ module HireFire
           LIMIT 1
         SQL
 
-        query_job_queue_latency(query)
+        query_job_queue_latency(query, queues)
       end
 
       def job_queue_latency_v1_v2(*queues)
+        queues = normalize_queues(queues, allow_empty: true)
         query = <<~SQL
           SELECT run_at
           FROM que_jobs
@@ -78,10 +80,11 @@ module HireFire
           LIMIT 1
         SQL
 
-        query_job_queue_latency(query)
+        query_job_queue_latency(query, queues)
       end
 
       def job_queue_size_v0(*queues)
+        queues = normalize_queues(queues, allow_empty: true)
         query = <<~SQL
           SELECT COUNT(*) AS job_queue_size
           FROM que_jobs
@@ -89,10 +92,11 @@ module HireFire
           #{filter_by_queues_if_any(queues)}
         SQL
 
-        query_job_queue_size(query)
+        query_job_queue_size(query, queues)
       end
 
       def job_queue_size_v1_v2(*queues)
+        queues = normalize_queues(queues, allow_empty: true)
         query = <<~SQL
           SELECT COUNT(*) AS job_queue_size
           FROM que_jobs
@@ -102,26 +106,26 @@ module HireFire
           #{filter_by_queues_if_any(queues)}
         SQL
 
-        query_job_queue_size(query)
+        query_job_queue_size(query, queues)
       end
 
-      def query_job_queue_latency(query)
-        result = ::Que.execute(query).first
+      def query_job_queue_latency(query, queues)
+        result = ::Que.execute(query, queues.to_a).first
         result ? (Time.now - result[:run_at].to_time) : 0.0
       end
 
-      def query_job_queue_size(query)
-        ::Que.execute(query).first.fetch(:job_queue_size).to_i
+      def query_job_queue_size(query, queues)
+        ::Que.execute(query, queues.to_a).first.fetch(:job_queue_size).to_i
       end
 
+      # Queue names are bound as individual parameters ($1, $2, ...) rather than
+      # interpolated: Que serializes Array/Hash params to JSON, so a single
+      # array bound to ANY($1) would not work — one scalar placeholder per queue
+      # is the portable form across Que 0.x/1.x/2.x.
       def filter_by_queues_if_any(queues)
-        queues = normalize_queues(queues, allow_empty: true)
-        queues = queues.map(&method(:sanitize_sql)).join(", ")
-        queues.empty? ? "" : "AND queue IN (#{queues})"
-      end
-
-      def sanitize_sql(value)
-        "'" + value.to_s.gsub(/['"\\]/, '\\\\\\&') + "'"
+        return "" if queues.empty?
+        placeholders = (1..queues.size).map { |i| "$#{i}" }.join(", ")
+        "AND queue IN (#{placeholders})"
       end
 
       def version

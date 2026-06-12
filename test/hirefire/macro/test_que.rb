@@ -80,6 +80,18 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Que.job_queue_size
   end
 
+  def test_job_queue_size_with_special_character_queue_names
+    enqueue(job_options: {job_class: "BasicJob", queue: "o'brien", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "a,b", run_at: Time.now - 1})
+    assert_equal 1, HireFire::Macro::Que.job_queue_size(:"o'brien")
+    assert_equal 2, HireFire::Macro::Que.job_queue_size(:"o'brien", :"a,b")
+  end
+
+  def test_job_queue_latency_with_special_character_queue_names
+    enqueue(job_options: {job_class: "BasicJob", queue: "o'brien", run_at: Time.now - 60})
+    assert_in_delta 60, HireFire::Macro::Que.job_queue_latency(:"o'brien"), LATENCY_DELTA
+  end
+
   def test_job_queue_size_skip_finished_jobs
     return if VERSION_QUE < VERSION_1_0_0
     job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})

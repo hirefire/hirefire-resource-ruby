@@ -145,6 +145,16 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: 0, skip_retries: true, skip_working: true)
   end
 
+  def test_server_lookup_negative_max_scheduled_counts_none_like_client
+    5.times { enqueue_scheduled }
+    enqueue
+
+    # A negative cap is degenerate; the client reads it as "none", so the
+    # server must too (rather than as "no limit").
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: -5, skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: -5, skip_retries: true, skip_working: true)
+  end
+
   def test_server_lookup_still_counts_retries_after_zero_means_none
     enqueue_retry
     enqueue_retry

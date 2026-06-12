@@ -46,6 +46,40 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
   end
 
+  def test_job_queue_size_with_missing_queue_raises_not_found
+    # A passive declare of a missing queue makes the broker close the channel
+    # (404). The real Bunny::NotFound must propagate rather than be masked by a
+    # Bunny::ChannelAlreadyClosed raised while closing the already-closed channel.
+    queue_name = "missing_#{rand(1_000_000)}"
+    assert_raises Bunny::NotFound do
+      HireFire::Macro::Bunny.job_queue_size(queue_name, amqp_url: AMQP_URL)
+    end
+  end
+
+  def test_connection_close_failure_does_not_mask_body_error
+    # If connection.close raises (e.g. broken socket), it must not replace the
+    # real error raised by the body (here, NotFound from the missing queue).
+    ::Bunny::Session.any_instance.stubs(:close).raises(::Bunny::Exception.new("close boom"))
+    queue_name = "missing_#{rand(1_000_000)}"
+    assert_raises ::Bunny::NotFound do
+      HireFire::Macro::Bunny.job_queue_size(queue_name, amqp_url: AMQP_URL)
+    end
+  end
+
+  def test_setup_channel_closes_connection_when_channel_creation_fails
+    # create_channel runs before the begin/ensure, so a failure there must not
+    # leak the open connection.
+    connection = mock("connection")
+    connection.stubs(:start)
+    connection.stubs(:create_channel).raises(::Bunny::Exception.new("channel boom"))
+    connection.expects(:close).at_least_once
+    ::Bunny.stubs(:new).returns(connection)
+
+    assert_raises ::Bunny::Exception do
+      HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: AMQP_URL)
+    end
+  end
+
   def test_deprecated_queue_method
     with_connection(queue: :default_legacy, durable: true) do |connection, channel, default|
       with_connection(queue: :mailer_legacy, durable: true) do |connection, channel, mailer|

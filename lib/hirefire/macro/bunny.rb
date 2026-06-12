@@ -54,23 +54,48 @@ module HireFire
         begin
           queues.sum { |name| channel.queue(name, passive: true).message_count }
         ensure
-          channel&.close
-          connection&.close
+          close_channel(channel)
+          close_connection(connection)
         end
       end
 
       private
 
+      # A passive declare of a missing queue makes the broker close the channel
+      # (404). Closing an already-closed channel raises, which in this ensure
+      # block would mask the original error and skip the connection close,
+      # leaking the connection.
+      def close_channel(channel)
+        channel&.close
+      rescue ::Bunny::Exception, Timeout::Error
+        nil
+      end
+
+      # Likewise isolated: a failing connection close (e.g. a broken socket)
+      # must not mask the body's error or supersede the channel close.
+      def close_connection(connection)
+        connection&.close
+      rescue ::Bunny::Exception, Timeout::Error
+        nil
+      end
+
       def setup_channel(amqp_url)
         connection = acquire_connection(amqp_url)
 
-        if connection
-          [connection.create_channel, connection]
-        else
+        unless connection
           raise ConnectionError, <<~ERROR_MSG
             Unable to establish connection with RabbitMQ.
             Ensure that a valid AMQP URL is provided.
           ERROR_MSG
+        end
+
+        begin
+          [connection.create_channel, connection]
+        rescue
+          # create_channel runs before the caller's begin/ensure, so close the
+          # connection here — otherwise a channel-open failure leaks it.
+          close_connection(connection)
+          raise
         end
       end
 

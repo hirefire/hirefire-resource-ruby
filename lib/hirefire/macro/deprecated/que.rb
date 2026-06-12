@@ -20,8 +20,15 @@ module HireFire
         # @example Counting jobs in the "default" queue
         #   HireFire::Macro::Que.queue("default")
         def queue(*queues)
-          query = queues.empty? ? Private.base_query : "#{Private.base_query} AND queue IN (#{Private.names(queues)})"
-          results = ::Que.execute(query).first
+          results =
+            if queues.empty?
+              ::Que.execute(Private.base_query).first
+            else
+              placeholders = queues.each_index.map { |i| "$#{i + 1}" }.join(", ")
+              query = "#{Private.base_query} AND queue IN (#{placeholders})"
+              ::Que.execute(query, queues.map(&:to_s)).first
+            end
+
           (results[:total] || results["total"]).to_i
         end
 
@@ -36,14 +43,6 @@ module HireFire
             return QUE_V0_QUERY if defined?(::Que::Version)
             return QUE_V1_QUERY if defined?(::Que::VERSION)
             raise "Couldn't find Que version"
-          end
-
-          # Formats queue names for SQL query.
-          #
-          # @param queues [Array<String>] The names of the queues.
-          # @return [String] Formatted queue names for SQL IN clause.
-          def names(queues)
-            queues.map { |queue| "'#{queue}'" }.join(",")
           end
 
           # Formats and freezes a SQL query string for use.

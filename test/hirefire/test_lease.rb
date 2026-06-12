@@ -8,6 +8,7 @@ class HireFire::LeaseTest < Minitest::Test
   end
 
   def setup
+    super
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
     WebMock.reset_executed_requests!
     HireFire.configuration.logger = Logger.new(StringIO.new)

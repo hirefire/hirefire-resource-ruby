@@ -109,6 +109,18 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
   end
 
+  def test_borrowed_connection_is_not_closed_when_channel_creation_fails
+    # A caller-supplied connection is never closed by the macro, even when
+    # opening the channel fails — the caller owns its lifecycle.
+    connection = mock("connection")
+    connection.stubs(:create_channel).raises(::Bunny::Exception.new("channel boom"))
+    connection.expects(:close).never
+
+    assert_raises ::Bunny::Exception do
+      HireFire::Macro::Bunny.job_queue_size(:default, connection: connection)
+    end
+  end
+
   def test_deprecated_queue_method
     with_connection(queue: :default_legacy, durable: true) do |connection, channel, default|
       with_connection(queue: :mailer_legacy, durable: true) do |connection, channel, mailer|

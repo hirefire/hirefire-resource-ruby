@@ -4,12 +4,12 @@ require "test_helper"
 
 class HireFire::WebTest < Minitest::Test
   def test_name
-    web = HireFire::Web.new(name: :api)
+    web = HireFire::Web.new(:api)
     assert_equal "api", web.name
   end
 
   def test_sample_buffers_request_queue_time
-    web = HireFire::Web.new(name: :web)
+    web = HireFire::Web.new(:web)
 
     Timecop.freeze Time.at(100) do
       web.sample(25)

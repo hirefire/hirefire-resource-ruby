@@ -64,8 +64,8 @@ class HireFire::BufferTest < Minitest::Test
 
     data = buffer.flush
     assert_equal [
-      {"name" => "mailer", "sample" => 18},
-      {"name" => "worker", "sample" => 7}
+      {"name" => "worker", "sample" => 7},
+      {"name" => "mailer", "sample" => 18}
     ], data[:workers]
   end
 

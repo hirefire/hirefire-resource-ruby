@@ -2,8 +2,6 @@
 
 module HireFire
   module Utility
-    extend self
-
     private
 
     def normalize_queues(queues, allow_empty:)

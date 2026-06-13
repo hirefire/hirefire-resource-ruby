@@ -4,7 +4,7 @@ module HireFire
   class Buffer
     def initialize(ttl: 60)
       @web = {}
-      @workers = []
+      @workers = {}
       @cpu = {}
       @mutex = Mutex.new
       @ttl = ttl
@@ -20,15 +20,10 @@ module HireFire
     end
 
     # Latest-wins per name: worker samples are point-in-time gauges, so when
-    # dispatch is starved (network outage) only the most recent value is worth
-    # delivering — the server stamps gauges at arrival, and a stale value under
-    # a fresh timestamp would be wrong. This also bounds the buffer at one
-    # entry per declared worker.
+    # dispatch is starved only the most recent value is worth delivering. This
+    # also bounds the buffer at one entry per declared worker.
     def sample_worker(name, sample)
-      @mutex.synchronize do
-        @workers.delete_if { |entry| entry["name"] == name }
-        @workers << {"name" => name, "sample" => sample}
-      end
+      @mutex.synchronize { @workers[name] = sample }
     end
 
     def sample_cpu(name, value)
@@ -44,8 +39,13 @@ module HireFire
     def flush
       @mutex.synchronize do
         web, workers, cpu = @web, @workers, @cpu
-        @web, @workers, @cpu = {}, [], {}
-        {web: web, workers: workers, cpu: cpu}
+        @web, @workers, @cpu = {}, {}, {}
+
+        {
+          web: web,
+          workers: workers.map { |name, sample| {"name" => name, "sample" => sample} },
+          cpu: cpu
+        }
       end
     end
 
@@ -62,12 +62,10 @@ module HireFire
 
     private
 
-    # Insert-side TTL: when dispatch is starved (network outage, a stopped
-    # dispatcher) the timestamped buffers must not grow without bound. Seconds
-    # older than the TTL would be rejected by the server's staleness window
-    # anyway, so dropping them loses nothing. The size guard keeps the common
-    # case (dispatch draining every second, a handful of live keys) a single
-    # integer comparison.
+    # Insert-side TTL: when dispatch is starved the timestamped buffers must
+    # not grow without bound. Seconds older than the TTL would be rejected by
+    # the server's staleness window anyway. The size guard keeps the common
+    # case a single integer comparison.
     def prune(buckets, now)
       return if buckets.size <= @ttl + 5
 

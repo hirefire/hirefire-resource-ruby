@@ -21,29 +21,28 @@ module HireFire
       @granted
     end
 
+    # Advances before yielding so a raising sampler costs one sample window
+    # instead of being retried on every dispatcher tick.
     def sample_if_due
       return unless @granted && Time.now >= @next_sample_at
 
-      # Advance before sampling: a raising sampler costs one sample window,
-      # rather than being retried (and re-raising) on every dispatcher tick.
       @next_sample_at = Time.now + @sample_frequency
       yield
     end
 
+    # Advances before the request so a failed renewal waits a full TTL instead
+    # of blocking the dispatcher thread on every tick.
     def request_if_due
       return unless @enabled && Time.now >= @expires_at
 
-      # Advance before the request: a failed renewal waits a full TTL instead
-      # of being retried — each attempt blocking the dispatcher thread for up
-      # to the client timeout — on every tick.
       @expires_at = Time.now + @ttl
 
       begin
         response = @client.request_lease(@process_id)
       rescue
-        # The lease could not be confirmed, and the server may re-grant it to
-        # another process meanwhile — stop sampling until a successful renewal
-        # rather than risk two processes sampling the same fleet.
+        # Unconfirmed leases may be re-granted to another process meanwhile;
+        # stop sampling until a successful renewal rather than risk two
+        # processes sampling the same fleet.
         @granted = false
         raise
       end
@@ -64,8 +63,6 @@ module HireFire
 
       if response.key?("HireFire-Lease-TTL")
         @ttl = response["HireFire-Lease-TTL"].to_i
-        # Re-derive the renewal time so a server-updated TTL takes effect this
-        # window rather than the next.
         @expires_at = Time.now + @ttl
       end
 

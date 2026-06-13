@@ -20,12 +20,14 @@ module HireFire
       request_queue_time = calculate_request_queue_time(request_start)
       return unless request_queue_time
 
-      if HireFire.configuration.web && HireFire.configuration.token
-        HireFire.configuration.web.sample(request_queue_time)
-        HireFire.configuration.dispatcher.start
+      configuration = HireFire.configuration
+
+      if configuration.web && configuration.token
+        configuration.web.sample(request_queue_time)
+        configuration.dispatcher.start
       end
 
-      if HireFire.configuration.log_queue_metrics
+      if configuration.log_queue_metrics
         log_request_queue_time(request_queue_time)
       end
     end
@@ -35,12 +37,9 @@ module HireFire
     end
 
     # X-Request-Start arrives in router-specific shapes: Heroku sends epoch
-    # milliseconds ("1700000000000"), nginx sends "t=" plus epoch seconds with
-    # fractional milliseconds ("t=1700000000.000"), Apache sends "t=" plus
-    # epoch microseconds. Strip the prefix and infer the unit from the
-    # magnitude — the ranges are ~3 orders apart, so epochs between 2001 and
-    # 5138 are unambiguous. Anything implausible (garbage parsing to 0, a
-    # pre-2001 epoch) yields nil rather than an absurd queue time.
+    # milliseconds, nginx "t=" plus fractional epoch seconds, Apache "t=" plus
+    # epoch microseconds. The unit is inferred from the magnitude (the ranges
+    # are ~3 orders apart); implausible values yield nil.
     def calculate_request_queue_time(timestamp)
       value = timestamp.to_s.delete_prefix("t=").to_f
       return if value < 1e9

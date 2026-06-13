@@ -12,10 +12,10 @@ module HireFire
 
     class DuplicateDynoError < StandardError; end
 
-    # The five public strategy acronyms map to three internal collectors. Within
-    # a family the collector is identical: :rqt/:rpm share the http feed and
-    # :jql/:jqs share the job feed (the user's block picks the macro), so only
-    # the collector kind matters past configuration.
+    # The five public strategy acronyms map to three internal collectors:
+    # :rqt/:rpm share the http feed and :jql/:jqs share the job feed (the
+    # user's block picks the macro), so only the collector kind matters past
+    # configuration.
     STRATEGIES = {
       rqt: :http,
       rpm: :http,
@@ -44,11 +44,6 @@ module HireFire
       @token || ENV["HIREFIRE_TOKEN"]
     end
 
-    # Declares one dyno's metric strategy. The second argument is the strategy
-    # acronym; a name maps 1:1 to exactly one strategy, so declaring the same
-    # name twice raises (this is what makes mixing metric kinds under one name
-    # structurally impossible). :jql/:jqs require a sampler block (the user's
-    # macro call); :rqt/:rpm/:cpu reject one (their values are collected for you).
     def dyno(name, strategy, &sampler)
       name = name.to_s
 
@@ -81,7 +76,7 @@ module HireFire
             "for #{@web.name.inspect}. Request metrics are collected from this process's own " \
             "http traffic, so only one :rqt/:rpm dyno can be declared."
         end
-        @web = Web.new(name: name)
+        @web = Web.new(name)
       when :job
         raise MissingSamplerError, "Missing sampler for config.dyno(:#{name}, :#{strategy}) { ... }" unless sampler
         @workers << Worker.new(name, &sampler)
@@ -119,12 +114,10 @@ module HireFire
         "(its values are collected automatically)."
     end
 
-    # The CPU collectors that should run in this process. CPU is intrinsic to a
-    # process's own dyno, so a collector only runs where the process identity
-    # matches its declared name (a worker dyno must not report CPU under "web").
-    # This is a hard gate: unresolved identity disables CPU with a loud log line
-    # rather than raising — a metrics library must not crash the host app — and
-    # the server's missing_metric issue then names the autoscaler.
+    # CPU is intrinsic to a process's own dyno, so a collector only runs where
+    # the process identity matches its declared name. Hard gate: unresolved
+    # identity disables CPU with a loud log line rather than raising — a
+    # metrics library must not crash the host app.
     def active_cpu_collectors
       return [] if @cpu.empty?
 
@@ -141,14 +134,12 @@ module HireFire
     end
 
     # Whether this process may synthesize liveness claims (heartbeats/backfill)
-    # under the http collector's name. Real request samples self-gate — only the
-    # HTTP-serving process receives requests — but liveness claims do not: any
-    # process running the shared initializer would otherwise claim "web alive,
-    # zero traffic" seconds, letting idle worker/one-off/console processes
-    # satisfy an additive metric's coverage check while the actual web dynos
-    # are down. Soft gate: a resolved identity must match the declared name;
-    # an unresolved identity allows the claims (http must keep working without
-    # a resolver, unlike the cpu collector's hard gate).
+    # under the http collector's name. Real request samples self-gate — only
+    # the HTTP-serving process receives requests — but without this gate any
+    # process running the shared initializer would claim "web alive, zero
+    # traffic" seconds while the actual web dynos are down. Soft gate: an
+    # unresolved identity still allows the claims, since http must keep working
+    # without a resolver.
     def web_liveness?
       return true unless @web
 
@@ -156,13 +147,11 @@ module HireFire
       identity.nil? || identity.casecmp?(@web.name)
     end
 
-    # Memoized so the dispatcher's gates share one resolution, and the Heroku
-    # app-wide config var footgun is warned about once: config vars apply to
-    # every dyno, so a dashboard-set HIREFIRE_SERVICE_NAME makes all processes
-    # identify as the same name. Both gates compare identity to declared names
-    # case-insensitively: platforms don't preserve casing consistently (a
-    # "Worker:" Procfile entry yields DYNO "Worker.1" on Cedar but a lowercased
-    # "worker-..." pod name on Fir).
+    # Memoized so the dispatcher's gates share one resolution and the Heroku
+    # app-wide config var footgun is warned about once. Identity is compared to
+    # declared names case-insensitively because platforms don't preserve casing
+    # consistently (a "Worker:" Procfile entry yields DYNO "Worker.1" on Cedar
+    # but a lowercased "worker-..." pod name on Fir).
     def resolved_identity
       return @resolved_identity if defined?(@resolved_identity)
 

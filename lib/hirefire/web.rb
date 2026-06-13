@@ -4,7 +4,7 @@ module HireFire
   class Web
     attr_reader :name
 
-    def initialize(name:)
+    def initialize(name)
       @name = name.to_s
     end
 

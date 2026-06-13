@@ -48,7 +48,7 @@ APPRAISAL_FILES = {
   "solid_queue" => [
     "macro/test_solid_queue.rb"
   ]
-}
+}.freeze
 
 APPRAISAL_VERSIONS = {
   "bunny" => %w[2 3],
@@ -61,31 +61,28 @@ APPRAISAL_VERSIONS = {
   "resque" => %w[2 3],
   "sidekiq" => %w[6 7 8],
   "solid_queue" => %w[0 1]
-}
+}.freeze
 
 def matrix
-  APPRAISAL_FILES.each_with_object([]) do |(appraisal, _), matrix|
-    (APPRAISAL_VERSIONS[appraisal] || [nil]).each do |version|
-      matrix << [appraisal, version]
-    end
+  APPRAISAL_FILES.keys.flat_map do |appraisal|
+    (APPRAISAL_VERSIONS[appraisal] || [nil]).map { |version| [appraisal, version] }
   end
 end
 
-def construct_task_name(appraisal, version)
-  version ? "#{appraisal}_#{version}" : appraisal
+def task_name_for(appraisal, version)
+  [appraisal, version].compact.join("_")
 end
 
 namespace :test do
   matrix.each do |appraisal, version|
-    task_name = construct_task_name(appraisal, version)
+    task_name = task_name_for(appraisal, version)
     desc "Run tests for #{task_name}"
     task task_name do
       coverage = (ENV["COVERAGE"] == "false") ? "false" : "true"
       puts "\n\n# Running #{task_name} tests\n\n"
       paths = APPRAISAL_FILES[appraisal].map { |file| File.expand_path("test/hirefire/#{file}") }
       command = "COVERAGE=#{coverage} appraisal #{task_name} ruby -Ilib:test -e '%w[#{paths.join(" ")}].each { |file| require file }'"
-      success = system command
-      exit(1) unless success
+      exit(1) unless system(command)
     end
   end
 end
@@ -94,21 +91,13 @@ desc "Run tests for all libraries and versions using Appraisal"
 task :test do
   ENV["COVERAGE"] = "false"
   matrix.each do |appraisal, version|
-    task_name = construct_task_name(appraisal, version)
-    Rake::Task["test:#{task_name}"].invoke
+    Rake::Task["test:#{task_name_for(appraisal, version)}"].invoke
   end
 end
 
 desc "Generate documentation"
 task :doc do
   sh "yard"
-end
-
-namespace :doc do
-  desc "Open documentation"
-  task :open do
-    sh "open doc/index.html"
-  end
 end
 
 namespace :doc do
@@ -123,10 +112,10 @@ namespace :doc do
   end
 end
 
-task default: %i[test standard]
-
 desc "Run checks: standard"
 task check: ["standard"]
 
 desc "Run formatters: standard:fix"
 task format: ["standard:fix"]
+
+task default: %i[test standard]

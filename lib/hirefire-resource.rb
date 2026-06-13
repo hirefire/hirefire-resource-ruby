@@ -2,7 +2,7 @@
 
 require_relative "hirefire/utility"
 
-Dir[File.expand_path("../hirefire/**/*.rb", __FILE__)].sort.each do |file|
-  next if file.include?("railtie.rb") && !defined?(Rails::Railtie)
+Dir[File.expand_path("hirefire/**/*.rb", __dir__)].sort.each do |file|
+  next if file.end_with?("railtie.rb") && !defined?(Rails::Railtie)
   require file
 end

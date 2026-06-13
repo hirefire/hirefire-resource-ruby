@@ -47,6 +47,8 @@ module HireFire
 
     private
 
+    # Maps the whole transport failure family (DNS, refused/reset connections,
+    # broken pipes, TLS) to RequestError so callers handle one error type.
     def execute(uri, request)
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = uri.scheme == "https"
@@ -56,17 +58,15 @@ module HireFire
     rescue Timeout::Error
       raise RequestError, "Request timed out."
     rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError => e
-      # Map the whole transport failure family (DNS, refused/reset connections,
-      # broken pipes, TLS) to RequestError so callers handle one error type.
       raise RequestError, "Network error (#{e.class}: #{e.message})."
     end
 
     def ingest_uri
-      @ingest_uri ||= URI.parse(base_url + "/metrics/ingest")
+      @ingest_uri ||= URI.parse("#{base_url}/metrics/ingest")
     end
 
     def lease_uri
-      @lease_uri ||= URI.parse(base_url + "/metrics/lease")
+      @lease_uri ||= URI.parse("#{base_url}/metrics/lease")
     end
 
     def base_url

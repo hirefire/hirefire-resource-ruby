@@ -112,4 +112,33 @@ class HireFire::BufferTest < Minitest::Test
     data = buffer.flush
     assert_equal [1, 2, 3], data[:web][100]
   end
+
+  def test_flush_returns_and_resets_cpu
+    Timecop.freeze Time.at(1000) do
+      buffer.sample_cpu("clock", 50.0)
+    end
+
+    data = buffer.flush
+    assert_equal({"clock" => {1000 => [50.0]}}, data[:cpu])
+
+    assert_empty buffer.flush[:cpu] # second flush is reset
+  end
+
+  def test_sample_cpu_groups_values_within_a_second
+    Timecop.freeze Time.at(1000) do
+      buffer.sample_cpu("clock", 40.0)
+      buffer.sample_cpu("clock", 60.0)
+    end
+
+    assert_equal({"clock" => {1000 => [40.0, 60.0]}}, buffer.flush[:cpu])
+  end
+
+  def test_repopulate_web_keeps_the_second_exactly_at_the_ttl_boundary
+    # 40 == now - ttl: the boundary second is inside the window (drop is `<`).
+    Timecop.freeze Time.at(100) do
+      buffer.repopulate_web({40 => [5]})
+    end
+
+    assert_equal({40 => [5]}, buffer.flush[:web])
+  end
 end

@@ -21,13 +21,13 @@ class HireFireTest < Minitest::Test
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
     HireFire::Dispatcher.any_instance.expects(:start).once
 
-    HireFire.configure { |config| config.dyno(:web, :rqt) }
+    HireFire.configure { |config| config.dyno(:web) }
   end
 
   def test_configure_does_not_start_dispatcher_without_token
     HireFire::Dispatcher.any_instance.expects(:start).never
 
-    HireFire.configure { |config| config.dyno(:web, :rqt) }
+    HireFire.configure { |config| config.dyno(:web) }
   end
 
   def test_reset_stops_dispatcher_and_replaces_configuration

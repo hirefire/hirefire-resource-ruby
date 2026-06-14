@@ -33,26 +33,26 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def configure_web_and_workers
-    HireFire.configuration.dyno(:web, :rqt)
-    HireFire.configuration.dyno(:worker, :jql) { 42 }
-    HireFire.configuration.dyno(:mailer, :jql) { 18 }
+    HireFire.configuration.dyno(:web)
+    HireFire.configuration.dyno(:worker) { 42 }
+    HireFire.configuration.dyno(:mailer) { 18 }
     HireFire.configuration.dispatcher
   end
 
   def configure_web_only
-    HireFire.configuration.dyno(:web, :rqt)
+    HireFire.configuration.dyno(:web)
     HireFire.configuration.dispatcher
   end
 
   def configure_workers_only
-    HireFire.configuration.dyno(:worker, :jql) { 42 }
-    HireFire.configuration.dyno(:mailer, :jql) { 18 }
+    HireFire.configuration.dyno(:worker) { 42 }
+    HireFire.configuration.dyno(:mailer) { 18 }
     HireFire.configuration.dispatcher
   end
 
   def configure_cpu_only(name = "clock")
     ENV["HIREFIRE_SERVICE_NAME"] = name
-    HireFire.configuration.dyno(name.to_sym, :cpu)
+    HireFire.configuration.dyno(name.to_sym, tracking: :cpu)
     HireFire.configuration.dispatcher
   end
 
@@ -333,7 +333,7 @@ class HireFire::DispatcherTest < Minitest::Test
   def test_non_web_process_does_not_heartbeat_the_web_name
     stub_lease
     ENV["DYNO"] = "worker.1"
-    HireFire.configuration.dyno(:web, :rqt)
+    HireFire.configuration.dyno(:web)
     dispatcher = HireFire.configuration.dispatcher
 
     dispatcher.send(:tick)
@@ -344,7 +344,7 @@ class HireFire::DispatcherTest < Minitest::Test
   def test_non_web_process_still_delivers_real_web_samples
     stub_lease
     ENV["DYNO"] = "worker.1"
-    HireFire.configuration.dyno(:web, :rqt)
+    HireFire.configuration.dyno(:web)
     dispatcher = HireFire.configuration.dispatcher
     bodies = capture_ingest_bodies
 
@@ -359,7 +359,7 @@ class HireFire::DispatcherTest < Minitest::Test
   def test_matching_identity_keeps_heartbeat_and_backfill
     stub_lease
     ENV["DYNO"] = "web.1"
-    HireFire.configuration.dyno(:web, :rqt)
+    HireFire.configuration.dyno(:web)
     dispatcher = HireFire.configuration.dispatcher
     bodies = capture_ingest_bodies
 
@@ -372,7 +372,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
   def test_unresolved_identity_keeps_heartbeat
     stub_lease
-    HireFire.configuration.dyno(:web, :rqt)
+    HireFire.configuration.dyno(:web)
     dispatcher = HireFire.configuration.dispatcher
     bodies = capture_ingest_bodies
 
@@ -386,8 +386,8 @@ class HireFire::DispatcherTest < Minitest::Test
     bodies = capture_ingest_bodies
 
     ENV["HIREFIRE_SERVICE_NAME"] = "web"
-    HireFire.configuration.dyno(:web, :rqt)
-    HireFire.configuration.dyno(:worker, :cpu) # dormant here: identity is "web"
+    HireFire.configuration.dyno(:web)
+    HireFire.configuration.dyno(:worker, tracking: :cpu) # dormant here: identity is "web"
     dispatcher = HireFire.configuration.dispatcher
 
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
@@ -433,13 +433,67 @@ class HireFire::DispatcherTest < Minitest::Test
     bodies = capture_ingest_bodies
 
     Timecop.freeze Time.at(1000) do
-      HireFire.configuration.dyno(:web, :rqt)
-      HireFire.configuration.dyno(:worker, :jql) { raise "Redis down" }
+      HireFire.configuration.dyno(:web)
+      HireFire.configuration.dyno(:worker) { raise "Redis down" }
       HireFire.configuration.dispatcher.send(:tick)
     end
 
     assert_equal 1, bodies.size
     assert_equal ["web"], bodies[0].map { |e| e["name"] }
     assert_includes log.string, "Redis down"
+  end
+
+  def test_started_thread_dispatches_until_stopped
+    dispatched = Queue.new
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_return do |_req|
+        dispatched << :tick
+        {status: 200}
+      end
+
+    dispatcher = configure_web_only
+    dispatcher.start
+    dispatched.pop # block until the background thread runs a real tick
+    assert dispatcher.running?
+
+    dispatcher.stop
+    refute dispatcher.running?
+  end
+
+  def test_stop_flushes_the_buffer
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_web_only
+    # Mark running without spawning the thread, so the only dispatch is stop's.
+    dispatcher.instance_variable_set(:@running, true)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+
+    Timecop.freeze Time.at(1000) do
+      HireFire.configuration.buffer.sample_web(7)
+      dispatcher.stop
+    end
+
+    assert_equal 1, bodies.size
+    assert_equal({"1000" => [7]}, bodies[0][0]["samples"])
+  end
+
+  def test_web_only_dispatch_never_requests_a_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+
+    assert_not_requested(:post, "https://data.hirefire.io/metrics/lease")
+  end
+
+  def test_dispatch_failure_without_web_data_does_not_repopulate
+    stub_lease(granted: true)
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 500)
+
+    dispatcher = configure_workers_only
+    dispatcher.send(:tick) # 500 — workers-only, so data[:web] is empty
+
+    assert_empty HireFire.configuration.buffer.flush[:web]
+    assert_includes log.string, "Dispatch error"
   end
 end

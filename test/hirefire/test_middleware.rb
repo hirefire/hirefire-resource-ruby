@@ -13,7 +13,7 @@ class HireFire::MiddlewareTest < Minitest::Test
 
   def test_pass_through_without_HIREFIRE_TOKEN
     HireFire.configure do |config|
-      config.dyno(:web, :rqt)
+      config.dyno(:web)
     end
 
     response = @request.get("/")
@@ -33,7 +33,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
 
     HireFire.configure do |config|
-      config.dyno(:web, :rqt)
+      config.dyno(:web)
     end
 
     HireFire.configuration.dispatcher.stubs(:start)
@@ -51,7 +51,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
 
     HireFire.configure do |config|
-      config.dyno(:web, :rqt)
+      config.dyno(:web)
     end
 
     HireFire.configuration.dispatcher.expects(:start).once
@@ -64,7 +64,7 @@ class HireFire::MiddlewareTest < Minitest::Test
 
   def test_does_not_start_dispatcher_without_token
     HireFire.configure do |config|
-      config.dyno(:web, :rqt)
+      config.dyno(:web)
     end
 
     HireFire::Dispatcher.any_instance.expects(:start).never
@@ -104,7 +104,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     HireFire::Dispatcher.any_instance.stubs(:start)
 
     HireFire.configure do |config|
-      config.dyno(:web, :rqt)
+      config.dyno(:web)
     end
 
     Timecop.freeze Time.at(1_700_000_001) do
@@ -121,7 +121,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     HireFire::Dispatcher.any_instance.stubs(:start)
 
     HireFire.configure do |config|
-      config.dyno(:web, :rqt)
+      config.dyno(:web)
     end
 
     Timecop.freeze Time.at(1_700_000_001) do
@@ -138,7 +138,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     HireFire::Dispatcher.any_instance.stubs(:start)
 
     HireFire.configure do |config|
-      config.dyno(:web, :rqt)
+      config.dyno(:web)
     end
 
     request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "garbage")
@@ -152,12 +152,80 @@ class HireFire::MiddlewareTest < Minitest::Test
     HireFire::Dispatcher.any_instance.stubs(:start)
 
     HireFire.configure do |config|
-      config.dyno(:web, :rqt)
+      config.dyno(:web)
     end
 
     request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "t=0.05")
     @middleware.call(request)
 
     assert_empty HireFire.configuration.buffer.flush[:web]
+  end
+
+  def test_clamps_a_future_request_start_to_zero
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      # Future start (router clock skew) => negative queue time must clamp to 0.
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000005000")
+      @middleware.call(request)
+
+      assert_equal({1_700_000_001 => [0]}, HireFire.configuration.buffer.flush[:web])
+    end
+  end
+
+  def test_no_request_start_header_is_a_noop
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    response = @request.get("/") # no HTTP_X_REQUEST_START header
+    assert_equal 200, response.status
+    assert_empty HireFire.configuration.buffer.flush[:web]
+  end
+
+  def test_does_not_sample_without_a_web_collector
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN" # token present, but no config.dyno(:web)
+
+    request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+    @middleware.call(request)
+
+    assert_empty HireFire.configuration.buffer.flush[:web]
+  end
+
+  def test_does_not_sample_without_a_token
+    HireFire.configure do |config|
+      config.dyno(:web) # web present, but no HIREFIRE_TOKEN
+    end
+
+    request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+    @middleware.call(request)
+
+    assert_empty HireFire.configuration.buffer.flush[:web]
+  end
+
+  def test_returns_the_apps_response_on_the_sampling_path
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+      status, headers, body = @middleware.call(request)
+
+      assert_equal 200, status
+      assert_equal({}, headers)
+      assert_equal ["Hello"], body
+    end
   end
 end

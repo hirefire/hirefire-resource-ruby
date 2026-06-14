@@ -74,6 +74,51 @@ class HireFire::CPUTest < Minitest::Test
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
     assert_empty buffer.flush[:cpu]
   end
+
+  def test_non_positive_wall_delta_skips_the_sample
+    # Same instant + positive usage delta isolates the wall_delta <= 0 guard.
+    HireFire::CPU::Usage.stubs(:total_seconds).returns(10.0, 10.5)
+    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+
+    collector = HireFire::CPU.new("clock")
+    Timecop.freeze(Time.at(1000)) do
+      collector.sample
+      assert_nil collector.sample
+    end
+    assert_empty buffer.flush[:cpu]
+  end
+
+  def test_skips_sample_when_available_cpus_is_nil
+    HireFire::CPU::Usage.stubs(:total_seconds).returns(0.0, 1.0)
+    HireFire::CPU::Usage.stubs(:available_cpus).returns(nil)
+
+    collector = HireFire::CPU.new("clock")
+    Timecop.freeze(Time.at(1000)) { collector.sample }
+    Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
+    assert_empty buffer.flush[:cpu]
+  end
+
+  def test_skips_sample_when_available_cpus_is_zero
+    HireFire::CPU::Usage.stubs(:total_seconds).returns(0.0, 1.0)
+    HireFire::CPU::Usage.stubs(:available_cpus).returns(0.0)
+
+    collector = HireFire::CPU.new("clock")
+    Timecop.freeze(Time.at(1000)) { collector.sample }
+    Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
+    assert_empty buffer.flush[:cpu]
+  end
+
+  def test_recovers_after_an_initially_unavailable_usage_source
+    HireFire::CPU::Usage.stubs(:total_seconds).returns(nil, 10.0, 10.5)
+    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+
+    collector = HireFire::CPU.new("clock")
+    Timecop.freeze(Time.at(1000)) { assert_nil collector.sample } # source down: no baseline
+    Timecop.freeze(Time.at(1001)) { assert_nil collector.sample } # source back: seeds baseline
+    Timecop.freeze(Time.at(1002)) { collector.sample }            # 0.5 over 1s on 1 CPU => 50%
+
+    assert_equal({"clock" => {1002 => [50.0]}}, buffer.flush[:cpu])
+  end
 end
 
 class HireFire::CPU::UsageTest < Minitest::Test
@@ -206,5 +251,39 @@ class HireFire::CPU::UsageTest < Minitest::Test
   def test_clock_ticks_falls_back_to_100
     Etc.stubs(:sysconf).raises(NotImplementedError)
     assert_equal 100, Usage.clock_ticks
+  end
+
+  def test_cgroup_v2_without_a_usage_usec_line_falls_through_to_v1
+    Usage.stubs(:read).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("user_usec 1000000\nsystem_usec 500000")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns("3000000000")
+
+    # The v2 file is present but malformed (no usage_usec line) => fall through.
+    assert_in_delta 3.0, Usage.total_seconds, 0.0001
+  end
+
+  def test_available_cpus_ignores_v1_unlimited_quota
+    Usage.stubs(:read).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns("-1") # cgroup v1 "no limit" sentinel
+    Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns("100000")
+
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
+  def test_stat_ticks_returns_nil_for_a_line_without_a_comm_paren
+    assert_nil Usage.stat_ticks("123 ruby S 0 1 1 0")
+  end
+
+  def test_stat_ticks_returns_nil_for_a_truncated_line
+    assert_nil Usage.stat_ticks("123 (ruby) S 0 1")
+  end
+
+  def test_proc_namespace_seconds_nil_when_every_entry_is_unreadable
+    Dir.stubs(:glob).with(Usage::PROC_STAT_GLOB).returns(["/proc/1/stat", "/proc/2/stat"])
+    Usage.stubs(:read).with("/proc/1/stat").returns(nil)
+    Usage.stubs(:read).with("/proc/2/stat").returns(nil)
+
+    # Files vanished between glob and read: nothing counted => nil (not 0.0).
+    assert_nil Usage.proc_namespace_seconds
   end
 end

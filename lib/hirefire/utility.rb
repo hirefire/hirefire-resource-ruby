@@ -5,7 +5,7 @@ module HireFire
     private
 
     def normalize_queues(queues, allow_empty:)
-      queues = queues.flatten.map { |queue| queue.to_s.strip }
+      queues = queues.flatten.map { |queue| queue.to_s.strip }.reject(&:empty?)
 
       if queues.any?
         Set.new(queues)

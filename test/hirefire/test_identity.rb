@@ -67,4 +67,21 @@ class HireFire::IdentityTest < Minitest::Test
     ENV["DYNO"] = "worker.1"
     refute HireFire::Identity.heroku_conflict?
   end
+
+  def test_heroku_dyno_takes_precedence_over_render_service_name
+    ENV["DYNO"] = "worker.1"
+    ENV["RENDER_SERVICE_NAME"] = "api"
+    assert_equal "worker", HireFire::Identity.resolve
+  end
+
+  def test_dyno_name_without_a_suffix_is_returned_as_is
+    ENV["DYNO"] = "web"
+    assert_equal "web", HireFire::Identity.resolve
+  end
+
+  def test_dyno_name_with_a_single_trailing_segment_is_preserved
+    # One trailing "-<alnum>" segment is not a Fir pod suffix (needs two).
+    ENV["DYNO"] = "worker-abc123"
+    assert_equal "worker-abc123", HireFire::Identity.resolve
+  end
 end

@@ -137,4 +137,30 @@ class HireFire::ClientTest < Minitest::Test
 
     assert_requested request
   end
+
+  def test_custom_data_url_over_plain_http
+    ENV["HIREFIRE_DATA_URL"] = "http://localhost:9999"
+    custom_client = HireFire::Client.new
+
+    request = stub_request(:post, "http://localhost:9999/metrics/ingest")
+      .to_return(status: 200)
+
+    custom_client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+
+    assert_requested request
+  end
+
+  def test_request_lease_omits_the_agent_header
+    # Ingest sends HireFire-Agent; the lease deliberately does not.
+    request = stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .with { |req| req.headers.keys.none? { |key| key.casecmp?("HireFire-Agent") } }
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "false",
+        "HireFire-Sample-Frequency" => "15"
+      })
+
+    client.request_lease("abc123")
+
+    assert_requested request
+  end
 end

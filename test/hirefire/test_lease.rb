@@ -262,4 +262,39 @@ class HireFire::LeaseTest < Minitest::Test
     actual = lease.instance_variable_get(:@next_sample_at)
     assert_in_delta expected.to_f, actual.to_f, 1
   end
+
+  def test_retains_sample_frequency_when_the_header_is_absent
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"})
+
+    lease.request_if_due
+
+    assert lease.granted?
+    assert_equal 15, lease.sample_frequency # default retained; no header to update it
+  end
+
+  def test_grants_only_on_a_literal_true
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "1",
+        "HireFire-Sample-Frequency" => "15"
+      })
+
+    lease.request_if_due
+
+    refute lease.granted? # only the exact string "true" grants
+  end
+
+  def test_unauthorized_ignores_frequency_and_ttl_headers
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 401, headers: {
+        "HireFire-Sample-Frequency" => "99",
+        "HireFire-Lease-TTL" => "99"
+      })
+
+    lease.request_if_due
+
+    refute lease.granted?
+    assert_equal 15, lease.sample_frequency # a 401 returns before reading headers
+  end
 end

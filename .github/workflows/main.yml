@@ -12,7 +12,24 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref }}
 
 jobs:
+  appraisals:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+      - name: List appraisals
+        id: list
+        run: echo "list=$(bundle exec appraisal list | jq -R -c -s 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+
   validate:
+    needs: appraisals
     runs-on: ubuntu-latest
     env:
       POSTGRES_USER: postgres
@@ -44,27 +61,7 @@ jobs:
           - 3.3
           - 3.4
           - 4.0
-        appraisal:
-          - default
-          - bunny_2
-          - delayed_job_active_record_4
-          - delayed_job_mongoid_3
-          - good_job_2
-          - good_job_3
-          - good_job_4
-          - queue_classic_4
-          - que_0
-          - que_1
-          - que_2
-          - rack_2
-          - rack_3
-          - resque_2
-          - resque_3
-          - sidekiq_6
-          - sidekiq_7
-          - sidekiq_8
-          - solid_queue_0
-          - solid_queue_1
+        appraisal: ${{ fromJson(needs.appraisals.outputs.list) }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6

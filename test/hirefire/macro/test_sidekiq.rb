@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
-ENV["REDIS_URL"] ||= "redis://localhost:6379/15"
-
 require "test_helper"
+
+ENV["REDIS_URL"] ||= "redis://localhost:#{ENV.fetch("REDIS_PORT", 6379)}/15"
+
 require "sidekiq/api"
 
 class HireFire::Macro::SidekiqTest < Minitest::Test

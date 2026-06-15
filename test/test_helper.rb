@@ -1,5 +1,17 @@
 # frozen_string_literal: true
 
+# Load .env (written by bin/services up) so the macro suites reach this checkout's services.
+env_file = File.expand_path("../.env", __dir__)
+if File.exist?(env_file)
+  File.foreach(env_file) do |line|
+    line = line.strip
+    next if line.empty? || line.start_with?("#") || !line.include?("=")
+
+    key, value = line.split("=", 2)
+    ENV[key.strip] ||= value.strip
+  end
+end
+
 if ENV["COVERAGE"] == "true"
   require "simplecov"
   SimpleCov.start

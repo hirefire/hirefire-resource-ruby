@@ -2,8 +2,10 @@
 
 require "test_helper"
 
+ENV["AMQP_URL"] ||= "amqp://guest:guest@localhost:#{ENV.fetch("RABBITMQ_PORT", 5672)}"
+
 class HireFire::Macro::BunnyTest < Minitest::Test
-  AMQP_URL = "amqp://guest:guest@localhost:5672"
+  AMQP_URL = ENV.fetch("AMQP_URL")
   TEST_MESSAGE = "Test Message"
 
   def test_missing_queues_raises_error

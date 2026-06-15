@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-IFS=$'\n\t'
-set -vx
+cd "$(dirname "$0")/.."
 
-brew bundle
-brew services start postgresql
-brew services start mongodb/brew/mongodb-community
-brew services start redis
-brew services start rabbitmq
+bin/services up
 
-bundle install
-bundle exec appraisal install
+mise install
+mise exec -- bundle install
+mise exec -- bundle exec appraisal install

@@ -32,7 +32,10 @@ For more information, visit our [home page][HireFire].
 
 ## Development
 
+Requires [Docker](https://www.docker.com/) — PostgreSQL, MongoDB, Redis, and RabbitMQ for the macro tests run in containers. `bin/services up` starts them on Docker-assigned free host ports recorded in a git-ignored `.env` (read by the test suite); `bin/services down` stops them and removes `.env`.
+
 - Run `bin/setup` to prepare the environment.
+- Run `bin/services up` / `bin/services down` to start / stop the database containers.
 - See `rake -T` for common tasks.
 
 ## Release

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+require_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker is required: https://www.docker.com/products/docker-desktop/" >&2
+    exit 1
+  fi
+}
+
+up() {
+  require_docker
+
+  if [ -z "$(docker compose ps --status running --quiet)" ]; then
+    docker compose up -d --wait
+    started=1
+  else
+    echo "Already up."
+    started=0
+  fi
+
+  postgres_port="$(docker compose port postgres 5432 | cut -d: -f2)"
+  mongodb_port="$(docker compose port mongodb 27017 | cut -d: -f2)"
+  redis_port="$(docker compose port redis 6379 | cut -d: -f2)"
+  rabbitmq_port="$(docker compose port rabbitmq 5672 | cut -d: -f2)"
+
+  if [ -z "$postgres_port" ] || [ -z "$mongodb_port" ] || [ -z "$redis_port" ] || [ -z "$rabbitmq_port" ]; then
+    echo "Could not determine the published ports." >&2
+    exit 1
+  fi
+
+  if [ "$started" -eq 1 ] || [ ! -f .env ]; then
+    printf 'POSTGRES_PORT=%s\nMONGODB_PORT=%s\nREDIS_PORT=%s\nRABBITMQ_PORT=%s\nREDIS_URL=redis://localhost:%s/15\nAMQP_URL=amqp://guest:guest@localhost:%s\n' \
+      "$postgres_port" "$mongodb_port" "$redis_port" "$rabbitmq_port" "$redis_port" "$rabbitmq_port" > .env
+  fi
+
+  echo "PostgreSQL -> localhost:${postgres_port}"
+  echo "MongoDB    -> localhost:${mongodb_port}"
+  echo "Redis      -> localhost:${redis_port}"
+  echo "RabbitMQ   -> localhost:${rabbitmq_port}"
+}
+
+down() {
+  if command -v docker >/dev/null 2>&1 && [ -n "$(docker compose ps --all --quiet)" ]; then
+    docker compose down
+  else
+    echo "Already down."
+  fi
+
+  rm -f .env
+}
+
+case "${1:-}" in
+  up) up ;;
+  down) down ;;
+  status) require_docker; docker compose ps ;;
+  restart) down; up ;;
+  logs) require_docker; docker compose logs -f "${@:2}" ;;
+  *)
+    echo "usage: bin/services {up|down|status|restart|logs}" >&2
+    exit 1
+    ;;
+esac

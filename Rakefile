@@ -4,20 +4,6 @@ require "bundler/gem_tasks"
 require "standard/rake"
 
 APPRAISAL_FILES = {
-  "default" => [
-    "test_buffer.rb",
-    "test_client.rb",
-    "test_configuration.rb",
-    "test_cpu.rb",
-    "test_dispatcher.rb",
-    "test_hirefire.rb",
-    "test_identity.rb",
-    "test_lease.rb",
-    "test_utility.rb",
-    "test_web.rb",
-    "test_worker.rb",
-    "test_workers.rb"
-  ],
   "bunny" => [
     "macro/test_bunny.rb"
   ],
@@ -48,7 +34,14 @@ APPRAISAL_FILES = {
   "solid_queue" => [
     "macro/test_solid_queue.rb"
   ]
-}.freeze
+}
+
+# default is computed: every test file not claimed by a specific appraisal above.
+claimed_files = APPRAISAL_FILES.values.flatten
+APPRAISAL_FILES["default"] = Dir.glob("**/test_*.rb", base: File.expand_path("test/hirefire", __dir__))
+  .reject { |file| claimed_files.include?(file) }
+  .sort
+APPRAISAL_FILES.freeze
 
 APPRAISAL_VERSIONS = {
   "bunny" => %w[2 3],

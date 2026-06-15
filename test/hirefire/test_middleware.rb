@@ -178,6 +178,40 @@ class HireFire::MiddlewareTest < Minitest::Test
     end
   end
 
+  def test_keeps_a_high_but_plausible_queue_time
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_000) do
+      # 50s: severe overload but under the limit, so still reported.
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1699999950000")
+      @middleware.call(request)
+
+      assert_equal({1_700_000_000 => [50_000]}, HireFire.configuration.buffer.flush[:web])
+    end
+  end
+
+  def test_drops_an_over_the_limit_queue_time
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_000) do
+      # ~16 min of queue time, over the 60-second cap.
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1699999000000")
+      @middleware.call(request)
+
+      assert_empty HireFire.configuration.buffer.flush[:web]
+    end
+  end
+
   def test_no_request_start_header_is_a_noop
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)

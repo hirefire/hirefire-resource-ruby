@@ -2,6 +2,8 @@
 
 module HireFire
   class Middleware
+    REQUEST_QUEUE_TIME_LIMIT = 60_000
+
     def initialize(app)
       @app = app
     end
@@ -52,7 +54,8 @@ module HireFire
         value / 1000 # epoch microseconds
       end
 
-      [(Time.now.to_f * 1000).to_i - milliseconds.to_i, 0].max
+      request_queue_time = [(Time.now.to_f * 1000).to_i - milliseconds.to_i, 0].max
+      request_queue_time if request_queue_time <= REQUEST_QUEUE_TIME_LIMIT
     end
   end
 end

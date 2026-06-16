@@ -12,8 +12,7 @@ module HireFire
       @timeout = timeout
     end
 
-    # Takes the JSON-encoded body; the dispatcher encodes it to enforce
-    # PAYLOAD_SIZE_LIMIT before submitting.
+    # Body is pre-encoded JSON (the dispatcher enforces the size cap before this).
     def submit_samples(body)
       require_token!
       uri = ingest_uri
@@ -47,8 +46,7 @@ module HireFire
 
     private
 
-    # Maps the whole transport failure family (DNS, refused/reset connections,
-    # broken pipes, TLS) to RequestError so callers handle one error type.
+    # Map every transport failure to RequestError so callers handle one error type.
     def execute(uri, request)
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = uri.scheme == "https"

@@ -38,10 +38,8 @@ module HireFire
       puts "[hirefire:router] queue=#{request_queue_time}ms"
     end
 
-    # X-Request-Start arrives in router-specific shapes: Heroku sends epoch
-    # milliseconds, nginx "t=" plus fractional epoch seconds, Apache "t=" plus
-    # epoch microseconds. The unit is inferred from the magnitude (the ranges
-    # are ~3 orders apart); implausible values yield nil.
+    # X-Request-Start's unit varies by router (epoch s / ms / µs), so infer it
+    # from magnitude. Implausible values yield nil.
     def calculate_request_queue_time(timestamp)
       value = timestamp.to_s.delete_prefix("t=").to_f
       return if value < 1e9

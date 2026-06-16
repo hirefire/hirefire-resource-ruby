@@ -4,9 +4,7 @@ require "etc"
 
 module HireFire
   class CPU
-    # Reads container-level CPU usage and the CPU normalization divisor, trying
-    # progressively less precise sources. All reads are best-effort: a missing
-    # or unreadable file returns nil so the caller can fall through.
+    # Best-effort reads of container CPU usage and the normalization divisor.
     module Usage
       module_function
 
@@ -18,22 +16,14 @@ module HireFire
       CEDAR_MEMORY_LIMIT = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
       PROC_STAT_GLOB = "/proc/[0-9]*/stat"
 
-      # Cedar shared dynos have no CPU limit anywhere, but each size is bound
-      # to a fixed memory limit, so the memory limit identifies the size and
-      # the size implies the CPU entitlement. Dedicated dynos are deliberately
-      # absent: their nproc is the real core count, so they fall through.
+      # Cedar shared dynos expose no CPU limit; the memory limit fingerprints the
+      # size, which implies the entitlement. Other sizes fall through.
       CEDAR_SHARED_ENTITLEMENTS = {
         536_870_912 => 1.0,   # 512 MB: eco / basic / standard-1x
         1_073_741_824 => 2.0  # 1 GB: standard-2x
       }.freeze
 
-      # Cumulative CPU time in seconds for the whole dyno/container, from the
-      # first available source: cgroup v2, cgroup v1, the /proc PID namespace,
-      # or this process's own clock. Heroku exposes no cpu cgroup at all, so
-      # /proc carries it there: it is PID-namespaced to the dyno, so summing
-      # every visible process gives whole-dyno CPU — covering multi-process
-      # servers without a shared counter. The stdlib clock is the dev/macOS
-      # last resort and only sees this process.
+      # Cumulative whole-container CPU seconds, first available source wins.
       def total_seconds
         cgroup_v2_seconds || cgroup_v1_seconds || proc_namespace_seconds || process_seconds
       end
@@ -48,6 +38,8 @@ module HireFire
         usage.to_f / 1_000_000_000.0 if usage
       end
 
+      # Heroku exposes no cpu cgroup; /proc is PID-namespaced to the dyno, so
+      # summing every visible process gives whole-dyno CPU.
       def proc_namespace_seconds
         paths = Dir.glob(PROC_STAT_GLOB)
         return if paths.empty?
@@ -64,9 +56,8 @@ module HireFire
         ticks.to_f / clock_ticks if counted
       end
 
-      # utime + stime (clock ticks) from a /proc/[pid]/stat line. The comm
-      # field (2nd) can contain spaces and parens, so parse from after the last
-      # ')': the remaining fields put utime at index 11 and stime at index 12.
+      # utime + stime ticks; parse after the last ")" since comm may contain
+      # spaces and parens, which puts utime at index 11 and stime at index 12.
       def stat_ticks(content)
         close = content.rindex(")")
         return unless close
@@ -77,8 +68,8 @@ module HireFire
         fields[11].to_i + fields[12].to_i
       end
 
-      # Etc.sysconf raises NotImplementedError (not a StandardError) on
-      # platforms without sysconf; 100 is the universal USER_HZ default.
+      # Etc.sysconf raises NotImplementedError without sysconf; 100 is the
+      # universal USER_HZ default.
       def clock_ticks
         Etc.sysconf(Etc::SC_CLK_TCK)
       rescue StandardError, NotImplementedError
@@ -89,13 +80,8 @@ module HireFire
         Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID)
       end
 
-      # Number of CPUs to normalize usage against — the CPU the platform
-      # guarantees this container, not the host's core count. Sources, first
-      # answer wins: a cgroup quota (platforms with a hard CPU limit), the
-      # Cedar shared-dyno entitlement (shared dynos burst on an 8-core host,
-      # so nproc would understate utilization and invert under contention), or
-      # nproc (dedicated machines, where the host's core count is the
-      # container's).
+      # CPUs to normalize against: the platform's guarantee, not the host core
+      # count. First source wins.
       def available_cpus
         cgroup_v2_quota || cgroup_v1_quota || heroku_entitlement || processor_count
       end
@@ -119,9 +105,7 @@ module HireFire
         quota / period
       end
 
-      # Gated on DYNO because elsewhere a v1 memory limit says nothing about
-      # CPU. Unrecognized fingerprints (dedicated dynos, future sizes) fall
-      # through to the processor count.
+      # Gated on DYNO: a v1 memory limit says nothing about CPU off Heroku.
       def heroku_entitlement
         return unless ENV["DYNO"]
 

@@ -12,16 +12,8 @@ module HireFire
 
     class DuplicateDynoError < StandardError; end
 
-    # The public `tracking:` keyword selects one of three internal collectors.
-    # The only value that changes the collector is :cpu; the http and job feeds
-    # are each shared by their family (the server derives rqt/rpm from one http
-    # feed, and the user's block picks the jql/jqs macro over one job feed), so
-    # a single :http value covers the whole HTTP family.
-    #
-    # service is platform-neutral: the name implies nothing, so http must be
-    # named explicitly (tracking: :http) alongside :cpu. dyno is the Heroku
-    # convenience: the only value it ever takes is :cpu, because the Procfile
-    # "web" name implies http on its own (handled in #dyno, not here).
+    # Public tracking: values mapped to internal collectors. dyno only adds :cpu;
+    # its "web" name implies http on its own (handled in #dyno).
     SERVICE_COLLECTORS = {http: :http, cpu: :cpu}.freeze
     DYNO_COLLECTORS = {cpu: :cpu}.freeze
 
@@ -45,15 +37,8 @@ module HireFire
       @token || ENV["HIREFIRE_TOKEN"]
     end
 
-    # Legacy / Heroku front door, backwards-compatible with the 1.x implicit
-    # forms. The only thing it ever tracks explicitly is :cpu; the Heroku
-    # Procfile convention (the "web" name implies http) is baked in. dyno is
-    # exactly #service plus that web ⇒ http convenience.
-    #
-    #   dyno(:web)                   # http  (1.x form: name "web" implies it)
-    #   dyno(:worker) {…}            # job   (1.x form: the block implies it)
-    #   dyno(:web, tracking: :cpu)   # cpu on the web process
-    #   dyno(:clock, tracking: :cpu) # cpu on a non-web process
+    # Legacy / Heroku front door, 1.x-compatible. Tracks :cpu explicitly; the
+    # "web" name implies http on its own (the Heroku Procfile convention).
     def dyno(name, tracking: nil, &sampler)
       name = coerce_name!(name)
 
@@ -79,13 +64,8 @@ module HireFire
       register(name, collector, &sampler)
     end
 
-    # Universal / platform-neutral front door. The name carries no meaning, so
-    # http must be tracked explicitly with tracking: :http; the block still
-    # implies job.
-    #
-    #   service(:web, tracking: :http)  # http  (any http process name)
-    #   service(:worker) {…}            # job   (the block implies it)
-    #   service(:clock, tracking: :cpu) # cpu
+    # Universal / platform-neutral front door: the name implies nothing, so http
+    # must be tracked explicitly with tracking: :http.
     def service(name, tracking: nil, &sampler)
       name = coerce_name!(name)
 
@@ -107,9 +87,8 @@ module HireFire
       register(name, collector, &sampler)
     end
 
-    # Both memoizations are synchronized: the middleware touches them from
-    # concurrent request threads, and an unsynchronized ||= could build (and
-    # start) two dispatchers, leaving one running but unreachable.
+    # Synchronized double-checked init: concurrent request threads must not build
+    # (and start) two buffers/dispatchers.
     def buffer
       @buffer || @mutex.synchronize { @buffer ||= Buffer.new }
     end
@@ -127,9 +106,6 @@ module HireFire
 
     private
 
-    # Coerce the name with to_s (so symbols and strings are interchangeable)
-    # and reject an empty result. Shared by both front doors, so the message
-    # names both.
     def coerce_name!(name)
       name = name.to_s
 
@@ -142,15 +118,8 @@ module HireFire
       name
     end
 
-    # Shared back end for both front doors: the duplicate-name guard (spanning
-    # dyno and service via the single @names registry) and collector
-    # registration. Each front door has already resolved the collector kind and
-    # validated its own keyword rules; the per-collector sampler rules (a job
-    # needs one, http/cpu reject one) and the one-http-per-process guard live
-    # here so they hold identically no matter which front door was used.
     def register(name, collector, &sampler)
-      # Case-insensitive, matching the identity gates: two names differing only
-      # in case would both match one process identity and emit under two names.
+      # Case-insensitive: names differing only in case would gate as one identity.
       if @names.any? { |existing| existing.casecmp?(name) }
         raise DuplicateDynoError,
           "Duplicate declaration for #{name.inspect}. " \
@@ -185,10 +154,8 @@ module HireFire
         "(its values are collected automatically)."
     end
 
-    # CPU is intrinsic to a process's own dyno, so a collector only runs where
-    # the process identity matches its declared name. Hard gate: unresolved
-    # identity disables CPU with a loud log line rather than raising — a
-    # metrics library must not crash the host app.
+    # Hard gate: a CPU collector runs only on the process whose identity matches
+    # its name; an unresolved identity disables it (logged, never raised).
     def active_cpu_collectors
       return [] if @cpu.empty?
 
@@ -204,13 +171,8 @@ module HireFire
       @cpu.select { |collector| collector.name.casecmp?(identity) }
     end
 
-    # Whether this process may synthesize liveness claims (heartbeats/backfill)
-    # under the http collector's name. Real request samples self-gate — only
-    # the HTTP-serving process receives requests — but without this gate any
-    # process running the shared initializer would claim "web alive, zero
-    # traffic" seconds while the actual web dynos are down. Soft gate: an
-    # unresolved identity still allows the claims, since http must keep working
-    # without a resolver.
+    # Soft gate: may this process synthesize web liveness (heartbeats/backfill)?
+    # An unresolved identity still allows it.
     def web_liveness?
       return true unless @web
 
@@ -218,11 +180,8 @@ module HireFire
       identity.nil? || identity.casecmp?(@web.name)
     end
 
-    # Memoized so the dispatcher's gates share one resolution and the Heroku
-    # app-wide config var footgun is warned about once. Identity is compared to
-    # declared names case-insensitively because platforms don't preserve casing
-    # consistently (a "Worker:" Procfile entry yields DYNO "Worker.1" on Cedar
-    # but a lowercased "worker-..." pod name on Fir).
+    # Memoized: both gates share one resolution, and the Heroku app-wide
+    # config-var conflict is warned at most once.
     def resolved_identity
       return @resolved_identity if defined?(@resolved_identity)
 

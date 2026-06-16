@@ -2,13 +2,10 @@
 
 module HireFire
   class Dispatcher
-    # How far back (seconds) a dispatch may claim unreported web seconds.
-    # Matches the server's ingest staleness acceptance and doubles as an
-    # honesty cap: a process suspended longer than this must not assert
-    # liveness for that time.
+    # Max seconds back a dispatch may claim web liveness.
     WEB_BACKFILL_LIMIT = 60
 
-    # Mirrors the server's request body cap; larger payloads are rejected with 413.
+    # Mirrors the server's request body cap.
     PAYLOAD_SIZE_LIMIT = 65_536
 
     def initialize(web: nil, workers: Workers.new, cpu: [], web_liveness: true)
@@ -24,10 +21,8 @@ module HireFire
       @last_web_second = nil
     end
 
-    # Fork-aware: a forked child inherits @running == true, but threads do not
-    # survive fork, so "running" only counts in the process that started the
-    # thread. In a child the pid check fails and start (called per request by
-    # the middleware) creates a fresh thread for this process.
+    # Fork-aware: a child inherits @running but not the thread, so the pid check
+    # forces the per-request start to spawn a fresh thread.
     def start
       @mutex.synchronize do
         return false if @running && @pid == Process.pid
@@ -54,8 +49,7 @@ module HireFire
         return false unless @running
 
         @running = false
-        # Only join a thread this process created; an inherited Thread object
-        # in a forked child references a thread that no longer exists.
+        # Only join a thread this process created (a forked child's handle is dead).
         thread = @thread if @pid == Process.pid
         @thread = nil
         @pid = nil
@@ -76,9 +70,7 @@ module HireFire
 
     private
 
-    # Each stage is isolated: a failure in one (a lease renewal timing out, a
-    # job sampler raising) must not starve the stages after it — most
-    # importantly dispatch, which drains the buffer.
+    # Stage-isolated so one failure can't starve dispatch, which drains the buffer.
     def tick
       guard { @lease.request_if_due }
       guard { @lease.sample_if_due { @workers.sample } }
@@ -102,18 +94,15 @@ module HireFire
 
       logger.info "[HireFire] Dispatching metrics: #{body}" if ENV["HIREFIRE_VERBOSE"]
       @client.submit_samples(body)
-      # Advance only after a successful submit so the next success re-claims
-      # the seconds whose delivery failed; duplicate empty claims are harmless
-      # server-side.
+      # Advance only after a successful submit; failed seconds re-claim next time.
       @last_web_second = @web_watermark if @web_watermark
     rescue => e
       buffer.repopulate_web(data[:web]) if data && data[:web].any?
       logger.error "[HireFire] Dispatch error: #{e.message}"
     end
 
-    # Repopulating would retry the same oversized payload every tick, so it is
-    # dropped outright. Advancing the watermark leaves the dropped seconds
-    # unclaimed (missing data) rather than backfilled as empty (zero traffic).
+    # Drop rather than repopulate (a retry would re-send the same oversized
+    # payload); advancing the watermark leaves a gap instead of backfilling false zeros.
     def drop_oversized_payload(body)
       @last_web_second = @web_watermark if @web_watermark
       logger.error "[HireFire] Dropped metrics payload: #{body.bytesize} bytes exceeds " \
@@ -128,9 +117,7 @@ module HireFire
         @web_watermark = samples.keys.max
         entries << {"name" => @web.name, "samples" => samples.transform_keys(&:to_s)}
       elsif @web && data[:web].any?
-        # Identity says this is not the http-serving process: real samples are
-        # still delivered, but no liveness is synthesized — this process must
-        # not claim the web name's seconds.
+        # Not the http process: deliver real samples but synthesize no liveness.
         entries << {"name" => @web.name, "samples" => data[:web].transform_keys(&:to_s)}
       end
 
@@ -143,13 +130,8 @@ module HireFire
       entries
     end
 
-    # Claims every second since the last successfully dispatched one: seconds
-    # with buffered samples keep them, seconds without get an explicit empty
-    # claim, which the server reads as 0 traffic — so a delivery blip never
-    # leaves a gap that an additive metric would misread as missing data. With
-    # no watermark (first dispatch after boot) only the current second is
-    # claimed: a fresh process must not assert liveness for time before it
-    # existed.
+    # Claim every second since the last delivered one (no samples => empty => 0
+    # traffic), capped at WEB_BACKFILL_LIMIT. First dispatch claims only now.
     def backfill_web_seconds(samples)
       now = Time.now.to_i
       from = @last_web_second ? @last_web_second + 1 : now

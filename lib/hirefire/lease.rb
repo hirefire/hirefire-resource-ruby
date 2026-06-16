@@ -21,8 +21,7 @@ module HireFire
       @granted
     end
 
-    # Advances before yielding so a raising sampler costs one sample window
-    # instead of being retried on every dispatcher tick.
+    # Advance before yielding so a raising sampler costs one window, not every tick.
     def sample_if_due
       return unless @granted && Time.now >= @next_sample_at
 
@@ -30,8 +29,7 @@ module HireFire
       yield
     end
 
-    # Advances before the request so a failed renewal waits a full TTL instead
-    # of blocking the dispatcher thread on every tick.
+    # Advance before the request so a failed renewal waits a full TTL, not every tick.
     def request_if_due
       return unless @enabled && Time.now >= @expires_at
 
@@ -40,9 +38,8 @@ module HireFire
       begin
         response = @client.request_lease(@process_id)
       rescue
-        # Unconfirmed leases may be re-granted to another process meanwhile;
-        # stop sampling until a successful renewal rather than risk two
-        # processes sampling the same fleet.
+        # Demote on failure: an unconfirmed lease may be re-granted elsewhere, so
+        # stop sampling rather than risk two processes sampling one fleet.
         @granted = false
         raise
       end

@@ -16,8 +16,7 @@ module HireFire
       @workers.each(&block)
     end
 
-    # Samplers are user code: isolate failures and validate values so one bad
-    # sampler never blocks the others or propagates into the dispatcher loop.
+    # Samplers are user code: isolate failures and validate values per worker.
     def sample
       each do |worker|
         value = worker.sample

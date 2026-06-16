@@ -47,6 +47,42 @@ class HireFire::MiddlewareTest < Minitest::Test
     end
   end
 
+  def test_reads_x_queue_start_when_request_start_is_absent
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      # X-Queue-Start is an exact synonym (e.g. Render emits it).
+      request = Rack::MockRequest.env_for("/", "HTTP_X_QUEUE_START" => "1700000000000")
+      @middleware.call(request)
+
+      assert_equal({1_700_000_001 => [1000]}, HireFire.configuration.buffer.flush[:web])
+    end
+  end
+
+  def test_prefers_x_request_start_over_x_queue_start
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      # Both present: X-Request-Start (1000ms) wins over X-Queue-Start (5000ms).
+      request = Rack::MockRequest.env_for("/",
+        "HTTP_X_REQUEST_START" => "1700000000000",
+        "HTTP_X_QUEUE_START" => "1699999996000")
+      @middleware.call(request)
+
+      assert_equal({1_700_000_001 => [1000]}, HireFire.configuration.buffer.flush[:web])
+    end
+  end
+
   def test_starts_dispatcher_on_web_request
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
 

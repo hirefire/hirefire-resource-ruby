@@ -16,7 +16,9 @@ module HireFire
     private
 
     def process_request_queue_time(env)
-      request_start = env["HTTP_X_REQUEST_START"]
+      # X-Queue-Start is an exact synonym for X-Request-Start (e.g. Render emits
+      # it); prefer X-Request-Start when both are present.
+      request_start = env["HTTP_X_REQUEST_START"] || env["HTTP_X_QUEUE_START"]
       return unless request_start
 
       request_queue_time = calculate_request_queue_time(request_start)

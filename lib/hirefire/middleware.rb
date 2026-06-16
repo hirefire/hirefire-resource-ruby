@@ -38,8 +38,8 @@ module HireFire
       puts "[hirefire:router] queue=#{request_queue_time}ms"
     end
 
-    # X-Request-Start's unit varies by router (epoch s / ms / µs), so infer it
-    # from magnitude. Implausible values yield nil.
+    # X-Request-Start's unit varies by router (epoch s / ms / µs / ns), so infer
+    # it from magnitude. Implausible values yield nil.
     def calculate_request_queue_time(timestamp)
       value = timestamp.to_s.delete_prefix("t=").to_f
       return if value < 1e9
@@ -48,11 +48,13 @@ module HireFire
         value * 1000 # epoch seconds
       elsif value < 1e14
         value # epoch milliseconds
-      else
+      elsif value < 1e17
         value / 1000 # epoch microseconds
+      else
+        value / 1_000_000 # epoch nanoseconds
       end
 
-      request_queue_time = [(Time.now.to_f * 1000).to_i - milliseconds.to_i, 0].max
+      request_queue_time = [(Time.now.to_f * 1000).to_i - milliseconds.round, 0].max
       request_queue_time if request_queue_time <= REQUEST_QUEUE_TIME_LIMIT
     end
   end

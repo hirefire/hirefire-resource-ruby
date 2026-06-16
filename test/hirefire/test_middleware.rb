@@ -133,6 +133,85 @@ class HireFire::MiddlewareTest < Minitest::Test
     end
   end
 
+  def test_parses_nanoseconds_format
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000000000")
+      @middleware.call(request)
+
+      data = HireFire.configuration.buffer.flush
+      assert_equal({1_700_000_001 => [1000]}, data[:web])
+    end
+  end
+
+  def test_normalizes_every_precision_variant_to_the_same_queue_time
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    # The same instant (epoch 1700000000.250) expressed in each unit a router
+    # may emit; all must normalize to the identical 750ms queue time at now=…001.
+    # The fractional 250ms exercises the sub-millisecond path in every unit,
+    # including nanoseconds (where the value exceeds a double's integer range).
+    {
+      seconds: "t=1700000000.250",
+      milliseconds: "1700000000250",
+      microseconds: "1700000000250000",
+      nanoseconds: "1700000000250000000"
+    }.each do |unit, header|
+      Timecop.freeze Time.at(1_700_000_001) do
+        request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => header)
+        @middleware.call(request)
+
+        assert_equal({1_700_000_001 => [750]}, HireFire.configuration.buffer.flush[:web],
+          "#{unit} variant should normalize to 750ms")
+      end
+    end
+  end
+
+  def test_clamps_a_future_microsecond_start_to_zero
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      # Future start in microseconds: clamp-to-zero is applied after unit inference.
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000005000000")
+      @middleware.call(request)
+
+      assert_equal({1_700_000_001 => [0]}, HireFire.configuration.buffer.flush[:web])
+    end
+  end
+
+  def test_drops_an_over_the_limit_nanosecond_start
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_000) do
+      # ~1000s in the past in nanoseconds: the 60s cap drops it regardless of unit.
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1699999000000000000")
+      @middleware.call(request)
+
+      assert_empty HireFire.configuration.buffer.flush[:web]
+    end
+  end
+
   def test_ignores_unparseable_request_start
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
@@ -159,6 +238,27 @@ class HireFire::MiddlewareTest < Minitest::Test
     @middleware.call(request)
 
     assert_empty HireFire.configuration.buffer.flush[:web]
+  end
+
+  def test_lower_guard_boundary_accepts_1e9_and_rejects_below
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_000_000_001) do
+      # Exactly 1e9 is a valid epoch-seconds timestamp (2001-09-09), not rejected.
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1000000000")
+      @middleware.call(request)
+      assert_equal({1_000_000_001 => [1000]}, HireFire.configuration.buffer.flush[:web])
+
+      # One below the 1e9 guard is implausible and dropped.
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "999999999")
+      @middleware.call(request)
+      assert_empty HireFire.configuration.buffer.flush[:web]
+    end
   end
 
   def test_clamps_a_future_request_start_to_zero
@@ -208,6 +308,27 @@ class HireFire::MiddlewareTest < Minitest::Test
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1699999000000")
       @middleware.call(request)
 
+      assert_empty HireFire.configuration.buffer.flush[:web]
+    end
+  end
+
+  def test_cap_boundary_keeps_exactly_the_limit_and_drops_one_over
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_000) do
+      # Exactly 60_000ms: at the inclusive limit, so kept.
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1699999940000")
+      @middleware.call(request)
+      assert_equal({1_700_000_000 => [60_000]}, HireFire.configuration.buffer.flush[:web])
+
+      # 60_001ms: one over the limit, so dropped.
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1699999939999")
+      @middleware.call(request)
       assert_empty HireFire.configuration.buffer.flush[:web]
     end
   end

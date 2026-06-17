@@ -4,7 +4,6 @@ require "etc"
 
 module HireFire
   class CPU
-    # Best-effort reads of container CPU usage and the normalization divisor.
     module Usage
       module_function
 
@@ -23,7 +22,6 @@ module HireFire
         1_073_741_824 => 2.0  # 1 GB: standard-2x
       }.freeze
 
-      # Cumulative whole-container CPU seconds, first available source wins.
       def total_seconds
         cgroup_v2_seconds || cgroup_v1_seconds || proc_namespace_seconds || process_seconds
       end
@@ -80,8 +78,6 @@ module HireFire
         Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID)
       end
 
-      # CPUs to normalize against: the platform's guarantee, not the host core
-      # count. First source wins.
       def available_cpus
         cgroup_v2_quota || cgroup_v1_quota || heroku_entitlement || render_entitlement || processor_count
       end
@@ -113,7 +109,6 @@ module HireFire
         CEDAR_SHARED_ENTITLEMENTS[limit.to_i] if limit
       end
 
-      # Render's explicit core count, gated on RENDER so it never fires elsewhere.
       def render_entitlement
         return unless ENV["RENDER"]
 

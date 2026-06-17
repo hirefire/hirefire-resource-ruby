@@ -12,8 +12,6 @@ module HireFire
 
     class DuplicateDynoError < StandardError; end
 
-    # Public tracking: values mapped to internal collectors. dyno only adds :cpu;
-    # its "web" name implies http on its own (handled in #dyno).
     SERVICE_COLLECTORS = {http: :http, cpu: :cpu}.freeze
     DYNO_COLLECTORS = {cpu: :cpu}.freeze
 
@@ -37,8 +35,6 @@ module HireFire
       @token || ENV["HIREFIRE_TOKEN"]
     end
 
-    # Legacy / Heroku front door, 1.x-compatible. Tracks :cpu explicitly; the
-    # "web" name implies http on its own (the Heroku Procfile convention).
     def dyno(name, tracking: nil, &sampler)
       name = coerce_name!(name)
 
@@ -64,8 +60,6 @@ module HireFire
       register(name, collector, &sampler)
     end
 
-    # Universal / platform-neutral front door: the name implies nothing, so http
-    # must be tracked explicitly with tracking: :http.
     def service(name, tracking: nil, &sampler)
       name = coerce_name!(name)
 
@@ -154,8 +148,6 @@ module HireFire
         "(its values are collected automatically)."
     end
 
-    # Hard gate: a CPU collector runs only on the process whose identity matches
-    # its name; an unresolved identity disables it (logged, never raised).
     def active_cpu_collectors
       return [] if @cpu.empty?
 
@@ -171,8 +163,6 @@ module HireFire
       @cpu.select { |collector| collector.name.casecmp?(identity) }
     end
 
-    # Soft gate: may this process synthesize web liveness (heartbeats/backfill)?
-    # An unresolved identity still allows it.
     def web_liveness?
       return true unless @web
 
@@ -180,8 +170,6 @@ module HireFire
       identity.nil? || identity.casecmp?(@web.name)
     end
 
-    # Memoized: both gates share one resolution, and the Heroku app-wide
-    # config-var conflict is warned at most once.
     def resolved_identity
       return @resolved_identity if defined?(@resolved_identity)
 

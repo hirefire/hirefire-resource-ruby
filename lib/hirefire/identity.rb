@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 module HireFire
-  # Resolves this process's name (to match against a declared dyno name). First
-  # non-empty source wins; nil means unresolved.
   module Identity
     module_function
 
@@ -31,8 +29,6 @@ module HireFire
       presence(ENV["RENDER_SERVICE_NAME"])
     end
 
-    # True when an explicit name disagrees with the DYNO prefix: a dashboard-set
-    # (app-wide) HIREFIRE_SERVICE_NAME would make every dyno identify the same.
     def heroku_conflict?
       explicit && heroku_dyno && !explicit.casecmp?(heroku_dyno)
     end

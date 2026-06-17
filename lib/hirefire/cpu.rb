@@ -20,7 +20,6 @@ module HireFire
       @last_usage = usage
       @last_time = time
 
-      # The first reading only seeds the baseline.
       return if usage.nil? || previous_usage.nil?
 
       wall_delta = time - previous_time

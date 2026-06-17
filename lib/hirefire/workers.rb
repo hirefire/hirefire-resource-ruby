@@ -16,7 +16,6 @@ module HireFire
       @workers.each(&block)
     end
 
-    # Samplers are user code: isolate failures and validate values per worker.
     def sample
       each do |worker|
         value = worker.sample

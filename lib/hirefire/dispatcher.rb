@@ -2,7 +2,6 @@
 
 module HireFire
   class Dispatcher
-    # Max seconds back a dispatch may claim web liveness.
     WEB_BACKFILL_LIMIT = 60
 
     # Mirrors the server's request body cap.
@@ -117,7 +116,6 @@ module HireFire
         @web_watermark = samples.keys.max
         entries << {"name" => @web.name, "samples" => samples.transform_keys(&:to_s)}
       elsif @web && data[:web].any?
-        # Not the http process: deliver real samples but synthesize no liveness.
         entries << {"name" => @web.name, "samples" => data[:web].transform_keys(&:to_s)}
       end
 
@@ -130,8 +128,6 @@ module HireFire
       entries
     end
 
-    # Claim every second since the last delivered one (no samples => empty => 0
-    # traffic), capped at WEB_BACKFILL_LIMIT. First dispatch claims only now.
     def backfill_web_seconds(samples)
       now = Time.now.to_i
       from = @last_web_second ? @last_web_second + 1 : now

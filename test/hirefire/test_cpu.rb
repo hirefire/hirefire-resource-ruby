@@ -224,6 +224,33 @@ class HireFire::CPU::UsageTest < Minitest::Test
     assert_in_delta 0.9, Usage.available_cpus, 0.0001
   end
 
+  def test_render_entitlement_from_render_cpu_count
+    ENV["RENDER"] = "true"
+    ENV["RENDER_CPU_COUNT"] = "0.5" # Render exposes a fractional core count
+    Usage.stubs(:read).returns(nil)
+    assert_in_delta 0.5, Usage.available_cpus, 0.0001
+  end
+
+  def test_render_entitlement_ignored_off_render
+    ENV["RENDER_CPU_COUNT"] = "8" # set, but RENDER unset
+    Usage.stubs(:read).returns(nil)
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
+  def test_render_without_a_cpu_count_falls_through_to_processor_count
+    ENV["RENDER"] = "true" # RENDER set, but no RENDER_CPU_COUNT
+    Usage.stubs(:read).returns(nil)
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
+  def test_cgroup_quota_wins_over_render_entitlement
+    ENV["RENDER"] = "true"
+    ENV["RENDER_CPU_COUNT"] = "8" # would be wrong if it won
+    Usage.stubs(:read).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("50000 100000") # 0.5 core
+    assert_in_delta 0.5, Usage.available_cpus, 0.0001
+  end
+
   def test_read_returns_stripped_file_contents
     Tempfile.create("usage") do |file|
       file.write(" 42\n")

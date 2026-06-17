@@ -83,7 +83,7 @@ module HireFire
       # CPUs to normalize against: the platform's guarantee, not the host core
       # count. First source wins.
       def available_cpus
-        cgroup_v2_quota || cgroup_v1_quota || heroku_entitlement || processor_count
+        cgroup_v2_quota || cgroup_v1_quota || heroku_entitlement || render_entitlement || processor_count
       end
 
       def cgroup_v2_quota
@@ -111,6 +111,14 @@ module HireFire
 
         limit = read(CEDAR_MEMORY_LIMIT)
         CEDAR_SHARED_ENTITLEMENTS[limit.to_i] if limit
+      end
+
+      # Render's explicit core count, gated on RENDER so it never fires elsewhere.
+      def render_entitlement
+        return unless ENV["RENDER"]
+
+        count = ENV["RENDER_CPU_COUNT"].to_f
+        count if count.positive?
       end
 
       def processor_count

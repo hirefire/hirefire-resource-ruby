@@ -39,6 +39,7 @@ module HireFire
       uri = lease_uri
       request = Net::HTTP::Post.new(uri.request_uri)
       request["HireFire-Token"] = token
+      request["HireFire-Agent"] = "Ruby-#{HireFire::VERSION}"
       request["HireFire-Process-ID"] = process_id
       execute(uri, request)
     end

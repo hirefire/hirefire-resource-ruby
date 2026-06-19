@@ -96,6 +96,7 @@ class HireFire::ClientTest < Minitest::Test
     request = stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .with(headers: {
         "HireFire-Token" => "test-token-value",
+        "HireFire-Agent" => "Ruby-#{HireFire::VERSION}",
         "HireFire-Process-ID" => "abc123"
       })
       .to_return(status: 200, headers: {
@@ -150,10 +151,9 @@ class HireFire::ClientTest < Minitest::Test
     assert_requested request
   end
 
-  def test_request_lease_omits_the_agent_header
-    # Ingest sends HireFire-Agent; the lease deliberately does not.
+  def test_request_lease_sends_the_agent_header
     request = stub_request(:post, "https://data.hirefire.io/metrics/lease")
-      .with { |req| req.headers.keys.none? { |key| key.casecmp?("HireFire-Agent") } }
+      .with(headers: {"HireFire-Agent" => "Ruby-#{HireFire::VERSION}"})
       .to_return(status: 200, headers: {
         "HireFire-Lease-Granted" => "false",
         "HireFire-Sample-Frequency" => "15"

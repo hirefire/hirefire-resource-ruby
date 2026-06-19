@@ -486,6 +486,68 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_not_requested(:post, "https://data.hirefire.io/metrics/lease")
   end
 
+  def stub_ingest_with_dispatch_frequency(value)
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_return(status: 200, headers: {"HireFire-Dispatch-Frequency" => value.to_s})
+  end
+
+  def test_dispatch_frequency_defaults_to_one_without_the_header
+    stub_lease
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) }
+
+    assert_equal 2, bodies.size # every tick dispatches
+  end
+
+  def test_honors_a_server_supplied_dispatch_frequency
+    stub_lease
+    stub_ingest_with_dispatch_frequency(5)
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # dispatches, learns 5
+    Timecop.freeze(Time.at(1002)) { dispatcher.send(:tick) } # within window — skipped
+    Timecop.freeze(Time.at(1004)) { dispatcher.send(:tick) } # still within window — skipped
+    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) } # window elapsed — dispatches
+
+    assert_requested(:post, "https://data.hirefire.io/metrics/ingest", times: 2)
+  end
+
+  def test_clamps_an_over_large_dispatch_frequency_to_the_maximum
+    stub_lease
+    stub_ingest_with_dispatch_frequency(HireFire::Dispatcher::MAX_DISPATCH_FREQUENCY + 100)
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # learns the clamped value
+
+    assert_equal HireFire::Dispatcher::MAX_DISPATCH_FREQUENCY,
+      dispatcher.instance_variable_get(:@dispatch_frequency)
+  end
+
+  def test_ignores_a_non_positive_dispatch_frequency
+    stub_lease
+    stub_ingest_with_dispatch_frequency(0)
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+
+    assert_equal HireFire::Dispatcher::DEFAULT_DISPATCH_FREQUENCY,
+      dispatcher.instance_variable_get(:@dispatch_frequency)
+  end
+
+  def test_ignores_an_unparseable_dispatch_frequency
+    stub_lease
+    stub_ingest_with_dispatch_frequency("nonsense")
+
+    dispatcher = configure_web_only
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+
+    assert_equal HireFire::Dispatcher::DEFAULT_DISPATCH_FREQUENCY,
+      dispatcher.instance_variable_get(:@dispatch_frequency)
+  end
+
   def test_dispatch_failure_without_web_data_does_not_repopulate
     stub_lease(granted: true)
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 500)

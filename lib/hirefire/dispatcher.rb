@@ -7,6 +7,11 @@ module HireFire
     # Mirrors the server's request body cap.
     PAYLOAD_SIZE_LIMIT = 65_536
 
+    # Seconds between buffer dispatches; server-adjustable via the
+    # HireFire-Dispatch-Frequency response header. Clamped to [1, 30].
+    DEFAULT_DISPATCH_FREQUENCY = 1
+    MAX_DISPATCH_FREQUENCY = 30
+
     def initialize(web: nil, workers: Workers.new, cpu: [], web_liveness: true)
       @web = web
       @workers = workers
@@ -18,6 +23,8 @@ module HireFire
       @running = false
       @pid = nil
       @last_web_second = nil
+      @dispatch_frequency = DEFAULT_DISPATCH_FREQUENCY
+      @next_dispatch_at = nil
     end
 
     # Fork-aware: a child inherits @running but not the thread, so the pid check
@@ -70,11 +77,22 @@ module HireFire
     private
 
     # Stage-isolated so one failure can't starve dispatch, which drains the buffer.
+    # Sampling runs every tick; only dispatch is throttled.
     def tick
       guard { @lease.request_if_due }
       guard { @lease.sample_if_due { @workers.sample } }
       @cpu.each { |collector| guard { collector.sample } }
+      dispatch_if_due
+    end
+
+    # First run dispatches immediately; the next time is set after dispatch so a
+    # just-learned frequency applies next tick. A guarded dispatch never raises, so
+    # a failure still waits a full window.
+    def dispatch_if_due
+      return if @next_dispatch_at && Time.now < @next_dispatch_at
+
       dispatch
+      @next_dispatch_at = Time.now + @dispatch_frequency
     end
 
     def guard
@@ -92,12 +110,24 @@ module HireFire
       return drop_oversized_payload(body) if body.bytesize > PAYLOAD_SIZE_LIMIT
 
       logger.info "[HireFire] Dispatching metrics: #{body}" if ENV["HIREFIRE_VERBOSE"]
-      @client.submit_samples(body)
+      response = @client.submit_samples(body)
+      apply_dispatch_frequency(response)
       # Advance only after a successful submit; failed seconds re-claim next time.
       @last_web_second = @web_watermark if @web_watermark
     rescue => e
       buffer.repopulate_web(data[:web]) if data && data[:web].any?
       logger.error "[HireFire] Dispatch error: #{e.message}"
+    end
+
+    # A non-positive or unparseable value keeps the prior frequency, so a bad
+    # response can't collapse the interval and storm ingest. Clamp the rest.
+    def apply_dispatch_frequency(response)
+      return unless response.respond_to?(:key?) && response.key?("HireFire-Dispatch-Frequency")
+
+      value = response["HireFire-Dispatch-Frequency"].to_i
+      return unless value.positive?
+
+      @dispatch_frequency = value.clamp(DEFAULT_DISPATCH_FREQUENCY, MAX_DISPATCH_FREQUENCY)
     end
 
     # Drop rather than repopulate (a retry would re-send the same oversized

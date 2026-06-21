@@ -15,11 +15,9 @@ module HireFire
       CEDAR_MEMORY_LIMIT = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
       PROC_STAT_GLOB = "/proc/[0-9]*/stat"
 
-      # Cedar shared dynos expose no CPU limit; the memory limit fingerprints the
-      # size, which implies the entitlement. Other sizes fall through.
       CEDAR_SHARED_ENTITLEMENTS = {
-        536_870_912 => 1.0,   # 512 MB: eco / basic / standard-1x
-        1_073_741_824 => 2.0  # 1 GB: standard-2x
+        536_870_912 => 1.0,
+        1_073_741_824 => 2.0
       }.freeze
 
       def total_seconds
@@ -36,8 +34,6 @@ module HireFire
         usage.to_f / 1_000_000_000.0 if usage
       end
 
-      # Heroku exposes no cpu cgroup; /proc is PID-namespaced to the dyno, so
-      # summing every visible process gives whole-dyno CPU.
       def proc_namespace_seconds
         paths = Dir.glob(PROC_STAT_GLOB)
         return if paths.empty?
@@ -54,8 +50,6 @@ module HireFire
         ticks.to_f / clock_ticks if counted
       end
 
-      # utime + stime ticks; parse after the last ")" since comm may contain
-      # spaces and parens, which puts utime at index 11 and stime at index 12.
       def stat_ticks(content)
         close = content.rindex(")")
         return unless close
@@ -66,8 +60,6 @@ module HireFire
         fields[11].to_i + fields[12].to_i
       end
 
-      # Etc.sysconf raises NotImplementedError without sysconf; 100 is the
-      # universal USER_HZ default.
       def clock_ticks
         Etc.sysconf(Etc::SC_CLK_TCK)
       rescue StandardError, NotImplementedError
@@ -101,7 +93,6 @@ module HireFire
         quota / period
       end
 
-      # Gated on DYNO: a v1 memory limit says nothing about CPU off Heroku.
       def heroku_entitlement
         return unless ENV["DYNO"]
 

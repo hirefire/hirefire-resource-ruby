@@ -4,11 +4,8 @@ module HireFire
   class Dispatcher
     WEB_BACKFILL_LIMIT = 60
 
-    # Mirrors the server's request body cap.
     PAYLOAD_SIZE_LIMIT = 65_536
 
-    # Seconds between buffer dispatches; server-adjustable via the
-    # HireFire-Dispatch-Frequency response header. Clamped to [1, 30].
     DEFAULT_DISPATCH_FREQUENCY = 1
     MAX_DISPATCH_FREQUENCY = 30
 
@@ -27,8 +24,6 @@ module HireFire
       @next_dispatch_at = nil
     end
 
-    # Fork-aware: a child inherits @running but not the thread, so the pid check
-    # forces the per-request start to spawn a fresh thread.
     def start
       @mutex.synchronize do
         return false if @running && @pid == Process.pid
@@ -55,7 +50,6 @@ module HireFire
         return false unless @running
 
         @running = false
-        # Only join a thread this process created (a forked child's handle is dead).
         thread = @thread if @pid == Process.pid
         @thread = nil
         @pid = nil
@@ -76,8 +70,6 @@ module HireFire
 
     private
 
-    # Stage-isolated so one failure can't starve dispatch, which drains the buffer.
-    # Sampling runs every tick; only dispatch is throttled.
     def tick
       guard { @lease.request_if_due }
       guard { @lease.sample_if_due { @workers.sample } }
@@ -85,9 +77,6 @@ module HireFire
       dispatch_if_due
     end
 
-    # First run dispatches immediately; the next time is set after dispatch so a
-    # just-learned frequency applies next tick. A guarded dispatch never raises, so
-    # a failure still waits a full window.
     def dispatch_if_due
       return if @next_dispatch_at && Time.now < @next_dispatch_at
 
@@ -112,15 +101,12 @@ module HireFire
       logger.info "[HireFire] Dispatching metrics: #{body}" if ENV["HIREFIRE_VERBOSE"]
       response = @client.submit_samples(body)
       apply_dispatch_frequency(response)
-      # Advance only after a successful submit; failed seconds re-claim next time.
       @last_web_second = @web_watermark if @web_watermark
     rescue => e
       buffer.repopulate_web(data[:web]) if data && data[:web].any?
       logger.error "[HireFire] Dispatch error: #{e.message}"
     end
 
-    # A non-positive or unparseable value keeps the prior frequency, so a bad
-    # response can't collapse the interval and storm ingest. Clamp the rest.
     def apply_dispatch_frequency(response)
       return unless response.respond_to?(:key?) && response.key?("HireFire-Dispatch-Frequency")
 
@@ -130,8 +116,6 @@ module HireFire
       @dispatch_frequency = value.clamp(DEFAULT_DISPATCH_FREQUENCY, MAX_DISPATCH_FREQUENCY)
     end
 
-    # Drop rather than repopulate (a retry would re-send the same oversized
-    # payload); advancing the watermark leaves a gap instead of backfilling false zeros.
     def drop_oversized_payload(body)
       @last_web_second = @web_watermark if @web_watermark
       logger.error "[HireFire] Dropped metrics payload: #{body.bytesize} bytes exceeds " \
@@ -164,7 +148,7 @@ module HireFire
       from = now - WEB_BACKFILL_LIMIT if from < now - WEB_BACKFILL_LIMIT
       from = now if from > now
 
-      samples = samples.dup # keep synthesized claims out of the retry buffer
+      samples = samples.dup
       (from..now).each { |second| samples[second] ||= [] }
       samples
     end

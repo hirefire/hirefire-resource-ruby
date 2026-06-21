@@ -16,8 +16,6 @@ module HireFire
     private
 
     def process_request_queue_time(env)
-      # X-Queue-Start is an exact synonym for X-Request-Start (e.g. Render emits
-      # it); prefer X-Request-Start when both are present.
       request_start = env["HTTP_X_REQUEST_START"] || env["HTTP_X_QUEUE_START"]
       return unless request_start
 
@@ -40,20 +38,18 @@ module HireFire
       puts "[hirefire:router] queue=#{request_queue_time}ms"
     end
 
-    # X-Request-Start's unit varies by router (epoch s / ms / µs / ns), so infer
-    # it from magnitude. Implausible values yield nil.
     def calculate_request_queue_time(timestamp)
       value = timestamp.to_s.delete_prefix("t=").to_f
       return if value < 1e9
 
       milliseconds = if value < 1e11
-        value * 1000 # epoch seconds
+        value * 1000
       elsif value < 1e14
-        value # epoch milliseconds
+        value
       elsif value < 1e17
-        value / 1000 # epoch microseconds
+        value / 1000
       else
-        value / 1_000_000 # epoch nanoseconds
+        value / 1_000_000
       end
 
       request_queue_time = [(Time.now.to_f * 1000).to_i - milliseconds.round, 0].max

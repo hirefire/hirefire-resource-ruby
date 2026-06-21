@@ -12,8 +12,6 @@ module HireFire
       presence(ENV["HIREFIRE_SERVICE_NAME"])
     end
 
-    # DYNO is "web.1" on Cedar, a pod name like "web-5fb9c979-lft2l" on Fir.
-    # Strip the two trailing "-<alnum>" segments, keeping any dash inside the name.
     def heroku_dyno
       dyno = presence(ENV["DYNO"])
       return unless dyno

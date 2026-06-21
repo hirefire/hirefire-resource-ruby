@@ -19,7 +19,6 @@ module HireFire
       end
     end
 
-    # Latest-wins per name: worker samples are gauges, so only the most recent matters.
     def sample_worker(name, sample)
       @mutex.synchronize { @workers[name] = sample }
     end

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 module HireFire
-  # Samples this process's CPU utilization as a 0-100% of available CPU.
   class CPU
     attr_reader :name
 
@@ -25,8 +24,6 @@ module HireFire
       wall_delta = time - previous_time
       usage_delta = usage - previous_usage
 
-      # Skip rather than fabricate: the clock stepped back, or the usage source
-      # changed between reads.
       return if wall_delta <= 0 || usage_delta < 0
 
       available = Usage.available_cpus

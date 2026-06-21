@@ -81,8 +81,6 @@ module HireFire
       register(name, collector, &sampler)
     end
 
-    # Synchronized double-checked init: concurrent request threads must not build
-    # (and start) two buffers/dispatchers.
     def buffer
       @buffer || @mutex.synchronize { @buffer ||= Buffer.new }
     end
@@ -113,7 +111,6 @@ module HireFire
     end
 
     def register(name, collector, &sampler)
-      # Case-insensitive: names differing only in case would gate as one identity.
       if @names.any? { |existing| existing.casecmp?(name) }
         raise DuplicateDynoError,
           "Duplicate declaration for #{name.inspect}. " \

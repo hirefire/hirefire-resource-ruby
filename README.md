@@ -22,7 +22,7 @@ This library integrates Ruby applications with HireFire's Dyno Managers (Heroku 
 - QC 4+
 - Bunny 2+
 
-We run our test suites against these minimum versions and the current latest release of each runtime and library. Older versions may still work, but are not officially supported.
+The test suite runs against these minimum versions and the current latest release of each runtime and library. Older versions may still work, but are not officially supported.
 
 ---
 

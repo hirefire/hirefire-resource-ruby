@@ -35,6 +35,25 @@ module HireFire
       @token || ENV["HIREFIRE_TOKEN"]
     end
 
+    # Declares a service. Exactly like {#service}, plus the convention that a process named "web"
+    # implies `tracking: :http`.
+    #
+    # Resolution: `tracking: :cpu` tracks CPU; a sampler block tracks job metrics; the name "web"
+    # (case-insensitive) tracks http on its own. `:cpu` is the only `tracking:` value `dyno`
+    # accepts — for an http process under a non-"web" name, use `service(name, tracking: :http)`.
+    #
+    # @param name [String, Symbol] the process name; must be non-empty.
+    # @param tracking [Symbol, String, nil] `:cpu`, or omit.
+    # @yield a sampler returning the current job-queue metric (a non-negative, finite number).
+    # @return [void]
+    # @raise [MissingSamplerError] a non-"web" name given with neither `tracking: :cpu` nor a sampler.
+    # @raise [UnexpectedSamplerError] a sampler given alongside `tracking: :cpu`.
+    # @raise [UnknownCollectorError] `tracking:` given anything other than `:cpu`.
+    # @raise [DuplicateDynoError] the name was already declared, or a second http process was declared.
+    # @example
+    #   config.dyno(:web) # "web" implies http
+    #   config.dyno(:worker) { HireFire::Macro::Sidekiq.job_queue_size(:default) }
+    #   config.dyno(:encoder, tracking: :cpu)
     def dyno(name, tracking: nil, &sampler)
       name = coerce_name!(name)
 
@@ -60,6 +79,29 @@ module HireFire
       register(name, collector, &sampler)
     end
 
+    # Declares what a process tracks. The name is a label with no implicit meaning, so what to
+    # track is always explicit. Pass exactly one of `tracking:` or a sampler block:
+    #
+    # - `tracking: :http` — web request queue-time metrics, sampled from this process's own HTTP
+    #   traffic by the framework middleware (at most one http process per app process).
+    # - a sampler block returning the current value — job queue metrics, typically via a queue
+    #   macro (e.g. `HireFire::Macro::Sidekiq.job_queue_latency`).
+    # - `tracking: :cpu` — this process's CPU utilization.
+    #
+    # {#dyno} is this method plus the convention that the name "web" implies `:http`.
+    #
+    # @param name [String, Symbol] the process name; must be non-empty.
+    # @param tracking [Symbol, String, nil] `:http` or `:cpu`. Omit when passing a sampler.
+    # @yield a sampler returning the current job-queue metric (a non-negative, finite number).
+    # @return [void]
+    # @raise [MissingSamplerError] neither `tracking:` nor a sampler was given.
+    # @raise [UnexpectedSamplerError] a sampler given alongside `tracking: :http` or `:cpu`.
+    # @raise [UnknownCollectorError] `tracking:` given an unsupported value.
+    # @raise [DuplicateDynoError] the name was already declared, or a second http process was declared.
+    # @example
+    #   config.service(:web, tracking: :http)
+    #   config.service(:worker) { HireFire::Macro::Sidekiq.job_queue_size(:default) }
+    #   config.service(:encoder, tracking: :cpu)
     def service(name, tracking: nil, &sampler)
       name = coerce_name!(name)
 

@@ -30,7 +30,7 @@ Since 2011, over 1,000 companies have trusted [HireFire] to autoscale more than 
 
 HireFire is distinguished by its support for both web and worker dynos, extending autoscaling capabilities to Standard-tier dynos. It provides fine-grained control over scaling behavior and improves scaling accuracy by monitoring more reliable metrics at the application level. These metrics include request queue time (web), job queue latency (worker), and job queue size (worker), which contribute to making more effective scaling decisions.
 
-For more information, visit our [home page][HireFire].
+For more information, visit the [home page][HireFire].
 
 ---
 

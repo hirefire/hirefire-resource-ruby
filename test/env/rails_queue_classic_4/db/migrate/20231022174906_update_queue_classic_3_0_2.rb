@@ -6,8 +6,8 @@ class UpdateQueueClassic302 < ActiveRecord::Migration[8.0]
   end
 
   def self.down
-    # This migration is fixing a bug, so we don't want to do anything here.
-    # I didn't want to make it irreversible either, as it could prevent
-    # rolling back other, unrelated, stuff.
+    # This migration fixes a bug, so the down step intentionally does nothing.
+    # Making it irreversible was avoided too, as that could prevent rolling
+    # back other, unrelated, migrations.
   end
 end

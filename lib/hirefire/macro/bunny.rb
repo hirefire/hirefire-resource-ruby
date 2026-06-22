@@ -96,7 +96,7 @@ module HireFire
         connection.create_channel
       rescue
         # create_channel runs before the caller's begin/ensure, so a channel-open
-        # failure on a connection we own would leak it. A borrowed connection is
+        # failure on an owned connection would leak it. A borrowed connection is
         # left for its owner to manage.
         close_connection(connection) if close_connection_on_failure
         raise

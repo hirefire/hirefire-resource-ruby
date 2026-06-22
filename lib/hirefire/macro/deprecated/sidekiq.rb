@@ -64,8 +64,8 @@ module HireFire
         private
 
         def fast_lookup_capable?(queues, all_queues)
-          # When no queue names are provided (or all of them are), we know we
-          # can perform much faster counts using Sidekiq::Stats and Redis
+          # When no queue names are provided (or all of them are), much faster
+          # counts are possible using Sidekiq::Stats and Redis
           queues.sort == all_queues.sort
         end
 

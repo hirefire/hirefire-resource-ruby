@@ -126,8 +126,6 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     channel = connection.create_channel
 
     queue_name = options.fetch(:queue, "default").to_s
-    # Default to durable queues: RabbitMQ 4.3+ denies transient non-exclusive queues
-    # (transient_nonexcl_queues), and real job queues are durable anyway.
     durable = options.fetch(:durable, true)
     max_priority = options[:max_priority]
 

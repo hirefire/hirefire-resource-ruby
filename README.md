@@ -2,7 +2,9 @@
 
 This library integrates Ruby applications with HireFire's Dyno Managers (Heroku Dyno Autoscalers). Instructions specific to supported web frameworks and worker libraries are provided during the setup process.
 
-**Supported runtimes:** Ruby 3.2+
+**Supported runtimes:**
+
+- Ruby 3.2+
 
 **Supported web frameworks:**
 

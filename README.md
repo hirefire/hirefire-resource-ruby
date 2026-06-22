@@ -6,9 +6,9 @@ This library integrates Ruby applications with HireFire's Dyno Managers (Heroku 
 
 **Supported web frameworks:**
 
-- Rails
-- Sinatra
-- Hanami
+- Rails 7+
+- Sinatra 3+
+- Hanami 2+
 - Rack 2+
 
 **Supported worker libraries:**

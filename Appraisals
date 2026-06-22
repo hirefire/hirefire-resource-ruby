@@ -86,3 +86,24 @@ appraise "solid_queue_1" do
   gem "rails", "~> 8"
   gem "solid_queue", "~> 1", require: false
 end
+
+appraise "rails_7" do
+  gem "rails", "~> 7"
+end
+
+appraise "rails_8" do
+  gem "rails", "~> 8"
+end
+
+appraise "sinatra_3" do
+  gem "sinatra", "~> 3", require: false
+  gem "ostruct"
+end
+
+appraise "sinatra_4" do
+  gem "sinatra", "~> 4", require: false
+end
+
+appraise "hanami_2" do
+  gem "hanami-router", "~> 2", require: false
+end

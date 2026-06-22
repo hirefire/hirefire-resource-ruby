@@ -16,6 +16,9 @@ APPRAISAL_FILES = {
   "good_job" => [
     "macro/test_good_job.rb"
   ],
+  "hanami" => [
+    "integration/test_hanami.rb"
+  ],
   "que" => [
     "macro/test_que.rb"
   ],
@@ -25,11 +28,17 @@ APPRAISAL_FILES = {
   "rack" => [
     "test_middleware.rb"
   ],
+  "rails" => [
+    "integration/test_rails.rb"
+  ],
   "resque" => [
     "macro/test_resque.rb"
   ],
   "sidekiq" => [
     "macro/test_sidekiq.rb"
+  ],
+  "sinatra" => [
+    "integration/test_sinatra.rb"
   ],
   "solid_queue" => [
     "macro/test_solid_queue.rb"
@@ -48,11 +57,14 @@ APPRAISAL_VERSIONS = {
   "delayed_job_active_record" => %w[4],
   "delayed_job_mongoid" => %w[3],
   "good_job" => %w[3 4],
+  "hanami" => %w[2],
   "que" => %w[1 2],
   "queue_classic" => %w[4],
   "rack" => %w[2 3],
+  "rails" => %w[7 8],
   "resque" => %w[2 3],
   "sidekiq" => %w[7 8],
+  "sinatra" => %w[3 4],
   "solid_queue" => %w[1]
 }.freeze
 

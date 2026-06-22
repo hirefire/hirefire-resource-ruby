@@ -23,12 +23,6 @@ appraise "delayed_job_mongoid_3" do
   gem "ostruct"
 end
 
-appraise "good_job_2" do
-  gem "pg"
-  gem "rails", "~> 8"
-  gem "good_job", "~> 2"
-end
-
 appraise "good_job_3" do
   gem "pg"
   gem "rails", "~> 8"
@@ -45,12 +39,6 @@ appraise "queue_classic_4" do
   gem "pg"
   gem "rails", "~> 8"
   gem "queue_classic", "~> 4"
-end
-
-appraise "que_0" do
-  gem "pg"
-  gem "rails", "~> 8"
-  gem "que", "~> 0", require: false
 end
 
 appraise "que_1" do
@@ -85,22 +73,12 @@ appraise "resque_3" do
   gem "resque-scheduler", "~> 5"
 end
 
-appraise "sidekiq_6" do
-  gem "sidekiq", "~> 6"
-end
-
 appraise "sidekiq_7" do
   gem "sidekiq", "~> 7"
 end
 
 appraise "sidekiq_8" do
   gem "sidekiq", "~> 8"
-end
-
-appraise "solid_queue_0" do
-  gem "pg"
-  gem "rails", "~> 8"
-  gem "solid_queue", "~> 0", require: false
 end
 
 appraise "solid_queue_1" do

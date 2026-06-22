@@ -47,13 +47,13 @@ APPRAISAL_VERSIONS = {
   "bunny" => %w[2 3],
   "delayed_job_active_record" => %w[4],
   "delayed_job_mongoid" => %w[3],
-  "good_job" => %w[2 3 4],
-  "que" => %w[0 1 2],
+  "good_job" => %w[3 4],
+  "que" => %w[1 2],
   "queue_classic" => %w[4],
   "rack" => %w[2 3],
   "resque" => %w[2 3],
-  "sidekiq" => %w[6 7 8],
-  "solid_queue" => %w[0 1]
+  "sidekiq" => %w[7 8],
+  "solid_queue" => %w[1]
 }.freeze
 
 def matrix

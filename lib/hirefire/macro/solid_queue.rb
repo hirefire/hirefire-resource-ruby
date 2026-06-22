@@ -48,7 +48,7 @@ module HireFire
       # Calculates the total job queue size using SolidQueue. If no queues are specified, it
       # measures size across all available queues.
       #
-      # This function measures the job queue latency across the Ready, Scheduled, Blocked, and
+      # This function measures the job queue size across the Ready, Scheduled, Blocked, and
       # Claimed queues, based on the schedule and expiration times of their executions. Executions
       # in paused queues are excluded from the calculation.
       #

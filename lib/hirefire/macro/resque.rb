@@ -5,6 +5,8 @@ require_relative "deprecated/resque"
 module HireFire
   module Macro
     module Resque
+      # job_queue_latency is unsupported for Resque and always raises
+      # HireFire::Errors::JobQueueLatencyUnsupportedError.
       extend HireFire::Errors::JobQueueLatencyUnsupported
       extend HireFire::Macro::Deprecated::Resque
       extend HireFire::Utility

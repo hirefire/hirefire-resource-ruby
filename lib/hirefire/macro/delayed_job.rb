@@ -19,6 +19,8 @@ module HireFire
         # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
         #   measurement. If not provided, latency is measured across all queues.
         # @return [Float] Maximum job queue latency in seconds.
+        # @raise [HireFire::Macro::Delayed::Job::MapperNotDetectedError] if neither an ActiveRecord
+        #   nor a Mongoid mapper can be detected.
         # @example Calculate latency across all queues
         #   HireFire::Macro::Delayed::Job.job_queue_latency
         # @example Calculate latency for the "default" queue
@@ -52,6 +54,8 @@ module HireFire
         # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
         #   If not provided, size is measured across all queues.
         # @return [Integer] Total job queue size.
+        # @raise [HireFire::Macro::Delayed::Job::MapperNotDetectedError] if neither an ActiveRecord
+        #   nor a Mongoid mapper can be detected.
         # @example Calculate size across all queues
         #   HireFire::Macro::Delayed::Job.job_queue_size
         # @example Calculate size of the "default" queue

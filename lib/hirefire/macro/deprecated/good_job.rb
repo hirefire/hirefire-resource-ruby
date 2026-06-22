@@ -14,8 +14,8 @@ module HireFire
         #
         # This method queries the PostgreSQL database through GoodJob. It's capable
         # of counting jobs across different queues or all queues if none specified.
-        # The method checks for the existence of ::GoodJob::Execution or ::GoodJob::Job
-        # to determine the base class to use for querying.
+        # It selects the base class based on the installed GoodJob version
+        # (::GoodJob::Job for GoodJob >= 4.0, otherwise ::GoodJob::Execution).
         #
         # @param queues [Array<String>] The names of the queues to count.
         #   Pass an empty array or no arguments to count jobs in all queues.

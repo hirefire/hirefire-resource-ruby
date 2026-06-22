@@ -6,11 +6,11 @@ module HireFire
   module Macro
     module Bunny
       extend HireFire::Macro::Deprecated::Bunny
+      # job_queue_latency is unsupported for Bunny and always raises
+      # HireFire::Errors::JobQueueLatencyUnsupportedError.
       extend HireFire::Errors::JobQueueLatencyUnsupported
       extend HireFire::Utility
       extend self
-
-      class ConnectionError < StandardError; end
 
       # Calculates the total job queue size using Bunny.
       #
@@ -45,11 +45,13 @@ module HireFire
       #   every poll.
       # @return [Integer] Total job queue size.
       # @raise [HireFire::Errors::MissingQueueError] If no queue names are specified.
+      # @raise [Bunny::Exception] If a queue does not exist (a passive declare returns a 404) or
+      #   the connection cannot be established.
       # @example Retrieve job queue size for the "default" queue
       #   HireFire::Macro::Bunny.job_queue_size(:default)
       # @example Retrieve job queue size across "default" and "mailer" queues
       #   HireFire::Macro::Bunny.job_queue_size(:default, :mailer)
-      # @example Use a new connection on each call using a AMQP URL
+      # @example Use a new connection on each call using an AMQP URL
       #   HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url)
       # @example Reuse a long-lived connection across calls
       #   HireFire::Macro::Bunny.job_queue_size(:default, connection: connection)

@@ -12,7 +12,7 @@ module HireFire
         # in specified queues or all queues if no specific queue is provided.
         # The method determines the base query depending on the Que version detected.
         #
-        # @param queues [Array<String>] The names of the queues to count.
+        # @param queues [Array<String, Symbol>] The names of the queues to count.
         #   Pass an empty array or no arguments to count jobs in all queues.
         # @return [Integer] Total number of jobs in the specified queues.
         # @example Counting jobs in all queues

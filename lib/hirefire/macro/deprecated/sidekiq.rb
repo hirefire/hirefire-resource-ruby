@@ -30,8 +30,9 @@ module HireFire
         # @param args [Array<String, Symbol, Hash>] Queue names to count jobs in and an optional hash of options.
         #   Pass an empty array or no arguments to count jobs in all queues.
         #   The last argument can be a Hash of options to modify the count behavior.
-        #   Possible keys are :skip_scheduled, :skip_retries, :skip_working.
-        #   These keys are booleans which default to false.
+        #   Possible keys are :skip_scheduled, :skip_retries, :skip_working (booleans, default
+        #   false), and :max_scheduled (Integer; caps how many scheduled jobs are counted, applied
+        #   only when specific queue names are given).
         # @return [Integer] Total number of jobs in the specified queues.
         # @example Counting jobs in all queues
         #   HireFire::Macro::Sidekiq.queue

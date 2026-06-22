@@ -21,15 +21,15 @@ module HireFire
           good_job_class.column_names.include?("error_event")
         end
 
-        [
-          :interrupted,
-          :unhandled,
-          :handled,
-          :retried,
-          :retry_stopped,
-          :discarded
-        ].each_with_index do |event, index|
-          define_method(:"#{event}_enum") { index }
+        # GoodJob's error_event enum integer values (interrupted=0, unhandled=1,
+        # handled=2, retried=3, retry_stopped=4, discarded=5). Only the two consulted
+        # are defined: discarded gates queue metrics; retried is asserted in tests.
+        def retried_enum
+          3
+        end
+
+        def discarded_enum
+          5
         end
       end
     end

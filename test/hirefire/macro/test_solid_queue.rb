@@ -213,22 +213,12 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     ready_count = SolidQueue::ReadyExecution.count
     job = job_class.set(**options).perform_later
 
-    process_attributes = if MAJOR_VERSION >= 1
-      {
-        pid: 1,
-        kind: "Worker",
-        last_heartbeat_at: Time.now,
-        name: "test-worker-1" # Required in 1.x
-      }
-    else
-      {
-        pid: 1,
-        kind: "Worker",
-        last_heartbeat_at: Time.now
-      }
-    end
-
-    process = SolidQueue::Process.create!(process_attributes)
+    process = SolidQueue::Process.create!(
+      pid: 1,
+      kind: "Worker",
+      last_heartbeat_at: Time.now,
+      name: "test-worker-1"
+    )
 
     SolidQueue::Job.transaction do
       SolidQueue::ReadyExecution.find_by(job_id: job.provider_job_id).destroy!

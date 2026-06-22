@@ -5,21 +5,10 @@ require "que"
 
 class HireFire::Macro::QueTest < Minitest::Test
   VERSION_QUE = Gem::Version.new(defined?(Que::Version) ? Que::Version : Que::VERSION)
-  VERSION_1_0_0 = Gem::Version.new("1.0.0")
   VERSION_2_0_0 = Gem::Version.new("2.0.0")
   LATENCY_DELTA = 2
 
-  if VERSION_QUE < VERSION_1_0_0
-    require_relative "../../env/rails_que_0/config/environment"
-
-    Que::Adapters::Base::CAST_PROCS[1184] = lambda do |value|
-      case value
-      when Time then value
-      when String then Time.parse(value)
-      else raise "Unexpected time class: #{value.class} (#{value.inspect})"
-      end
-    end
-  elsif VERSION_QUE < VERSION_2_0_0
+  if VERSION_QUE < VERSION_2_0_0
     require_relative "../../env/rails_que_1/config/environment"
   else
     require_relative "../../env/rails_que_2/config/environment"
@@ -49,14 +38,12 @@ class HireFire::Macro::QueTest < Minitest::Test
   end
 
   def test_job_queue_latency_skip_finished_jobs
-    return if VERSION_QUE < VERSION_1_0_0
     job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 60})
     Que.execute("UPDATE que_jobs SET finished_at = NOW() WHERE id = #{job.que_attrs[:id]};")
     assert_equal 0, HireFire::Macro::Que.job_queue_latency
   end
 
   def test_job_queue_latency_skip_expired_jobs
-    return if VERSION_QUE < VERSION_1_0_0
     job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 60})
     Que.execute("UPDATE que_jobs SET expired_at = NOW() WHERE id = #{job.que_attrs[:id]};")
     assert_equal 0, HireFire::Macro::Que.job_queue_latency
@@ -93,14 +80,12 @@ class HireFire::Macro::QueTest < Minitest::Test
   end
 
   def test_job_queue_size_skip_finished_jobs
-    return if VERSION_QUE < VERSION_1_0_0
     job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
     Que.execute("UPDATE que_jobs SET finished_at = NOW() WHERE id = #{job.que_attrs[:id]};")
     assert_equal 0, HireFire::Macro::Que.job_queue_size
   end
 
   def test_job_queue_size_skip_expired_jobs
-    return if VERSION_QUE < VERSION_1_0_0
     job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
     Que.execute("UPDATE que_jobs SET expired_at = NOW() WHERE id = #{job.que_attrs[:id]};")
     assert_equal 0, HireFire::Macro::Que.job_queue_size
@@ -125,13 +110,7 @@ class HireFire::Macro::QueTest < Minitest::Test
   private
 
   def enqueue(*args, job_options: {}, **options)
-    options =
-      if VERSION_QUE < VERSION_1_0_0
-        options.merge(job_options)
-      else
-        options.merge(job_options: job_options)
-      end
-
+    options = options.merge(job_options: job_options)
     Que.enqueue(*args, **options)
   end
 

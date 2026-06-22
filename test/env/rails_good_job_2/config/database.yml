@@ -1,7 +1,0 @@
-test:
-  adapter: postgresql
-  host: localhost
-  port: <%= ENV.fetch("POSTGRES_PORT", 5433) %>
-  database: rails_good_job_2_test_database
-  username: <%= ENV.fetch("POSTGRES_USER", "postgres") %>
-  password: <%= ENV.fetch("POSTGRES_PASSWORD", "postgres") %>

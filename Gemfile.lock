@@ -42,7 +42,7 @@ GEM
       prism (~> 1.5)
     mocha (3.1.0)
       ruby2_keywords (>= 0.0.5)
-    parallel (2.1.0)
+    parallel (1.28.0)
     parser (3.3.11.1)
       ast (~> 2.4.1)
       racc
@@ -136,6 +136,7 @@ DEPENDENCIES
   hirefire-resource!
   minitest
   mocha
+  parallel (< 2)
   rack
   rake
   simplecov

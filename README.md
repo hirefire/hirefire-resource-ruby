@@ -2,23 +2,27 @@
 
 This library integrates Ruby applications with HireFire's Dyno Managers (Heroku Dyno Autoscalers). Instructions specific to supported web frameworks and worker libraries are provided during the setup process.
 
+**Supported runtimes:** Ruby 3.2+
+
 **Supported web frameworks:**
 
 - Rails
 - Sinatra
 - Hanami
-- Rack
+- Rack 2+
 
 **Supported worker libraries:**
 
-- Solid Queue
-- Good Job
-- Delayed Job
-- Sidekiq
-- Resque
-- Que
-- QC
-- Bunny
+- Solid Queue 1+
+- Good Job 3+
+- Delayed Job (Active Record 4+, Mongoid 3+)
+- Sidekiq 7+
+- Resque 2+
+- Que 1+
+- QC 4+
+- Bunny 2+
+
+We run our test suites against these minimum versions and the current latest release of each runtime and library. Older versions may still work, but are not officially supported.
 
 ---
 

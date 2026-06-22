@@ -18,7 +18,7 @@ end
 
 appraise "delayed_job_mongoid_3" do
   gem "rails", "~> 8"
-  gem "mongoid", "~> 8"
+  gem "mongoid", "~> 9"
   gem "delayed_job_mongoid", "~> 3"
   gem "ostruct"
 end

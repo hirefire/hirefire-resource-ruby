@@ -120,7 +120,7 @@ module HireFire
 
       # Queue names are bound as individual parameters ($1, $2, ...) rather than
       # interpolated: Que serializes Array/Hash params to JSON, so a single
-      # array bound to ANY($1) would not work — one scalar placeholder per queue
+      # array bound to ANY($1) would not work. One scalar placeholder per queue
       # is the portable form across Que 0.x/1.x/2.x.
       def filter_by_queues_if_any(queues)
         return "" if queues.empty?

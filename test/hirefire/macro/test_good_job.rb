@@ -37,8 +37,8 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   end
 
   def test_job_queue_latency_prefers_oldest_by_coalesced_timestamp
-    # The true-oldest job is immediate (scheduled_at NULL, created 10 min ago);
-    # ordering by scheduled_at alone would sort its NULL last and miss it.
+    # The true-oldest job is immediate (scheduled_at NULL, created 10 min ago).
+    # Ordering by scheduled_at alone would sort its NULL last and miss it.
     old_id = BasicJob.perform_later.job_id
     good_job_class.where(active_job_id: old_id).update_all(scheduled_at: nil, created_at: 10.minutes.ago)
 

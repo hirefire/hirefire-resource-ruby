@@ -3,7 +3,7 @@
 module HireFire
   module Errors
     module JobQueueLatencyUnsupported
-      # Job queue latency is not supported for this backend — calling this always raises.
+      # Job queue latency is not supported for this backend. Calling this always raises.
       #
       # @raise [HireFire::Errors::JobQueueLatencyUnsupportedError] always.
       def job_queue_latency(*, **)

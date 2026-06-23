@@ -123,8 +123,8 @@ module HireFire
       end
 
       # Resque maintains a set of registered queue names (SMEMBERS), which is
-      # what Resque.queues reads. KEYS queue:* would scan the entire keyspace —
-      # O(N) and discouraged in production — on every all-queues call. The set
+      # what Resque.queues reads. KEYS queue:* would scan the entire keyspace
+      # (O(N) and discouraged in production) on every all-queues call. The set
       # may retain drained queues, but those contribute 0 to a size sum.
       def registered_queues
         ::Resque.queues.to_set

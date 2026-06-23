@@ -14,8 +14,8 @@ module HireFire
       # Calculates the maximum job queue latency using GoodJob. If no queues are specified, it
       # measures latency across all available queues.
       #
-      # Considers only unperformed jobs that are due to run (scheduled_at in the past or null);
-      # discarded jobs are excluded.
+      # Considers only unperformed jobs that are due to run (scheduled_at in the past or null).
+      # Discarded jobs are excluded.
       #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
       #   measurement. If not provided, latency is measured across all queues.
@@ -49,8 +49,8 @@ module HireFire
       # Calculates the total job queue size using GoodJob. If no queues are specified, it
       # measures size across all available queues.
       #
-      # Counts only unperformed jobs that are due to run (scheduled_at in the past or null);
-      # discarded jobs are excluded.
+      # Counts only unperformed jobs that are due to run (scheduled_at in the past or null).
+      # Discarded jobs are excluded.
       #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
       #   If not provided, size is measured across all queues.

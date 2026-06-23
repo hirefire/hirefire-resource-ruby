@@ -32,7 +32,7 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_empty @configuration.cpu
   end
 
-  # dyno — legacy / Heroku front door (full truth table)
+  # dyno: legacy / Heroku front door (full truth table)
 
   def test_dyno_web_configures_http
     @configuration.dyno(:web)
@@ -105,7 +105,7 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_equal ["clock"], @configuration.cpu.map(&:name)
   end
 
-  # service — universal / platform-neutral front door (full truth table)
+  # service: universal / platform-neutral front door (full truth table)
 
   def test_service_http_configures_http
     @configuration.service(:web, tracking: :http)

@@ -38,11 +38,11 @@ module HireFire
     # Declares a service. Exactly like {#service}, plus the convention that a process named "web"
     # implies `tracking: :http`.
     #
-    # Resolution: `tracking: :cpu` tracks CPU; a sampler block tracks job metrics; the name "web"
+    # Resolution: `tracking: :cpu` tracks CPU, a sampler block tracks job metrics, and the name "web"
     # (case-insensitive) tracks http on its own. `:cpu` is the only `tracking:` value `dyno`
-    # accepts — for an http process under a non-"web" name, use `service(name, tracking: :http)`.
+    # accepts. For an http process under a non-"web" name, use `service(name, tracking: :http)`.
     #
-    # @param name [String, Symbol] the process name; must be non-empty.
+    # @param name [String, Symbol] the process name. Must be non-empty.
     # @param tracking [Symbol, String, nil] `:cpu`, or omit.
     # @yield a sampler returning the current job-queue metric (a non-negative, finite number).
     # @return [void]
@@ -62,7 +62,7 @@ module HireFire
           DYNO_COLLECTORS.fetch(tracking.to_s.to_sym) do
             raise UnknownCollectorError,
               "Unknown value #{tracking.inspect} for config.dyno(:#{name}, tracking: ...). " \
-              "config.dyno only tracks :cpu; pass a sampler block for job metrics, " \
+              "config.dyno only tracks :cpu. Pass a sampler block for job metrics, " \
               "or use config.service to track :http explicitly."
           end
         elsif sampler
@@ -72,8 +72,8 @@ module HireFire
         else
           raise MissingSamplerError,
             "config.dyno(:#{name}) could not be resolved: it needs a sampler block " \
-            "(job metrics) or tracking: :cpu. Only the \"web\" name implies http on its own; " \
-            "use config.service(:#{name}, tracking: :http) for an http process under another name."
+            "(job metrics) or tracking: :cpu. Only the \"web\" name implies http on its own. " \
+            "Use config.service(:#{name}, tracking: :http) for an http process under another name."
         end
 
       register(name, collector, &sampler)
@@ -82,15 +82,15 @@ module HireFire
     # Declares what a process tracks. The name is a label with no implicit meaning, so what to
     # track is always explicit. Pass exactly one of `tracking:` or a sampler block:
     #
-    # - `tracking: :http` — web request queue-time metrics, sampled from this process's own HTTP
+    # - `tracking: :http`: web request queue-time metrics, sampled from this process's own HTTP
     #   traffic by the framework middleware (at most one http process per app process).
-    # - a sampler block returning the current value — job queue metrics, typically via a queue
+    # - a sampler block returning the current value: job queue metrics, typically via a queue
     #   macro (e.g. `HireFire::Macro::Sidekiq.job_queue_latency`).
-    # - `tracking: :cpu` — this process's CPU utilization.
+    # - `tracking: :cpu`: this process's CPU utilization.
     #
     # {#dyno} is this method plus the convention that the name "web" implies `:http`.
     #
-    # @param name [String, Symbol] the process name; must be non-empty.
+    # @param name [String, Symbol] the process name. Must be non-empty.
     # @param tracking [Symbol, String, nil] `:http` or `:cpu`. Omit when passing a sampler.
     # @yield a sampler returning the current job-queue metric (a non-negative, finite number).
     # @return [void]

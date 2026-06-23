@@ -22,7 +22,7 @@ module HireFire
 
         unless valid_sample?(value)
           logger.error "[HireFire] The sampler for dyno #{worker.name.inspect} returned " \
-            "#{value.inspect}; expected a non-negative number. Sample dropped."
+            "#{value.inspect}, expected a non-negative number. Sample dropped."
           next
         end
 

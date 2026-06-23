@@ -195,7 +195,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     end
 
     # The same instant (epoch 1700000000.250) expressed in each unit a router
-    # may emit; all must normalize to the identical 750ms queue time at now=…001.
+    # may emit, all must normalize to the identical 750ms queue time at now=…001.
     # The fractional 250ms exercises the sub-millisecond path in every unit,
     # including nanoseconds (where the value exceeds a double's integer range).
     {

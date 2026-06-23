@@ -23,7 +23,7 @@ module HireFire
 
         # GoodJob's error_event enum integer values (interrupted=0, unhandled=1,
         # handled=2, retried=3, retry_stopped=4, discarded=5). Only the two consulted
-        # are defined: discarded gates queue metrics; retried is asserted in tests.
+        # are defined: discarded gates queue metrics, retried is asserted in tests.
         def retried_enum
           3
         end

@@ -148,9 +148,9 @@ class HireFire::DispatcherTest < Minitest::Test
       end
 
     dispatcher = configure_web_only
-    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # 200 — watermark 1000
-    Timecop.freeze(Time.at(1003)) { dispatcher.send(:tick) } # 500 — watermark holds
-    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) } # 200 — reclaims 1001..1005
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # 200, watermark 1000
+    Timecop.freeze(Time.at(1003)) { dispatcher.send(:tick) } # 500, watermark holds
+    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) } # 200, reclaims 1001..1005
 
     assert_equal %w[1001 1002 1003 1004 1005], bodies[2][0]["samples"].keys.sort
   end
@@ -237,7 +237,7 @@ class HireFire::DispatcherTest < Minitest::Test
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # watermark 1000
     Timecop.freeze Time.at(1010) do
       15_000.times { HireFire.configuration.buffer.sample_web(12345) }
-      dispatcher.send(:tick) # oversized — dropped, watermark advances to 1010
+      dispatcher.send(:tick) # oversized, dropped, watermark advances to 1010
     end
     Timecop.freeze(Time.at(1012)) { dispatcher.send(:tick) }
 
@@ -324,7 +324,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
     dispatcher = configure_cpu_only("clock")
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
-    Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) } # 500 — sample dropped, not re-buffered
+    Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) } # 500, sample dropped, not re-buffered
 
     data = HireFire.configuration.buffer.flush
     assert_empty data[:cpu]
@@ -508,9 +508,9 @@ class HireFire::DispatcherTest < Minitest::Test
 
     dispatcher = configure_web_only
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # dispatches, learns 5
-    Timecop.freeze(Time.at(1002)) { dispatcher.send(:tick) } # within window — skipped
-    Timecop.freeze(Time.at(1004)) { dispatcher.send(:tick) } # still within window — skipped
-    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) } # window elapsed — dispatches
+    Timecop.freeze(Time.at(1002)) { dispatcher.send(:tick) } # within window, skipped
+    Timecop.freeze(Time.at(1004)) { dispatcher.send(:tick) } # still within window, skipped
+    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) } # window elapsed, dispatches
 
     assert_requested(:post, "https://data.hirefire.io/metrics/ingest", times: 2)
   end
@@ -553,7 +553,7 @@ class HireFire::DispatcherTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 500)
 
     dispatcher = configure_workers_only
-    dispatcher.send(:tick) # 500 — workers-only, so data[:web] is empty
+    dispatcher.send(:tick) # 500, workers-only, so data[:web] is empty
 
     assert_empty HireFire.configuration.buffer.flush[:web]
     assert_includes log.string, "Dispatch error"

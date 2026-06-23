@@ -42,7 +42,7 @@ module HireFire
       # @option options [Boolean] :skip_retries (false) If true, skips counting jobs in retry queues.
       # @option options [Boolean] :skip_scheduled (false) If true, skips counting jobs in scheduled queues.
       # @option options [Boolean] :skip_working (false) If true, skips counting running jobs.
-      # @option options [Integer, nil] :max_scheduled (nil) Max number of scheduled jobs to consider; nil for no limit.
+      # @option options [Integer, nil] :max_scheduled (nil) Max number of scheduled jobs to consider. nil for no limit.
       # @return [Integer] Total job queue size.
       # @example Calculate size across all queues
       #   HireFire::Macro::Sidekiq.job_queue_size

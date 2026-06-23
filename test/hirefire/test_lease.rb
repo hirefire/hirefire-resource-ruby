@@ -223,10 +223,10 @@ class HireFire::LeaseTest < Minitest::Test
       })
 
     lease.request_if_due
-    lease.sample_if_due {} # first sample — due immediately
+    lease.sample_if_due {} # first sample, due immediately
 
     sampled = false
-    lease.sample_if_due { sampled = true } # second — not yet due
+    lease.sample_if_due { sampled = true } # second, not yet due
 
     refute sampled
   end
@@ -245,7 +245,7 @@ class HireFire::LeaseTest < Minitest::Test
     sampled = false
     lease.sample_if_due { sampled = true }
 
-    refute sampled # the raising sample consumed this window; no retry-per-tick
+    refute sampled # the raising sample consumed this window, no retry-per-tick
   end
 
   def test_sample_if_due_advances_next_sample_at
@@ -270,7 +270,7 @@ class HireFire::LeaseTest < Minitest::Test
     lease.request_if_due
 
     assert lease.granted?
-    assert_equal 15, lease.sample_frequency # default retained; no header to update it
+    assert_equal 15, lease.sample_frequency # default retained, no header to update it
   end
 
   def test_grants_only_on_a_literal_true

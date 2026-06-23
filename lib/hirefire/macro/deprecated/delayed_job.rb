@@ -14,7 +14,7 @@ module HireFire
           #
           # @param queues [Array<String, Symbol>] Queue names to query.
           #   The last argument can be a Hash with :mapper, :min_priority, and/or :max_priority keys.
-          # @option queues [Symbol] :mapper The ORM mapper to use; one of :active_record,
+          # @option queues [Symbol] :mapper The ORM mapper to use, one of :active_record,
           #   :active_record_2, or :mongoid (required).
           # @option queues [Integer, nil] :min_priority (nil) The minimum job priority to include in the count.
           #   If not specified, no lower limit is applied.

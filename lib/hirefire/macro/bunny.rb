@@ -40,7 +40,7 @@ module HireFire
       #   Ignored when +connection+ is given.
       # @param connection [Bunny::Session, nil] (optional) An existing, started connection to
       #   reuse. When given, it takes precedence over +amqp_url+: it is left open (the caller owns
-      #   it) and only a per-call channel is opened and closed; otherwise a new connection is opened
+      #   it) and only a per-call channel is opened and closed. Otherwise a new connection is opened
       #   and closed on each call. Reusing a long-lived connection avoids a TCP + AMQP handshake on
       #   every poll.
       # @return [Integer] Total job queue size.

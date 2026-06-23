@@ -1,6 +1,6 @@
 ## HireFire Integration Library for Ruby Applications
 
-This library integrates Ruby applications with HireFire's Dyno Managers (Heroku Dyno Autoscalers). Instructions specific to supported web frameworks and worker libraries are provided during the setup process.
+This library integrates Ruby applications with HireFire's Heroku Dyno Autoscalers. Instructions specific to supported web frameworks and worker libraries are provided during the setup process.
 
 **Supported runtimes:**
 

@@ -121,7 +121,7 @@ class HireFire::BufferTest < Minitest::Test
     data = buffer.flush
     assert_equal({"clock" => {1000 => [50.0]}}, data[:cpu])
 
-    assert_empty buffer.flush[:cpu] # second flush is reset
+    assert_empty buffer.flush[:cpu]
   end
 
   def test_sample_cpu_groups_values_within_a_second

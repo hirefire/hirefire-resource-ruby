@@ -347,9 +347,8 @@ module HireFire
         end
 
         def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: false, max_scheduled: nil)
-          # Match the client path: nil means "no limit", 0 (and any negative,
-          # which the client treats as 0) means "count none". The Lua script
-          # can't receive a nil argv, so "no limit" is encoded as -1.
+          # Match the client: nil is "no limit", 0 or negative is "count none".
+          # The Lua script can't take a nil argv, so "no limit" is encoded as -1.
           max_scheduled = max_scheduled.nil? ? -1 : [max_scheduled.to_i, 0].max
           ::Sidekiq.redis do |connection|
             now = Time.now.to_i

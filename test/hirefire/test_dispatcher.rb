@@ -65,10 +65,10 @@ class HireFire::DispatcherTest < Minitest::Test
     refute dispatcher.running?
     assert dispatcher.start
     assert dispatcher.running?
-    refute dispatcher.start # idempotent
+    refute dispatcher.start
     assert dispatcher.stop
     refute dispatcher.running?
-    refute dispatcher.stop # idempotent
+    refute dispatcher.stop
   end
 
   def test_dispatches_web_metrics
@@ -148,9 +148,9 @@ class HireFire::DispatcherTest < Minitest::Test
       end
 
     dispatcher = configure_web_only
-    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # 200, watermark 1000
-    Timecop.freeze(Time.at(1003)) { dispatcher.send(:tick) } # 500, watermark holds
-    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) } # 200, reclaims 1001..1005
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1003)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) }
 
     assert_equal %w[1001 1002 1003 1004 1005], bodies[2][0]["samples"].keys.sort
   end
@@ -234,10 +234,10 @@ class HireFire::DispatcherTest < Minitest::Test
     bodies = capture_ingest_bodies
 
     dispatcher = configure_web_only
-    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # watermark 1000
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
     Timecop.freeze Time.at(1010) do
       15_000.times { HireFire.configuration.buffer.sample_web(12345) }
-      dispatcher.send(:tick) # oversized, dropped, watermark advances to 1010
+      dispatcher.send(:tick)
     end
     Timecop.freeze(Time.at(1012)) { dispatcher.send(:tick) }
 
@@ -324,7 +324,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
     dispatcher = configure_cpu_only("clock")
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
-    Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) } # 500, sample dropped, not re-buffered
+    Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) }
 
     data = HireFire.configuration.buffer.flush
     assert_empty data[:cpu]
@@ -499,7 +499,7 @@ class HireFire::DispatcherTest < Minitest::Test
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
     Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) }
 
-    assert_equal 2, bodies.size # every tick dispatches
+    assert_equal 2, bodies.size
   end
 
   def test_honors_a_server_supplied_dispatch_frequency
@@ -507,10 +507,10 @@ class HireFire::DispatcherTest < Minitest::Test
     stub_ingest_with_dispatch_frequency(5)
 
     dispatcher = configure_web_only
-    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # dispatches, learns 5
-    Timecop.freeze(Time.at(1002)) { dispatcher.send(:tick) } # within window, skipped
-    Timecop.freeze(Time.at(1004)) { dispatcher.send(:tick) } # still within window, skipped
-    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) } # window elapsed, dispatches
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1002)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1004)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1005)) { dispatcher.send(:tick) }
 
     assert_requested(:post, "https://data.hirefire.io/metrics/ingest", times: 2)
   end
@@ -520,7 +520,7 @@ class HireFire::DispatcherTest < Minitest::Test
     stub_ingest_with_dispatch_frequency(HireFire::Dispatcher::MAX_DISPATCH_FREQUENCY + 100)
 
     dispatcher = configure_web_only
-    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # learns the clamped value
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
 
     assert_equal HireFire::Dispatcher::MAX_DISPATCH_FREQUENCY,
       dispatcher.instance_variable_get(:@dispatch_frequency)
@@ -553,7 +553,7 @@ class HireFire::DispatcherTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 500)
 
     dispatcher = configure_workers_only
-    dispatcher.send(:tick) # 500, workers-only, so data[:web] is empty
+    dispatcher.send(:tick)
 
     assert_empty HireFire.configuration.buffer.flush[:web]
     assert_includes log.string, "Dispatch error"

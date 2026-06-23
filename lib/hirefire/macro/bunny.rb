@@ -74,10 +74,8 @@ module HireFire
 
       private
 
-      # A passive declare of a missing queue makes the broker close the channel
-      # (404). Closing an already-closed channel raises, which in this ensure
-      # block would mask the original error and skip the connection close,
-      # leaking the connection.
+      # A missing queue's passive declare makes the broker close the channel (404).
+      # Closing it again raises, masking the real error and leaking the connection.
       def close_channel(channel)
         channel&.close
       rescue ::Bunny::Exception, Timeout::Error
@@ -95,9 +93,8 @@ module HireFire
       def open_channel(connection, close_connection_on_failure:)
         connection.create_channel
       rescue
-        # create_channel runs before the caller's begin/ensure, so a channel-open
-        # failure on an owned connection would leak it. A borrowed connection is
-        # left for its owner to manage.
+        # create_channel runs before the caller's ensure, so an owned connection
+        # would leak on failure. A borrowed connection is left to its owner.
         close_connection(connection) if close_connection_on_failure
         raise
       end

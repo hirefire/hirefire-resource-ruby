@@ -223,10 +223,10 @@ class HireFire::LeaseTest < Minitest::Test
       })
 
     lease.request_if_due
-    lease.sample_if_due {} # first sample, due immediately
+    lease.sample_if_due {}
 
     sampled = false
-    lease.sample_if_due { sampled = true } # second, not yet due
+    lease.sample_if_due { sampled = true }
 
     refute sampled
   end

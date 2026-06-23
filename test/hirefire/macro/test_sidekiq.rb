@@ -45,7 +45,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   def test_job_queue_latency_with_retry_jobs
     Timecop.freeze(Time.now + 150) { enqueue_retry }
     Timecop.freeze(Time.now - 450) { enqueue_retry }
-    Timecop.freeze(Time.now - 300) { 50.times { enqueue_retry } } # test pagination
+    Timecop.freeze(Time.now - 300) { 50.times { enqueue_retry } }
     Timecop.freeze(Time.now - 150) { enqueue }
     assert_in_delta 450, HireFire::Macro::Sidekiq.job_queue_latency, LATENCY_DELTA
     assert_in_delta 450, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
@@ -54,7 +54,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   def test_job_queue_latency_with_scheduled_jobs
     Timecop.freeze(Time.now + 150) { enqueue_scheduled }
     Timecop.freeze(Time.now - 450) { enqueue_scheduled }
-    Timecop.freeze(Time.now - 300) { 50.times { enqueue_scheduled } } # test pagination
+    Timecop.freeze(Time.now - 300) { 50.times { enqueue_scheduled } }
     Timecop.freeze(Time.now - 150) { enqueue }
     assert_in_delta 450, HireFire::Macro::Sidekiq.job_queue_latency, LATENCY_DELTA
     assert_in_delta 450, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA

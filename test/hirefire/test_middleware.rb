@@ -194,10 +194,8 @@ class HireFire::MiddlewareTest < Minitest::Test
       config.dyno(:web)
     end
 
-    # The same instant (epoch 1700000000.250) expressed in each unit a router
-    # may emit, all must normalize to the identical 750ms queue time at now=…001.
-    # The fractional 250ms exercises the sub-millisecond path in every unit,
-    # including nanoseconds (where the value exceeds a double's integer range).
+    # The same instant in every unit a router may emit, all normalizing to 750ms.
+    # The 250ms fraction tests the sub-ms path, including ns (beyond a double's exact int range).
     {
       seconds: "t=1700000000.250",
       milliseconds: "1700000000250",

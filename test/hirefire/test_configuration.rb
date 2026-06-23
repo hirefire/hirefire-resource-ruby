@@ -32,8 +32,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_empty @configuration.cpu
   end
 
-  # dyno: legacy / Heroku front door (full truth table)
-
   def test_dyno_web_configures_http
     @configuration.dyno(:web)
     assert_instance_of HireFire::Web, @configuration.web
@@ -105,8 +103,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_equal ["clock"], @configuration.cpu.map(&:name)
   end
 
-  # service: universal / platform-neutral front door (full truth table)
-
   def test_service_http_configures_http
     @configuration.service(:web, tracking: :http)
     assert_instance_of HireFire::Web, @configuration.web
@@ -159,8 +155,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     @configuration.service(:web, tracking: "http")
     assert_instance_of HireFire::Web, @configuration.web
   end
-
-  # Shared invariants across both front doors
 
   def test_empty_name_raises
     assert_raises(ArgumentError) { @configuration.dyno(nil, tracking: :cpu) }
@@ -217,8 +211,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_equal ["clock"], @configuration.cpu.map(&:name)
   end
 
-  # Memoized collaborators
-
   def test_dispatcher_returns_instance
     assert_instance_of HireFire::Dispatcher, @configuration.dispatcher
   end
@@ -251,8 +243,6 @@ class HireFire::ConfigurationTest < Minitest::Test
   def test_buffer_is_memoized
     assert_same @configuration.buffer, @configuration.buffer
   end
-
-  # Identity gating
 
   def test_cpu_collector_active_when_identity_matches
     ENV["HIREFIRE_SERVICE_NAME"] = "clock"
@@ -329,8 +319,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     @configuration.dispatcher
     assert_includes log.string, "app-wide"
   end
-
-  # Misc configuration
 
   def test_log_queue_metrics_defaults_to_false
     refute @configuration.log_queue_metrics

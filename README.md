@@ -30,7 +30,7 @@ The test suite runs against these minimum versions and the current latest releas
 
 Since 2011, HireFire has helped over 1,500 companies autoscale more than 5,000 [Heroku] applications across 10,000+ web and worker dynos.
 
-HireFire scales both web and worker dynos, including on the Standard tier, on whichever signal fits the workload: request queue time or throughput for web, job wait time or backlog for workers, and CPU utilization for compute-bound or fiber-based processes. Each measures real demand, so capacity follows actual load up and down.
+HireFire autoscales both web and worker dynos, on all dyno tiers, using whichever signal fits the workload: request queue time or requests per minute for web dynos, job queue latency or job queue size for worker dynos, and CPU utilization for compute-bound web or worker dynos. Each tracks real demand, so dynos are added when you need them and removed when you don't. You pay only for what you use.
 
 Learn more at the [home page][HireFire].
 
@@ -38,7 +38,7 @@ Learn more at the [home page][HireFire].
 
 ## Development
 
-Requires [Docker](https://www.docker.com/). PostgreSQL, MongoDB, Redis, and RabbitMQ for the macro tests run in containers. `bin/services up` starts them on Docker-assigned free host ports recorded in a git-ignored `.env` (read by the test suite); `bin/services down` stops them and removes `.env`.
+Requires [Docker](https://www.docker.com/). PostgreSQL, MongoDB, Redis, and RabbitMQ for the macro tests run in containers. `bin/services up` starts them on Docker-assigned free host ports recorded in a git-ignored `.env` (read by the test suite). `bin/services down` stops them and removes `.env`.
 
 - Run `bin/setup` to prepare the environment.
 - Run `bin/services up` / `bin/services down` to start / stop the database containers.

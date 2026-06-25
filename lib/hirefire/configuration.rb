@@ -35,8 +35,8 @@ module HireFire
       @token || ENV["HIREFIRE_TOKEN"]
     end
 
-    # Declares a service. Exactly like {#service}, plus the convention that a process named "web"
-    # implies `tracking: :http`.
+    # Declares a service by dyno name. Like {#service}, but the name "web" (case-insensitive)
+    # implies `tracking: :http` on its own, and `:cpu` is the only `tracking:` value it accepts.
     #
     # Resolution: `tracking: :cpu` tracks CPU, a sampler block tracks job metrics, and the name "web"
     # (case-insensitive) tracks http on its own. `:cpu` is the only `tracking:` value `dyno`
@@ -46,6 +46,7 @@ module HireFire
     # @param tracking [Symbol, String, nil] `:cpu`, or omit.
     # @yield a sampler returning the current job-queue metric (a non-negative, finite number).
     # @return [void]
+    # @raise [ArgumentError] the name is empty.
     # @raise [MissingSamplerError] a non-"web" name given with neither `tracking: :cpu` nor a sampler.
     # @raise [UnexpectedSamplerError] a sampler given alongside `tracking: :cpu`.
     # @raise [UnknownCollectorError] `tracking:` given anything other than `:cpu`.
@@ -94,6 +95,7 @@ module HireFire
     # @param tracking [Symbol, String, nil] `:http` or `:cpu`. Omit when passing a sampler.
     # @yield a sampler returning the current job-queue metric (a non-negative, finite number).
     # @return [void]
+    # @raise [ArgumentError] the name is empty.
     # @raise [MissingSamplerError] neither `tracking:` nor a sampler was given.
     # @raise [UnexpectedSamplerError] a sampler given alongside `tracking: :http` or `:cpu`.
     # @raise [UnknownCollectorError] `tracking:` given an unsupported value.

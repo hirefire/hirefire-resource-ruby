@@ -13,3 +13,4 @@
 # integration gem fresh and floats to the latest minor/patch of its major.
 /gemfiles/*.gemfile.lock
 CLAUDE.md
+.worktreeinclude

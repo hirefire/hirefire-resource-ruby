@@ -4,6 +4,10 @@ require "test_helper"
 require "rack/mock"
 
 class HireFire::MiddlewareTest < Minitest::Test
+  def log
+    @log ||= StringIO.new
+  end
+
   def setup
     super
     @app = proc { |_| [200, {}, ["Hello"]] }
@@ -398,6 +402,46 @@ class HireFire::MiddlewareTest < Minitest::Test
     @middleware.call(request)
 
     assert_empty HireFire.configuration.buffer.flush[:web]
+  end
+
+  def test_an_internal_failure_does_not_break_the_request
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+    HireFire.configuration.logger = Logger.new(log)
+
+    # An internal failure (here a refused thread in start) must be swallowed, not raised.
+    HireFire.configuration.dispatcher.stubs(:start).raises(ThreadError.new("cannot create thread"))
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+      status, _headers, body = @middleware.call(request)
+
+      assert_equal 200, status
+      assert_equal ["Hello"], body
+    end
+
+    assert_includes log.string, "Middleware error"
+  end
+
+  def test_an_error_raised_by_the_host_app_still_propagates
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    # The guard wraps only the bookkeeping, never @app.call, so host errors propagate.
+    middleware = HireFire::Middleware.new(proc { |_| raise "boom from the app" })
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+      error = assert_raises(RuntimeError) { middleware.call(request) }
+      assert_equal "boom from the app", error.message
+    end
   end
 
   def test_returns_the_apps_response_on_the_sampling_path

@@ -25,22 +25,29 @@ module HireFire
     end
 
     def start
+      return false if @running && @pid == Process.pid # fast path: skip the mutex when already running
+
       @mutex.synchronize do
         return false if @running && @pid == Process.pid
 
-        @running = true
-        @pid = Process.pid
+        # Spawn before flipping @running so a failed spawn stays retryable, not latched
+        # "running" with no loop. Called unguarded from configure, so it must not raise.
         @thread = Thread.new do
           while running?
             tick
             sleep 1
           end
         end
+        @running = true
+        @pid = Process.pid
       end
 
       logger.info "[HireFire] Starting dispatcher."
 
       true
+    rescue => e
+      logger.error "[HireFire] Could not start dispatcher: #{e.message}"
+      false
     end
 
     def stop

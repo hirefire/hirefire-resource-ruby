@@ -32,6 +32,9 @@ module HireFire
       if configuration.log_queue_metrics
         log_request_queue_time(request_queue_time)
       end
+    rescue => e
+      # Never raise the library's own bookkeeping into the customer's request.
+      HireFire.configuration.logger.error "[HireFire] Middleware error: #{e.message}"
     end
 
     def log_request_queue_time(request_queue_time)

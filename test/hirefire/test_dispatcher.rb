@@ -71,6 +71,21 @@ class HireFire::DispatcherTest < Minitest::Test
     refute dispatcher.stop
   end
 
+  def test_a_failed_thread_spawn_leaves_the_dispatcher_retryable
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    dispatcher = configure_web_only
+
+    Thread.stubs(:new).raises(ThreadError.new("cannot create thread"))
+    refute dispatcher.start # spawn failed: no loop, returns false instead of raising
+    refute dispatcher.running? # state not latched running with no thread
+    assert_includes log.string, "Could not start dispatcher"
+
+    Thread.unstub(:new)
+    assert dispatcher.start # a later call retries cleanly
+    assert dispatcher.running?
+    dispatcher.stop
+  end
+
   def test_dispatches_web_metrics
     stub_lease
     request = stub_request(:post, "https://data.hirefire.io/metrics/ingest")

@@ -8,8 +8,12 @@ module HireFire
   class Client
     class RequestError < StandardError; end
 
+    STALE_CONNECTION_ERRORS = [EOFError, Errno::ECONNRESET, Errno::ECONNABORTED, Errno::EPIPE].freeze
+
     def initialize(timeout: 5)
       @timeout = timeout
+      @mutex = Mutex.new
+      @http = nil
     end
 
     def submit_samples(body)
@@ -47,15 +51,42 @@ module HireFire
     private
 
     def execute(uri, request)
+      @mutex.synchronize do
+        reused = @http&.started? || false
+        connection(uri).request(request)
+      rescue Timeout::Error
+        reset_connection
+        raise RequestError, "Request timed out."
+      rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError => e
+        reset_connection
+        retry if reused && stale_connection?(e)
+        raise RequestError, "Network error (#{e.class}: #{e.message})."
+      end
+    end
+
+    def connection(uri)
+      return @http if @http&.started? && @http.address == uri.host && @http.port == uri.port
+
+      reset_connection
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = uri.scheme == "https"
       http.read_timeout = @timeout
       http.open_timeout = @timeout
-      http.request(request)
-    rescue Timeout::Error
-      raise RequestError, "Request timed out."
-    rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError => e
-      raise RequestError, "Network error (#{e.class}: #{e.message})."
+      http.keep_alive_timeout = 30
+      http.start
+      @http = http
+    end
+
+    def reset_connection
+      @http&.finish if @http&.started?
+    rescue IOError
+      nil
+    ensure
+      @http = nil
+    end
+
+    def stale_connection?(error)
+      STALE_CONNECTION_ERRORS.any? { |klass| error.is_a?(klass) }
     end
 
     def ingest_uri

@@ -92,6 +92,43 @@ class HireFire::ClientTest < Minitest::Test
     end
   end
 
+  def test_reuses_a_single_connection_across_requests
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    client.submit_samples("[]")
+    first = client.instance_variable_get(:@http)
+    client.submit_samples("[]")
+    second = client.instance_variable_get(:@http)
+
+    assert first.started?
+    assert_same first, second
+  end
+
+  def test_reconnects_and_retries_once_on_a_stale_keep_alive_socket
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]") # establish the persistent connection
+    established = client.instance_variable_get(:@http)
+
+    # Peer dropped the idle socket: the next write resets, the retry then succeeds.
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_raise(Errno::ECONNRESET).then
+      .to_return(status: 200)
+
+    result = client.submit_samples("[]")
+
+    assert_kind_of Net::HTTPSuccess, result
+    refute_same established, client.instance_variable_get(:@http) # reconnected
+  end
+
+  def test_does_not_retry_a_cold_connection_failure
+    # A cold connection is not reused, so the reset raises without reaching the queued 200.
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_raise(Errno::ECONNRESET).then
+      .to_return(status: 200)
+
+    assert_raises(HireFire::Client::RequestError) { client.submit_samples("[]") }
+  end
+
   def test_request_lease_sends_process_id
     request = stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .with(headers: {

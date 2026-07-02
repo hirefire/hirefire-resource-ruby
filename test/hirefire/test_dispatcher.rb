@@ -189,6 +189,7 @@ class HireFire::DispatcherTest < Minitest::Test
       .to_return(status: 401)
 
     dispatcher = configure_workers_only
+    dispatcher.send(:worker_tick)
     dispatcher.send(:tick)
 
     assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
@@ -260,6 +261,42 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_equal %w[1011 1012], bodies[1][0]["samples"].keys.sort
   end
 
+  def test_dispatch_tick_does_not_run_worker_sampling
+    stub_lease(granted: true)
+    bodies = capture_ingest_bodies
+    sampled = false
+
+    Timecop.freeze Time.at(1000) do
+      HireFire.configuration.dyno(:web)
+      HireFire.configuration.dyno(:worker) { sampled = true }
+      dispatcher = HireFire.configuration.dispatcher
+      HireFire.configuration.buffer.sample_web(5)
+
+      dispatcher.send(:tick)
+    end
+
+    assert_equal ["web"], bodies[0].map { |e| e["name"] }
+    refute sampled
+  end
+
+  def test_worker_tick_samples_without_dispatching_and_a_later_tick_delivers_it
+    stub_lease(granted: true)
+    bodies = capture_ingest_bodies
+
+    Timecop.freeze Time.at(1000) do
+      HireFire.configuration.dyno(:worker) { 42 }
+      dispatcher = HireFire.configuration.dispatcher
+
+      dispatcher.send(:worker_tick)
+      assert_empty bodies
+
+      dispatcher.send(:tick)
+    end
+
+    assert_equal 1, bodies.size
+    assert(bodies[0].any? { |e| e["name"] == "worker" && e["sample"] == 42 })
+  end
+
   def test_combined_web_and_worker_dispatch
     stub_lease(granted: true)
 
@@ -275,6 +312,7 @@ class HireFire::DispatcherTest < Minitest::Test
     Timecop.freeze Time.at(1000) do
       dispatcher = configure_web_and_workers
       HireFire.configuration.buffer.sample_web(5)
+      dispatcher.send(:worker_tick)
       dispatcher.send(:tick)
     end
 
@@ -292,6 +330,7 @@ class HireFire::DispatcherTest < Minitest::Test
       .to_return(status: 200)
 
     dispatcher = configure_workers_only
+    dispatcher.send(:worker_tick)
     dispatcher.send(:tick)
 
     assert_requested ingest
@@ -301,6 +340,7 @@ class HireFire::DispatcherTest < Minitest::Test
     stub_lease
 
     dispatcher = configure_workers_only
+    dispatcher.send(:worker_tick)
     dispatcher.send(:tick)
 
     assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
@@ -436,6 +476,7 @@ class HireFire::DispatcherTest < Minitest::Test
     Timecop.freeze Time.at(1000) do
       dispatcher = configure_web_and_workers
       HireFire.configuration.buffer.sample_web(12)
+      dispatcher.send(:worker_tick)
       dispatcher.send(:tick)
     end
 
@@ -450,7 +491,9 @@ class HireFire::DispatcherTest < Minitest::Test
     Timecop.freeze Time.at(1000) do
       HireFire.configuration.dyno(:web)
       HireFire.configuration.dyno(:worker) { raise "Redis down" }
-      HireFire.configuration.dispatcher.send(:tick)
+      dispatcher = HireFire.configuration.dispatcher
+      dispatcher.send(:worker_tick)
+      dispatcher.send(:tick)
     end
 
     assert_equal 1, bodies.size
@@ -568,6 +611,7 @@ class HireFire::DispatcherTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 500)
 
     dispatcher = configure_workers_only
+    dispatcher.send(:worker_tick)
     dispatcher.send(:tick)
 
     assert_empty HireFire.configuration.buffer.flush[:web]

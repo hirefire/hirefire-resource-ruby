@@ -19,6 +19,8 @@ module HireFire
       @mutex = Mutex.new
       @running = false
       @pid = nil
+      @thread = nil
+      @worker_thread = nil
       @last_web_second = nil
       @dispatch_frequency = DEFAULT_DISPATCH_FREQUENCY
       @next_dispatch_at = nil
@@ -32,12 +34,8 @@ module HireFire
 
         # Spawn before flipping @running so a failed spawn stays retryable, not latched
         # "running" with no loop. Called unguarded from configure, so it must not raise.
-        @thread = Thread.new do
-          while running?
-            tick
-            sleep 1
-          end
-        end
+        @thread = Thread.new { loop_until_stopped { tick } }
+        @worker_thread = Thread.new { loop_until_stopped { worker_tick } } if @workers.any?
         @running = true
         @pid = Process.pid
       end
@@ -51,18 +49,19 @@ module HireFire
     end
 
     def stop
-      thread = nil
+      threads = nil
 
       @mutex.synchronize do
         return false unless @running
 
         @running = false
-        thread = @thread if @pid == Process.pid
+        threads = [@thread, @worker_thread].compact if @pid == Process.pid
         @thread = nil
+        @worker_thread = nil
         @pid = nil
       end
 
-      thread&.join(5)
+      threads&.each { |thread| thread.join(5) }
 
       dispatch
 
@@ -77,11 +76,21 @@ module HireFire
 
     private
 
+    def loop_until_stopped
+      while running?
+        yield
+        sleep 1
+      end
+    end
+
     def tick
-      guard { @lease.request_if_due }
-      guard { @lease.sample_if_due { @workers.sample } }
       @cpu.each { |collector| guard { collector.sample } }
       dispatch_if_due
+    end
+
+    def worker_tick
+      guard { @lease.request_if_due }
+      guard { @lease.sample_if_due { @workers.sample } }
     end
 
     def dispatch_if_due

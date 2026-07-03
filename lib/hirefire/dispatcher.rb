@@ -3,9 +3,7 @@
 module HireFire
   class Dispatcher
     WEB_BACKFILL_LIMIT = 60
-
     PAYLOAD_SIZE_LIMIT = 65_536
-
     DEFAULT_DISPATCH_FREQUENCY = 1
     MAX_DISPATCH_FREQUENCY = 30
 
@@ -27,15 +25,13 @@ module HireFire
     end
 
     def start
-      return false if @running && @pid == Process.pid # fast path: skip the mutex when already running
+      return false if @running && @pid == Process.pid
 
       @mutex.synchronize do
         return false if @running && @pid == Process.pid
 
         buffer.discard_inherited if @pid && @pid != Process.pid
 
-        # Spawn before flipping @running so a failed spawn stays retryable, not latched
-        # "running" with no loop. Called unguarded from configure, so it must not raise.
         @thread = Thread.new { loop_until_stopped { tick } }
         @worker_thread = Thread.new { loop_until_stopped { worker_tick } } if @workers.any?
         @running = true
@@ -67,7 +63,6 @@ module HireFire
 
       dispatch
 
-      # After the final dispatch, which reopens the client.
       @client.close
       @lease.close
 
@@ -100,16 +95,10 @@ module HireFire
     end
 
     def dispatch_if_due
-      return if @next_dispatch_at && monotonic < @next_dispatch_at
+      return if @next_dispatch_at && Clock.monotonic < @next_dispatch_at
 
       dispatch
-      @next_dispatch_at = monotonic + @dispatch_frequency
-    end
-
-    # Pace off the monotonic clock so a wall-clock step (e.g. NTP) cannot skew the cadence.
-    # The sample timestamps stay wall-clock (backfill_web_seconds), since the server keys on them.
-    def monotonic
-      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      @next_dispatch_at = Clock.monotonic + @dispatch_frequency
     end
 
     def guard
@@ -120,16 +109,16 @@ module HireFire
 
     def dispatch
       data = buffer.flush
-      payload = build_payload(data)
+      payload, watermark = build_payload(data)
       return if payload.empty?
 
       body = JSON.generate(payload)
-      return drop_oversized_payload(body) if body.bytesize > PAYLOAD_SIZE_LIMIT
+      return drop_oversized_payload(body, watermark) if body.bytesize > PAYLOAD_SIZE_LIMIT
 
       Log.safe(logger, :info, "[HireFire] Dispatching metrics: #{body}") if ENV["HIREFIRE_VERBOSE"]
       response = @client.submit_samples(body)
       apply_dispatch_frequency(response)
-      @last_web_second = @web_watermark if @web_watermark
+      @last_web_second = watermark if watermark
     rescue => e
       buffer.repopulate_web(data[:web]) if data && data[:web].any?
       Log.safe(logger, :error, "[HireFire] Dispatch error: #{e.message}")
@@ -144,18 +133,19 @@ module HireFire
       @dispatch_frequency = value.clamp(DEFAULT_DISPATCH_FREQUENCY, MAX_DISPATCH_FREQUENCY)
     end
 
-    def drop_oversized_payload(body)
-      @last_web_second = @web_watermark if @web_watermark
+    def drop_oversized_payload(body, watermark)
+      @last_web_second = watermark if watermark
       Log.safe(logger, :error, "[HireFire] Dropped metrics payload: #{body.bytesize} bytes exceeds " \
         "the #{PAYLOAD_SIZE_LIMIT}-byte limit. Resuming from the current second.")
     end
 
     def build_payload(data)
       entries = []
+      watermark = nil
 
       if @web && @web_liveness
         samples = backfill_web_seconds(data[:web])
-        @web_watermark = samples.keys.max
+        watermark = samples.keys.max
         entries << {"name" => @web.name, "samples" => samples.transform_keys(&:to_s)}
       elsif @web && data[:web].any?
         entries << {"name" => @web.name, "samples" => data[:web].transform_keys(&:to_s)}
@@ -167,7 +157,7 @@ module HireFire
         entries << {"name" => name, "samples" => samples.transform_keys(&:to_s)}
       end
 
-      entries
+      [entries, watermark]
     end
 
     def backfill_web_seconds(samples)

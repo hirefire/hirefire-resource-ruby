@@ -654,14 +654,13 @@ class HireFire::DispatcherTest < Minitest::Test
     bodies = capture_ingest_bodies
 
     dispatcher = configure_web_only
-    # Drive the monotonic pacing clock independently of the wall clock.
-    clock = 500.0
-    dispatcher.define_singleton_method(:monotonic) { clock }
+    # Drive the monotonic pacing clock independently of the wall clock: 500 on the first read,
+    # then 502 (past the 1s interval) for every read after.
+    HireFire::Clock.stubs(:monotonic).returns(500.0, 502.0, 502.0)
 
     Timecop.freeze(Time.at(1000)) do
       dispatcher.send(:tick) # first dispatch, next due at monotonic 501
-      clock = 502.0 # monotonic advances past the 1s interval, wall clock unchanged
-      dispatcher.send(:tick) # dispatches again on the same wall second
+      dispatcher.send(:tick) # monotonic now 502, past the interval: dispatches again on the same wall second
     end
 
     # Two dispatches on one frozen wall second: pacing follows the monotonic clock, not the

@@ -8,8 +8,14 @@ module HireFire
   class Client
     class RequestError < StandardError; end
 
-    STALE_CONNECTION_ERRORS = [EOFError, Errno::ECONNRESET, Errno::ECONNABORTED, Errno::EPIPE,
-      Net::HTTPBadResponse, Net::ProtocolError].freeze
+    STALE_CONNECTION_ERRORS = [
+      EOFError,
+      Errno::ECONNRESET,
+      Errno::ECONNABORTED,
+      Errno::EPIPE,
+      Net::HTTPBadResponse,
+      Net::ProtocolError
+    ].freeze
 
     def initialize(timeout: 5)
       @timeout = timeout
@@ -50,7 +56,6 @@ module HireFire
       execute(uri, request)
     end
 
-    # Takes the same mutex as execute, so it never closes a socket mid-request.
     def close
       @mutex.synchronize { reset_connection }
     end
@@ -75,20 +80,16 @@ module HireFire
       return @http if reusable?(uri)
 
       reset_connection
-      # Connect directly (nil proxy) so Net::HTTP's default :ENV proxy lookup cannot let an
-      # ambient http_proxy silently intercept token-bearing traffic (matching Python/Node).
       http = Net::HTTP.new(uri.host, uri.port, nil)
       http.use_ssl = uri.scheme == "https"
       http.read_timeout = @timeout
       http.open_timeout = @timeout
-      http.keep_alive_timeout = 60 # outlast the 30s max dispatch interval
+      http.keep_alive_timeout = 60
       http.start
       @owner_pid = Process.pid
       @http = http
     end
 
-    # Reuse only a live connection this process opened to the same host. The PID check
-    # rebuilds after a fork: the child inherits @http, but its socket is shared with the parent.
     def reusable?(uri)
       @http&.started? && @owner_pid == Process.pid &&
         @http.address == uri.host && @http.port == uri.port

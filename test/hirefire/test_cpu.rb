@@ -105,7 +105,7 @@ class HireFire::CPUTest < Minitest::Test
     HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
     collector = HireFire::CPU.new("clock")
-    collector.stubs(:monotonic).returns(100.0, 101.0)
+    HireFire::Clock.stubs(:monotonic).returns(100.0, 101.0)
 
     # Wall clock frozen at the same second for both reads: a wall-clock elapsed delta
     # would be 0 and skip. The monotonic clock advances 1s, so 0.5 CPU-seconds over it

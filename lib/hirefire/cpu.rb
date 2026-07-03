@@ -12,7 +12,7 @@ module HireFire
     end
 
     def sample
-      time = monotonic
+      time = Clock.monotonic
       usage, source = Usage.reading
 
       previous_usage = @last_usage
@@ -27,7 +27,6 @@ module HireFire
       elapsed_delta = time - previous_time
       usage_delta = usage - previous_usage
 
-      # elapsed_delta <= 0 is a backstop: the monotonic clock never steps back.
       return if elapsed_delta <= 0 || usage_delta < 0
 
       available = Usage.available_cpus
@@ -37,14 +36,6 @@ module HireFire
       percentage = (cores_used / available * 100.0).clamp(0.0, 100.0)
 
       HireFire.configuration.buffer.sample_cpu(@name, percentage.round(2))
-    end
-
-    private
-
-    # Measure the interval on the monotonic clock so a wall-clock step (e.g. NTP) cannot
-    # distort the utilization delta. The buffered sample's bucket timestamp stays wall-clock.
-    def monotonic
-      Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
   end
 end

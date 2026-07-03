@@ -91,7 +91,7 @@ class HireFire::BufferTest < Minitest::Test
 
     data = buffer.flush
     assert_operator data[:web].size, :<=, 66
-    assert_equal 1006, data[:web].keys.min # seconds beyond the TTL pruned
+    assert_equal 1006, data[:web].keys.min
     assert_equal 1070, data[:web].keys.max
   end
 
@@ -149,7 +149,6 @@ class HireFire::BufferTest < Minitest::Test
   end
 
   def test_repopulate_web_keeps_the_second_exactly_at_the_ttl_boundary
-    # 40 == now - ttl: the boundary second is inside the window (drop is `<`).
     Timecop.freeze Time.at(100) do
       buffer.repopulate_web({40 => [5]})
     end

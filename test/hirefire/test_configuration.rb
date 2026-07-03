@@ -353,8 +353,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_nil @configuration.token
   end
 
-  # Regression guard: the selector is the `tracking:` keyword, not positional.
-
   def test_dyno_rejects_a_positional_second_argument
     assert_raises(ArgumentError) { @configuration.dyno(:web, :cpu) }
   end
@@ -375,10 +373,10 @@ class HireFire::ConfigurationTest < Minitest::Test
     log = StringIO.new
     @configuration.logger = Logger.new(log)
 
-    @configuration.dyno(:web)                   # web_liveness? resolves identity
-    @configuration.dyno(:clock, tracking: :cpu) # active_cpu_collectors resolves identity too
+    @configuration.dyno(:web)
+    @configuration.dyno(:clock, tracking: :cpu)
 
-    @configuration.dispatcher # both gates run, but resolution (and the warning) is memoized
+    @configuration.dispatcher
 
     assert_equal 1, log.string.scan("app-wide").size
   end

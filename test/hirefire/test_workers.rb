@@ -74,7 +74,7 @@ class HireFire::WorkersTest < Minitest::Test
     raising_logger.define_singleton_method(:error) { |*| raise IOError, "closed stream" }
     HireFire.configuration.logger = raising_logger
 
-    HireFire.configuration.workers.sample # must not propagate the logger's IOError
+    HireFire.configuration.workers.sample
   end
 
   def test_enumerable
@@ -122,7 +122,6 @@ class HireFire::WorkersTest < Minitest::Test
 
     HireFire.configuration.workers.sample
 
-    # 0 is a valid idle-queue reading, not a sampler failure.
     assert_equal [{"name" => "worker", "sample" => 0}], buffer.flush[:workers]
   end
 end

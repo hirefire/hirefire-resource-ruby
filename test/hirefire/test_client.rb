@@ -106,10 +106,9 @@ class HireFire::ClientTest < Minitest::Test
 
   def test_reconnects_and_retries_once_on_a_stale_keep_alive_socket
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
-    client.submit_samples("[]") # establish the persistent connection
+    client.submit_samples("[]")
     established = client.instance_variable_get(:@http)
 
-    # Peer dropped the idle socket: the next write resets, the retry then succeeds.
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .to_raise(Errno::ECONNRESET).then
       .to_return(status: 200)
@@ -117,11 +116,10 @@ class HireFire::ClientTest < Minitest::Test
     result = client.submit_samples("[]")
 
     assert_kind_of Net::HTTPSuccess, result
-    refute_same established, client.instance_variable_get(:@http) # reconnected
+    refute_same established, client.instance_variable_get(:@http)
   end
 
   def test_does_not_retry_a_cold_connection_failure
-    # A cold connection is not reused, so the reset raises without reaching the queued 200.
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .to_raise(Errno::ECONNRESET).then
       .to_return(status: 200)
@@ -134,13 +132,12 @@ class HireFire::ClientTest < Minitest::Test
     client.submit_samples("[]")
     inherited = client.instance_variable_get(:@http)
 
-    # Simulate a fork: the child inherits @http, but its PID no longer owns the socket.
     client.instance_variable_set(:@owner_pid, client.instance_variable_get(:@owner_pid) - 1)
 
     client.submit_samples("[]")
     rebuilt = client.instance_variable_get(:@http)
 
-    refute_same inherited, rebuilt # a fresh socket, never the parent's
+    refute_same inherited, rebuilt
     assert_equal Process.pid, client.instance_variable_get(:@owner_pid)
   end
 
@@ -148,16 +145,14 @@ class HireFire::ClientTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
     client.submit_samples("[]")
 
-    # Must exceed the 30s dispatch ceiling or reuse silently drops at the slowest cadence.
     assert_operator client.instance_variable_get(:@http).keep_alive_timeout, :>, 30
   end
 
   def test_reconnects_and_retries_once_on_a_desynced_keep_alive_response
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
-    client.submit_samples("[]") # establish the persistent connection
+    client.submit_samples("[]")
     established = client.instance_variable_get(:@http)
 
-    # A reused socket reading a garbled status line is a stale-stream symptom: reset and retry.
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .to_raise(Net::HTTPBadResponse).then
       .to_return(status: 200)

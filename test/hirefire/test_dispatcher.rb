@@ -76,12 +76,12 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher = configure_web_only
 
     Thread.stubs(:new).raises(ThreadError.new("cannot create thread"))
-    refute dispatcher.start # spawn failed: no loop, returns false instead of raising
-    refute dispatcher.running? # state not latched running with no thread
+    refute dispatcher.start
+    refute dispatcher.running?
     assert_includes log.string, "Could not start dispatcher"
 
     Thread.unstub(:new)
-    assert dispatcher.start # a later call retries cleanly
+    assert dispatcher.start
     assert dispatcher.running?
     dispatcher.stop
   end
@@ -352,8 +352,8 @@ class HireFire::DispatcherTest < Minitest::Test
     bodies = capture_ingest_bodies
 
     dispatcher = configure_cpu_only("clock")
-    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) } # seeds baseline only
-    Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) } # 0.5 core over 1s => 50%
+    Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
+    Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) }
 
     assert_equal 1, bodies.size
     entry = bodies[0][0]
@@ -442,7 +442,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
     ENV["HIREFIRE_SERVICE_NAME"] = "web"
     HireFire.configuration.dyno(:web)
-    HireFire.configuration.dyno(:worker, tracking: :cpu) # dormant here: identity is "web"
+    HireFire.configuration.dyno(:worker, tracking: :cpu)
     dispatcher = HireFire.configuration.dispatcher
 
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
@@ -457,7 +457,6 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher = configure_web_only
     assert dispatcher.start
 
-    # Simulate a fork: @running is inherited from the parent, but its thread is not.
     child_pid = Process.pid + 1
     Process.stubs(:pid).returns(child_pid)
 
@@ -530,7 +529,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
     dispatcher = configure_web_only
     dispatcher.start
-    dispatched.pop # block until the background thread runs a real tick
+    dispatched.pop
     assert dispatcher.running?
 
     dispatcher.stop
@@ -541,7 +540,6 @@ class HireFire::DispatcherTest < Minitest::Test
     bodies = capture_ingest_bodies
 
     dispatcher = configure_web_only
-    # Mark running without spawning the thread, so the only dispatch is stop's.
     dispatcher.instance_variable_set(:@running, true)
     dispatcher.instance_variable_set(:@pid, Process.pid)
 
@@ -555,8 +553,6 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def test_stop_closes_the_persistent_connections
-    # Workers-only with an empty buffer: stop's final dispatch is a no-op, so the only
-    # thing under test is that both keep-alive clients are released.
     dispatcher = configure_workers_only
     dispatcher.instance_variable_get(:@client).expects(:close)
     dispatcher.instance_variable_get(:@lease).expects(:close)
@@ -654,17 +650,13 @@ class HireFire::DispatcherTest < Minitest::Test
     bodies = capture_ingest_bodies
 
     dispatcher = configure_web_only
-    # Drive the monotonic pacing clock independently of the wall clock: 500 on the first read,
-    # then 502 (past the 1s interval) for every read after.
     HireFire::Clock.stubs(:monotonic).returns(500.0, 502.0, 502.0)
 
     Timecop.freeze(Time.at(1000)) do
-      dispatcher.send(:tick) # first dispatch, next due at monotonic 501
-      dispatcher.send(:tick) # monotonic now 502, past the interval: dispatches again on the same wall second
+      dispatcher.send(:tick)
+      dispatcher.send(:tick)
     end
 
-    # Two dispatches on one frozen wall second: pacing follows the monotonic clock, not the
-    # wall clock (which would have skipped the second, zero-wall-delta dispatch).
     assert_equal 2, bodies.size
   end
 end

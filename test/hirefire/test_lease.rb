@@ -116,7 +116,7 @@ class HireFire::LeaseTest < Minitest::Test
     assert_raises(HireFire::Client::RequestError) { lease.request_if_due }
     refute lease.granted?
 
-    lease.request_if_due # not due again until the TTL elapses
+    lease.request_if_due
 
     assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 1)
   end
@@ -245,7 +245,7 @@ class HireFire::LeaseTest < Minitest::Test
     sampled = false
     lease.sample_if_due { sampled = true }
 
-    refute sampled # the raising sample consumed this window, no retry-per-tick
+    refute sampled
   end
 
   def test_sample_if_due_advances_next_sample_at
@@ -270,7 +270,7 @@ class HireFire::LeaseTest < Minitest::Test
     lease.request_if_due
 
     assert lease.granted?
-    assert_equal 15, lease.sample_frequency # default retained, no header to update it
+    assert_equal 15, lease.sample_frequency
   end
 
   def test_grants_only_on_a_literal_true
@@ -282,14 +282,14 @@ class HireFire::LeaseTest < Minitest::Test
 
     lease.request_if_due
 
-    refute lease.granted? # only the exact string "true" grants
+    refute lease.granted?
   end
 
   def test_clamps_a_garbled_sample_frequency_to_a_sane_floor
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {
         "HireFire-Lease-Granted" => "true",
-        "HireFire-Sample-Frequency" => "0" # a bad header must not sample every tick
+        "HireFire-Sample-Frequency" => "0"
       })
 
     lease.request_if_due
@@ -301,7 +301,7 @@ class HireFire::LeaseTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {
         "HireFire-Lease-Granted" => "true",
-        "HireFire-Lease-TTL" => "0" # a bad header must not re-request every tick
+        "HireFire-Lease-TTL" => "0"
       })
 
     lease.request_if_due
@@ -329,7 +329,7 @@ class HireFire::LeaseTest < Minitest::Test
     lease.request_if_due
 
     refute lease.granted?
-    assert_equal 15, lease.sample_frequency # a 401 returns before reading headers
+    assert_equal 15, lease.sample_frequency
   end
 
   def test_expiry_paces_off_the_monotonic_clock_not_the_wall_clock
@@ -340,11 +340,10 @@ class HireFire::LeaseTest < Minitest::Test
       })
 
     HireFire::Clock.stubs(:monotonic).returns(5000.0)
-    lease.instance_variable_set(:@expires_at, 5000.0) # re-seed the boot reading onto the stubbed clock
+    lease.instance_variable_set(:@expires_at, 5000.0)
 
-    Timecop.freeze(Time.at(1000)) { lease.request_if_due } # wall clock far from the monotonic reading
+    Timecop.freeze(Time.at(1000)) { lease.request_if_due }
 
-    # @expires_at derives from the monotonic clock (5000 + 30), never the wall clock (1000 + 30).
     assert_equal 5030.0, lease.instance_variable_get(:@expires_at)
   end
 

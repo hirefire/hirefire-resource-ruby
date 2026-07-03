@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-# Load .env (written by bin/services up) so the macro suites reach this checkout's services.
 env_file = File.expand_path("../.env", __dir__)
 if File.exist?(env_file)
   File.foreach(env_file) do |line|
@@ -31,11 +30,8 @@ require "timecop"
 
 Timecop.mock_process_clock = true
 
-# The dispatcher and lease pace off CLOCK_MONOTONIC (immune to wall-clock/NTP steps).
-# Timecop.freeze does not advance the monotonic clock by the frozen wall delta, so route
-# CLOCK_MONOTONIC through the frozen wall time here. Tests then drive pacing with
-# Timecop.freeze exactly as they drive the wall-clock sample timestamps. Every other clock
-# id (the CPU process-clock source) is left untouched.
+# Timecop.freeze does not advance CLOCK_MONOTONIC, which the dispatcher and lease pace off.
+# Route it through the frozen wall time so tests drive monotonic pacing with Timecop.freeze.
 Process.singleton_class.prepend(Module.new do
   def clock_gettime(clock_id, *args)
     return Time.now.to_f if clock_id == Process::CLOCK_MONOTONIC

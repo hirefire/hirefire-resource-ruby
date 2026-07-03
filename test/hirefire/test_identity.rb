@@ -80,7 +80,6 @@ class HireFire::IdentityTest < Minitest::Test
   end
 
   def test_dyno_name_with_a_single_trailing_segment_is_preserved
-    # One trailing "-<alnum>" segment is not a Fir pod suffix (needs two).
     ENV["DYNO"] = "worker-abc123"
     assert_equal "worker-abc123", HireFire::Identity.resolve
   end

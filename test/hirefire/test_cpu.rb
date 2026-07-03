@@ -25,7 +25,6 @@ class HireFire::CPUTest < Minitest::Test
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
-    # 0.5 CPU-seconds consumed over 1 wall-second on 1 available CPU => 50%.
     assert_equal({"clock" => {1001 => [50.0]}}, buffer.flush[:cpu])
   end
 
@@ -37,7 +36,6 @@ class HireFire::CPUTest < Minitest::Test
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
-    # 1 CPU-second over 1s on 4 CPUs => 25%.
     assert_equal({"worker" => {1001 => [25.0]}}, buffer.flush[:cpu])
   end
 
@@ -58,7 +56,6 @@ class HireFire::CPUTest < Minitest::Test
 
     collector = HireFire::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) { collector.sample }
-    # Source dropped 10.0 -> 5.0 between reads: skip, then re-baseline against 5.0.
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
     Timecop.freeze(Time.at(1002)) { collector.sample }
 
@@ -88,7 +85,6 @@ class HireFire::CPUTest < Minitest::Test
   end
 
   def test_non_positive_elapsed_delta_skips_the_sample
-    # Same instant + positive usage delta isolates the elapsed_delta <= 0 backstop.
     HireFire::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
     HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
@@ -107,9 +103,6 @@ class HireFire::CPUTest < Minitest::Test
     collector = HireFire::CPU.new("clock")
     HireFire::Clock.stubs(:monotonic).returns(100.0, 101.0)
 
-    # Wall clock frozen at the same second for both reads: a wall-clock elapsed delta
-    # would be 0 and skip. The monotonic clock advances 1s, so 0.5 CPU-seconds over it
-    # => 50%, bucketed by the (frozen) wall second.
     Timecop.freeze(Time.at(1000)) do
       collector.sample
       collector.sample
@@ -143,9 +136,9 @@ class HireFire::CPUTest < Minitest::Test
     HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
     collector = HireFire::CPU.new("clock")
-    Timecop.freeze(Time.at(1000)) { assert_nil collector.sample } # source down: no baseline
-    Timecop.freeze(Time.at(1001)) { assert_nil collector.sample } # source back: seeds baseline
-    Timecop.freeze(Time.at(1002)) { collector.sample }            # 0.5 over 1s on 1 CPU => 50%
+    Timecop.freeze(Time.at(1000)) { assert_nil collector.sample }
+    Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
+    Timecop.freeze(Time.at(1002)) { collector.sample }
 
     assert_equal({"clock" => {1002 => [50.0]}}, buffer.flush[:cpu])
   end
@@ -188,7 +181,6 @@ class HireFire::CPU::UsageTest < Minitest::Test
     Usage.stubs(:read).with("/proc/2/stat").returns("2 (puma (worker)) S 1 1 1 0 -1 0 0 0 0 0 150 100 0 0 20 0 1 0 9 0 0")
     Usage.stubs(:clock_ticks).returns(100)
 
-    # (500+250) + (150+100) = 1000 ticks / 100 = 10.0 seconds, whole-dyno.
     assert_in_delta 10.0, Usage.total_seconds, 0.0001
   end
 
@@ -251,7 +243,7 @@ class HireFire::CPU::UsageTest < Minitest::Test
   def test_cedar_dedicated_fingerprint_falls_through_to_processor_count
     ENV["DYNO"] = "web.1"
     Usage.stubs(:read).returns(nil)
-    Usage.stubs(:read).with(Usage::CEDAR_MEMORY_LIMIT).returns("2684354560") # performance-m
+    Usage.stubs(:read).with(Usage::CEDAR_MEMORY_LIMIT).returns("2684354560")
     assert_equal Etc.nprocessors, Usage.available_cpus
   end
 
@@ -264,35 +256,35 @@ class HireFire::CPU::UsageTest < Minitest::Test
   def test_cgroup_quota_wins_over_entitlement
     ENV["DYNO"] = "web-5fb9c979-lft2l"
     Usage.stubs(:read).returns(nil)
-    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("90000 100000") # Fir 1c plan
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("90000 100000")
     Usage.stubs(:read).with(Usage::CEDAR_MEMORY_LIMIT).returns("536870912")
     assert_in_delta 0.9, Usage.available_cpus, 0.0001
   end
 
   def test_render_entitlement_from_render_cpu_count
     ENV["RENDER"] = "true"
-    ENV["RENDER_CPU_COUNT"] = "0.5" # Render exposes a fractional core count
+    ENV["RENDER_CPU_COUNT"] = "0.5"
     Usage.stubs(:read).returns(nil)
     assert_in_delta 0.5, Usage.available_cpus, 0.0001
   end
 
   def test_render_entitlement_ignored_off_render
-    ENV["RENDER_CPU_COUNT"] = "8" # set, but RENDER unset
+    ENV["RENDER_CPU_COUNT"] = "8"
     Usage.stubs(:read).returns(nil)
     assert_equal Etc.nprocessors, Usage.available_cpus
   end
 
   def test_render_without_a_cpu_count_falls_through_to_processor_count
-    ENV["RENDER"] = "true" # RENDER set, but no RENDER_CPU_COUNT
+    ENV["RENDER"] = "true"
     Usage.stubs(:read).returns(nil)
     assert_equal Etc.nprocessors, Usage.available_cpus
   end
 
   def test_cgroup_quota_wins_over_render_entitlement
     ENV["RENDER"] = "true"
-    ENV["RENDER_CPU_COUNT"] = "8" # would be wrong if it won
+    ENV["RENDER_CPU_COUNT"] = "8"
     Usage.stubs(:read).returns(nil)
-    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("50000 100000") # 0.5 core
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("50000 100000")
     assert_in_delta 0.5, Usage.available_cpus, 0.0001
   end
 
@@ -330,13 +322,12 @@ class HireFire::CPU::UsageTest < Minitest::Test
     Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("user_usec 1000000\nsystem_usec 500000")
     Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns("3000000000")
 
-    # The v2 file is present but malformed (no usage_usec line) => fall through.
     assert_in_delta 3.0, Usage.total_seconds, 0.0001
   end
 
   def test_available_cpus_ignores_v1_unlimited_quota
     Usage.stubs(:read).returns(nil)
-    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns("-1") # cgroup v1 "no limit" sentinel
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns("-1")
     Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns("100000")
 
     assert_equal Etc.nprocessors, Usage.available_cpus
@@ -355,7 +346,6 @@ class HireFire::CPU::UsageTest < Minitest::Test
     Usage.stubs(:read).with("/proc/1/stat").returns(nil)
     Usage.stubs(:read).with("/proc/2/stat").returns(nil)
 
-    # Files vanished between glob and read: nothing counted => nil (not 0.0).
     assert_nil Usage.proc_namespace_seconds
   end
 end

@@ -331,4 +331,25 @@ class HireFire::LeaseTest < Minitest::Test
     refute lease.granted?
     assert_equal 15, lease.sample_frequency # a 401 returns before reading headers
   end
+
+  def test_forked_child_reissues_identity_and_re_requests_the_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "15"
+      })
+
+    lease.request_if_due
+    assert lease.granted?
+    original_process_id = lease.process_id
+
+    lease.instance_variable_set(:@owner_pid, lease.instance_variable_get(:@owner_pid) - 1)
+
+    lease.request_if_due
+
+    refute_equal original_process_id, lease.process_id
+    assert_equal Process.pid, lease.instance_variable_get(:@owner_pid)
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease",
+      headers: {"HireFire-Process-ID" => lease.process_id})
+  end
 end

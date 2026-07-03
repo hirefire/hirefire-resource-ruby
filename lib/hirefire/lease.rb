@@ -19,6 +19,7 @@ module HireFire
       @expires_at = Time.now
       @next_sample_at = Time.now
       @sample_frequency = 15
+      @owner_pid = Process.pid
     end
 
     def granted?
@@ -33,6 +34,7 @@ module HireFire
     end
 
     def request_if_due
+      reset_after_fork if @owner_pid != Process.pid
       return unless @enabled && Time.now >= @expires_at
 
       @expires_at = Time.now + @ttl
@@ -68,6 +70,16 @@ module HireFire
 
     def close
       @client.close
+    end
+
+    private
+
+    def reset_after_fork
+      @process_id = SecureRandom.uuid
+      @granted = false
+      @expires_at = Time.now
+      @next_sample_at = Time.now
+      @owner_pid = Process.pid
     end
   end
 end

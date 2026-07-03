@@ -31,7 +31,7 @@ module HireFire
   end
 
   def reset
-    @configuration&.dispatcher&.stop
+    @configuration&.stop_dispatcher
     @configuration = nil
   end
 end

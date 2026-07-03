@@ -140,6 +140,10 @@ module HireFire
       end
     end
 
+    def stop_dispatcher
+      @dispatcher&.stop
+    end
+
     private
 
     def coerce_name!(name)

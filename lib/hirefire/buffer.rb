@@ -46,6 +46,13 @@ module HireFire
       end
     end
 
+    def discard_inherited
+      @mutex.synchronize do
+        @workers = {}
+        @cpu = {}
+      end
+    end
+
     def repopulate_web(data)
       now = Time.now.to_i
       @mutex.synchronize do

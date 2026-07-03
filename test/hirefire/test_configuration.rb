@@ -200,6 +200,15 @@ class HireFire::ConfigurationTest < Minitest::Test
     end
   end
 
+  def test_rejected_declaration_does_not_reserve_the_name
+    assert_raises(HireFire::Configuration::UnexpectedSamplerError) do
+      @configuration.service(:web, tracking: :http) { 1 }
+    end
+
+    @configuration.service(:web, tracking: :http)
+    assert_equal "web", @configuration.web.name
+  end
+
   def test_dyno_and_service_register_into_the_same_collectors
     @configuration.dyno(:web)
     @configuration.service(:worker) { 1 }

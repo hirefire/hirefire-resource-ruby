@@ -468,6 +468,25 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher.stop
   end
 
+  def test_forked_child_discards_inherited_buffer_samples
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    assert dispatcher.start
+
+    HireFire.configuration.buffer.sample_worker("worker", 5)
+    HireFire.configuration.buffer.sample_cpu("web", 12.5)
+
+    child_pid = Process.pid + 1
+    Process.stubs(:pid).returns(child_pid)
+
+    HireFire.configuration.buffer.expects(:discard_inherited)
+    assert dispatcher.start
+
+    dispatcher.stop
+  end
+
   def test_tick_dispatches_when_the_lease_request_fails
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_raise(Errno::ECONNREFUSED)

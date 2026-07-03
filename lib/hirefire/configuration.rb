@@ -164,7 +164,6 @@ module HireFire
           "Duplicate declaration for #{name.inspect}. " \
           "Each dyno name maps to exactly one collector."
       end
-      @names << name
 
       case collector
       when :http
@@ -183,6 +182,8 @@ module HireFire
         reject_sampler!(name, sampler)
         @cpu << CPU.new(name)
       end
+
+      @names << name
     end
 
     def reject_sampler!(name, sampler)

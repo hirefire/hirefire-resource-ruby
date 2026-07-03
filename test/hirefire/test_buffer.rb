@@ -17,6 +17,21 @@ class HireFire::BufferTest < Minitest::Test
     assert_equal({100 => [12, 8]}, data[:web])
   end
 
+  def test_discard_inherited_clears_workers_and_cpu_but_keeps_web
+    Timecop.freeze Time.at(100) do
+      buffer.sample_web(7)
+      buffer.sample_worker("worker", 5)
+      buffer.sample_cpu("web", 12.5)
+
+      buffer.discard_inherited
+
+      data = buffer.flush
+      assert_equal({100 => [7]}, data[:web])
+      assert_empty data[:workers]
+      assert_empty data[:cpu]
+    end
+  end
+
   def test_sample_web_groups_by_timestamp
     Timecop.freeze Time.at(100) do
       buffer.sample_web(12)

@@ -84,6 +84,26 @@ class HireFire::WorkersTest < Minitest::Test
     assert_equal 1, workers.count
   end
 
+  def test_bigdecimal_and_rational_samples_are_coerced_to_json_numbers
+    require "bigdecimal"
+    HireFire.configure do |config|
+      config.dyno(:worker) { BigDecimal("1.5") }
+      config.dyno(:mailer) { Rational(1, 4) }
+    end
+
+    HireFire.configuration.workers.sample
+
+    data = buffer.flush
+    assert_equal [
+      {"name" => "worker", "sample" => 1.5},
+      {"name" => "mailer", "sample" => 0.25}
+    ], data[:workers]
+    assert_equal(
+      '[{"name":"worker","sample":1.5},{"name":"mailer","sample":0.25}]',
+      JSON.generate(data[:workers])
+    )
+  end
+
   def test_zero_sample_is_accepted
     HireFire.configure do |config|
       config.dyno(:worker) { 0 }

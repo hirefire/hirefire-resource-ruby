@@ -26,7 +26,7 @@ module HireFire
           next
         end
 
-        HireFire.configuration.buffer.sample_worker(worker.name, value)
+        HireFire.configuration.buffer.sample_worker(worker.name, coerce_sample(value))
       rescue => e
         logger.error "[HireFire] The sampler for dyno #{worker.name.inspect} raised " \
           "#{e.class}: #{e.message}"
@@ -37,6 +37,10 @@ module HireFire
 
     def valid_sample?(value)
       value.is_a?(Numeric) && value.finite? && value >= 0
+    end
+
+    def coerce_sample(value)
+      (value.is_a?(Integer) || value.is_a?(Float)) ? value : value.to_f
     end
 
     def logger

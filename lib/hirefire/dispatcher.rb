@@ -32,6 +32,8 @@ module HireFire
       @mutex.synchronize do
         return false if @running && @pid == Process.pid
 
+        buffer.discard_inherited if @pid && @pid != Process.pid
+
         # Spawn before flipping @running so a failed spawn stays retryable, not latched
         # "running" with no loop. Called unguarded from configure, so it must not raise.
         @thread = Thread.new { loop_until_stopped { tick } }

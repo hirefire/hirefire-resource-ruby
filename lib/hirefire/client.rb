@@ -8,12 +8,14 @@ module HireFire
   class Client
     class RequestError < StandardError; end
 
-    STALE_CONNECTION_ERRORS = [EOFError, Errno::ECONNRESET, Errno::ECONNABORTED, Errno::EPIPE].freeze
+    STALE_CONNECTION_ERRORS = [EOFError, Errno::ECONNRESET, Errno::ECONNABORTED, Errno::EPIPE,
+      Net::HTTPBadResponse, Net::ProtocolError].freeze
 
     def initialize(timeout: 5)
       @timeout = timeout
       @mutex = Mutex.new
       @http = nil
+      @owner_pid = nil
     end
 
     def submit_samples(body)
@@ -52,12 +54,12 @@ module HireFire
 
     def execute(uri, request)
       @mutex.synchronize do
-        reused = @http&.started? || false
+        reused = reusable?(uri)
         connection(uri).request(request)
       rescue Timeout::Error
         reset_connection
         raise RequestError, "Request timed out."
-      rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError => e
+      rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError, Net::HTTPBadResponse, Net::ProtocolError => e
         reset_connection
         retry if reused && stale_connection?(e)
         raise RequestError, "Network error (#{e.class}: #{e.message})."
@@ -65,21 +67,29 @@ module HireFire
     end
 
     def connection(uri)
-      return @http if @http&.started? && @http.address == uri.host && @http.port == uri.port
+      return @http if reusable?(uri)
 
       reset_connection
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = uri.scheme == "https"
       http.read_timeout = @timeout
       http.open_timeout = @timeout
-      http.keep_alive_timeout = 30
+      http.keep_alive_timeout = 60 # outlast the 30s max dispatch interval
       http.start
+      @owner_pid = Process.pid
       @http = http
+    end
+
+    # Reuse only a live connection this process opened to the same host. The PID check
+    # rebuilds after a fork: the child inherits @http, but its socket is shared with the parent.
+    def reusable?(uri)
+      @http&.started? && @owner_pid == Process.pid &&
+        @http.address == uri.host && @http.port == uri.port
     end
 
     def reset_connection
       @http&.finish if @http&.started?
-    rescue IOError
+    rescue IOError, SystemCallError
       nil
     ensure
       @http = nil

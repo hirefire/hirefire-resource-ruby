@@ -129,6 +129,45 @@ class HireFire::ClientTest < Minitest::Test
     assert_raises(HireFire::Client::RequestError) { client.submit_samples("[]") }
   end
 
+  def test_opens_a_fresh_connection_in_a_forked_child
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]")
+    inherited = client.instance_variable_get(:@http)
+
+    # Simulate a fork: the child inherits @http, but its PID no longer owns the socket.
+    client.instance_variable_set(:@owner_pid, client.instance_variable_get(:@owner_pid) - 1)
+
+    client.submit_samples("[]")
+    rebuilt = client.instance_variable_get(:@http)
+
+    refute_same inherited, rebuilt # a fresh socket, never the parent's
+    assert_equal Process.pid, client.instance_variable_get(:@owner_pid)
+  end
+
+  def test_keep_alive_timeout_outlasts_the_max_dispatch_interval
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]")
+
+    # Must exceed the 30s dispatch ceiling or reuse silently drops at the slowest cadence.
+    assert_operator client.instance_variable_get(:@http).keep_alive_timeout, :>, 30
+  end
+
+  def test_reconnects_and_retries_once_on_a_desynced_keep_alive_response
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]") # establish the persistent connection
+    established = client.instance_variable_get(:@http)
+
+    # A reused socket reading a garbled status line is a stale-stream symptom: reset and retry.
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_raise(Net::HTTPBadResponse).then
+      .to_return(status: 200)
+
+    result = client.submit_samples("[]")
+
+    assert_kind_of Net::HTTPSuccess, result
+    refute_same established, client.instance_variable_get(:@http)
+  end
+
   def test_request_lease_sends_process_id
     request = stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .with(headers: {

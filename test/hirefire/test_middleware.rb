@@ -426,6 +426,34 @@ class HireFire::MiddlewareTest < Minitest::Test
     assert_includes log.string, "Middleware error"
   end
 
+  def test_a_raising_logger_does_not_break_the_request
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    raising_logger = Object.new
+    def raising_logger.info(*)
+    end
+
+    def raising_logger.error(*)
+      raise "logger blew up"
+    end
+    HireFire.configuration.logger = raising_logger
+
+    HireFire.configuration.web.stubs(:sample).raises("sampling blew up")
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+      status, _headers, body = @middleware.call(request)
+
+      assert_equal 200, status
+      assert_equal ["Hello"], body
+    end
+  end
+
   def test_an_error_raised_by_the_host_app_still_propagates
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)

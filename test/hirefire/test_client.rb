@@ -244,6 +244,18 @@ class HireFire::ClientTest < Minitest::Test
     assert_requested request
   end
 
+  def test_custom_data_url_with_a_trailing_slash_does_not_double_the_path
+    ENV["HIREFIRE_DATA_URL"] = "https://custom.hirefire.io/prefix/"
+    custom_client = HireFire::Client.new
+
+    request = stub_request(:post, "https://custom.hirefire.io/prefix/metrics/ingest")
+      .to_return(status: 200)
+
+    custom_client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+
+    assert_requested request
+  end
+
   def test_request_lease_sends_the_agent_header
     request = stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .with(headers: {"HireFire-Agent" => "Ruby-#{HireFire::VERSION}"})

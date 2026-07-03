@@ -65,6 +65,10 @@ module HireFire
 
       dispatch
 
+      # After the final dispatch, which reopens the client.
+      @client.close
+      @lease.close
+
       logger.info "[HireFire] Dispatcher stopped."
 
       true

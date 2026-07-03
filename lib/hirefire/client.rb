@@ -50,6 +50,11 @@ module HireFire
       execute(uri, request)
     end
 
+    # Takes the same mutex as execute, so it never closes a socket mid-request.
+    def close
+      @mutex.synchronize { reset_connection }
+    end
+
     private
 
     def execute(uri, request)

@@ -535,6 +535,18 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_equal({"1000" => [7]}, bodies[0][0]["samples"])
   end
 
+  def test_stop_closes_the_persistent_connections
+    # Workers-only with an empty buffer: stop's final dispatch is a no-op, so the only
+    # thing under test is that both keep-alive clients are released.
+    dispatcher = configure_workers_only
+    dispatcher.instance_variable_get(:@client).expects(:close)
+    dispatcher.instance_variable_get(:@lease).expects(:close)
+
+    dispatcher.instance_variable_set(:@running, true)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    dispatcher.stop
+  end
+
   def test_web_only_dispatch_never_requests_a_lease
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
 

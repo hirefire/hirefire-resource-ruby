@@ -285,6 +285,40 @@ class HireFire::LeaseTest < Minitest::Test
     refute lease.granted? # only the exact string "true" grants
   end
 
+  def test_clamps_a_garbled_sample_frequency_to_a_sane_floor
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "0" # a bad header must not sample every tick
+      })
+
+    lease.request_if_due
+
+    assert_equal HireFire::Lease::SAMPLE_FREQUENCY_BOUNDS.begin, lease.sample_frequency
+  end
+
+  def test_clamps_a_garbled_ttl_to_a_sane_floor
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Lease-TTL" => "0" # a bad header must not re-request every tick
+      })
+
+    lease.request_if_due
+
+    assert_equal HireFire::Lease::TTL_BOUNDS.begin, lease.instance_variable_get(:@ttl)
+  end
+
+  def test_closes_the_underlying_client
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"})
+
+    lease.request_if_due
+    lease.close
+
+    refute lease.instance_variable_get(:@client).instance_variable_get(:@http)
+  end
+
   def test_unauthorized_ignores_frequency_and_ttl_headers
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 401, headers: {

@@ -168,6 +168,23 @@ class HireFire::ClientTest < Minitest::Test
     refute_same established, client.instance_variable_get(:@http)
   end
 
+  def test_close_finishes_and_clears_the_persistent_connection
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]")
+    established = client.instance_variable_get(:@http)
+
+    client.close
+
+    assert established.started? == false
+    assert_nil client.instance_variable_get(:@http)
+  end
+
+  def test_close_is_safe_without_a_connection
+    client.close
+
+    assert_nil client.instance_variable_get(:@http)
+  end
+
   def test_request_lease_sends_process_id
     request = stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .with(headers: {

@@ -4,6 +4,10 @@ require "securerandom"
 
 module HireFire
   class Lease
+    # Bound server-supplied cadence: a zero or garbled header must not collapse it to a per-tick storm.
+    TTL_BOUNDS = 5..3600
+    SAMPLE_FREQUENCY_BOUNDS = 1..3600
+
     attr_reader :process_id, :sample_frequency
 
     def initialize(enabled: true)
@@ -51,15 +55,19 @@ module HireFire
       end
 
       if response.key?("HireFire-Sample-Frequency")
-        @sample_frequency = response["HireFire-Sample-Frequency"].to_i
+        @sample_frequency = response["HireFire-Sample-Frequency"].to_i.clamp(SAMPLE_FREQUENCY_BOUNDS)
       end
 
       if response.key?("HireFire-Lease-TTL")
-        @ttl = response["HireFire-Lease-TTL"].to_i
+        @ttl = response["HireFire-Lease-TTL"].to_i.clamp(TTL_BOUNDS)
         @expires_at = Time.now + @ttl
       end
 
       @granted = response["HireFire-Lease-Granted"] == "true"
+    end
+
+    def close
+      @client.close
     end
   end
 end

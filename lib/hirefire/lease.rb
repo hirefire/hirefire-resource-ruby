@@ -16,8 +16,8 @@ module HireFire
       @client = Client.new
       @ttl = 15
       @granted = false
-      @expires_at = Time.now
-      @next_sample_at = Time.now
+      @expires_at = monotonic
+      @next_sample_at = monotonic
       @sample_frequency = 15
       @owner_pid = Process.pid
     end
@@ -27,17 +27,17 @@ module HireFire
     end
 
     def sample_if_due
-      return unless @granted && Time.now >= @next_sample_at
+      return unless @granted && monotonic >= @next_sample_at
 
-      @next_sample_at = Time.now + @sample_frequency
+      @next_sample_at = monotonic + @sample_frequency
       yield
     end
 
     def request_if_due
       reset_after_fork if @owner_pid != Process.pid
-      return unless @enabled && Time.now >= @expires_at
+      return unless @enabled && monotonic >= @expires_at
 
-      @expires_at = Time.now + @ttl
+      @expires_at = monotonic + @ttl
 
       begin
         response = @client.request_lease(@process_id)
@@ -62,7 +62,7 @@ module HireFire
 
       if response.key?("HireFire-Lease-TTL")
         @ttl = response["HireFire-Lease-TTL"].to_i.clamp(TTL_BOUNDS)
-        @expires_at = Time.now + @ttl
+        @expires_at = monotonic + @ttl
       end
 
       @granted = response["HireFire-Lease-Granted"] == "true"
@@ -77,9 +77,14 @@ module HireFire
     def reset_after_fork
       @process_id = SecureRandom.uuid
       @granted = false
-      @expires_at = Time.now
-      @next_sample_at = Time.now
+      @expires_at = monotonic
+      @next_sample_at = monotonic
       @owner_pid = Process.pid
+    end
+
+    # Pace off the monotonic clock so a wall-clock step (e.g. NTP) cannot skew renewal.
+    def monotonic
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
   end
 end

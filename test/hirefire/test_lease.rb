@@ -332,6 +332,23 @@ class HireFire::LeaseTest < Minitest::Test
     assert_equal 15, lease.sample_frequency # a 401 returns before reading headers
   end
 
+  def test_expiry_paces_off_the_monotonic_clock_not_the_wall_clock
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Lease-TTL" => "30"
+      })
+
+    clock = 5000.0
+    lease.define_singleton_method(:monotonic) { clock }
+    lease.instance_variable_set(:@expires_at, clock) # re-seed the boot reading onto the stubbed clock
+
+    Timecop.freeze(Time.at(1000)) { lease.request_if_due } # wall clock far from the monotonic reading
+
+    # @expires_at derives from the monotonic clock (5000 + 30), never the wall clock (1000 + 30).
+    assert_equal 5030.0, lease.instance_variable_get(:@expires_at)
+  end
+
   def test_forked_child_reissues_identity_and_re_requests_the_lease
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {

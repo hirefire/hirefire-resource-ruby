@@ -200,9 +200,9 @@ module HireFire
       identity = resolved_identity
 
       if identity.nil?
-        logger.error "[HireFire] CPU metrics are configured but this process's identity " \
+        Log.safe(logger, :error, "[HireFire] CPU metrics are configured but this process's identity " \
           "could not be resolved, so the CPU collector is disabled. Set the " \
-          "HIREFIRE_SERVICE_NAME environment variable to this process's dyno name."
+          "HIREFIRE_SERVICE_NAME environment variable to this process's dyno name.")
         return []
       end
 
@@ -220,10 +220,10 @@ module HireFire
       return @resolved_identity if defined?(@resolved_identity)
 
       if HireFire::Identity.heroku_conflict?
-        logger.warn "[HireFire] HIREFIRE_SERVICE_NAME (#{HireFire::Identity.explicit}) does not " \
+        Log.safe(logger, :warn, "[HireFire] HIREFIRE_SERVICE_NAME (#{HireFire::Identity.explicit}) does not " \
           "match the Heroku DYNO prefix (#{HireFire::Identity.heroku_dyno}). Heroku config vars " \
           "are app-wide, so this makes every dyno identify as the same name. Set it inline per " \
-          "process in the Procfile, or unset it to use automatic detection."
+          "process in the Procfile, or unset it to use automatic detection.")
       end
 
       @resolved_identity = HireFire::Identity.resolve

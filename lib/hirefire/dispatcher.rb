@@ -42,11 +42,11 @@ module HireFire
         @pid = Process.pid
       end
 
-      logger.info "[HireFire] Starting dispatcher."
+      Log.safe(logger, :info, "[HireFire] Starting dispatcher.")
 
       true
     rescue => e
-      logger.error "[HireFire] Could not start dispatcher: #{e.message}"
+      Log.safe(logger, :error, "[HireFire] Could not start dispatcher: #{e.message}")
       false
     end
 
@@ -71,7 +71,7 @@ module HireFire
       @client.close
       @lease.close
 
-      logger.info "[HireFire] Dispatcher stopped."
+      Log.safe(logger, :info, "[HireFire] Dispatcher stopped.")
 
       true
     end
@@ -100,16 +100,22 @@ module HireFire
     end
 
     def dispatch_if_due
-      return if @next_dispatch_at && Time.now < @next_dispatch_at
+      return if @next_dispatch_at && monotonic < @next_dispatch_at
 
       dispatch
-      @next_dispatch_at = Time.now + @dispatch_frequency
+      @next_dispatch_at = monotonic + @dispatch_frequency
+    end
+
+    # Pace off the monotonic clock so a wall-clock step (e.g. NTP) cannot skew the cadence.
+    # The sample timestamps stay wall-clock (backfill_web_seconds), since the server keys on them.
+    def monotonic
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
     def guard
       yield
     rescue => e
-      logger.error "[HireFire] #{e.message}"
+      Log.safe(logger, :error, "[HireFire] #{e.message}")
     end
 
     def dispatch
@@ -120,13 +126,13 @@ module HireFire
       body = JSON.generate(payload)
       return drop_oversized_payload(body) if body.bytesize > PAYLOAD_SIZE_LIMIT
 
-      logger.info "[HireFire] Dispatching metrics: #{body}" if ENV["HIREFIRE_VERBOSE"]
+      Log.safe(logger, :info, "[HireFire] Dispatching metrics: #{body}") if ENV["HIREFIRE_VERBOSE"]
       response = @client.submit_samples(body)
       apply_dispatch_frequency(response)
       @last_web_second = @web_watermark if @web_watermark
     rescue => e
       buffer.repopulate_web(data[:web]) if data && data[:web].any?
-      logger.error "[HireFire] Dispatch error: #{e.message}"
+      Log.safe(logger, :error, "[HireFire] Dispatch error: #{e.message}")
     end
 
     def apply_dispatch_frequency(response)
@@ -140,8 +146,8 @@ module HireFire
 
     def drop_oversized_payload(body)
       @last_web_second = @web_watermark if @web_watermark
-      logger.error "[HireFire] Dropped metrics payload: #{body.bytesize} bytes exceeds " \
-        "the #{PAYLOAD_SIZE_LIMIT}-byte limit. Resuming from the current second."
+      Log.safe(logger, :error, "[HireFire] Dropped metrics payload: #{body.bytesize} bytes exceeds " \
+        "the #{PAYLOAD_SIZE_LIMIT}-byte limit. Resuming from the current second.")
     end
 
     def build_payload(data)

@@ -75,7 +75,9 @@ module HireFire
       return @http if reusable?(uri)
 
       reset_connection
-      http = Net::HTTP.new(uri.host, uri.port)
+      # Connect directly (nil proxy) so Net::HTTP's default :ENV proxy lookup cannot let an
+      # ambient http_proxy silently intercept token-bearing traffic (matching Python/Node).
+      http = Net::HTTP.new(uri.host, uri.port, nil)
       http.use_ssl = uri.scheme == "https"
       http.read_timeout = @timeout
       http.open_timeout = @timeout

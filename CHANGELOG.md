@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - The gem is now push-based: worker metrics are pushed outbound to `data.hirefire.io` instead of being polled via `/hirefire/<token>/info`, and web request-queue-time moves from `logdrain.hirefire.io` to `data.hirefire.io`. Restricted-egress networks must allowlist `data.hirefire.io` (outbound) or metrics silently stop.
+- Metric dispatch and lease requests now always connect directly, ignoring the `http_proxy`/`https_proxy` environment variables that Ruby's `Net::HTTP` would otherwise honor. This matches the Python and Node clients and prevents an ambient proxy from silently intercepting the token-bearing metrics traffic.
 
 ### Removed
 
@@ -38,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Internal dispatch pacing, lease renewal, and the CPU utilization delta now measure elapsed time on a monotonic clock, so a system clock adjustment (e.g. an NTP step) no longer skews the dispatch cadence, lease renewal, or a CPU reading. The metric timestamps themselves stay wall-clock, as the server requires.
+- A user-supplied logger that raises from its logging method (a custom logger, or the default one writing to a closed stream) is now caught rather than propagated, so it can no longer escape a dispatcher or worker guard and halt metric reporting, or abort boot from `HireFire.configure`.
 - `HireFire::Macro::GoodJob.job_queue_latency` orders by `COALESCE(scheduled_at, created_at)`. On older GoodJob schemas an immediate job has a `NULL` `scheduled_at`, which sorted last and hid an old immediate job behind a newer scheduled one. Reported latency was too low and may be (correctly) higher after this fix.
 - `HireFire::Macro::Sidekiq.job_queue_size(server: true)`: the Lua script enumerates queues via `SMEMBERS queues` instead of `KEYS queue:*` (which scans the whole keyspace and double-counted numeric-string queue names) and pages the scheduled/retry sets by index instead of `ZRANGEBYSCORE … LIMIT offset` (quadratic, and could stall Redis on a large backlog). `max_scheduled` is applied exactly (per entry, not rounded up to a 1000-entry page) and shares the client-side semantics: omitted/`nil` means no limit, `0` (and negatives) means count none. The corrected de-duplication can lower a previously double-counted size.
 - `HireFire::Macro::Sidekiq.job_queue_latency` returns a `Float` for the enqueued component as well, instead of truncating it to whole seconds, matching the documented return type and Sidekiq's own latency calculation.

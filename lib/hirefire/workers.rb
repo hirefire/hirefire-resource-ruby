@@ -21,15 +21,15 @@ module HireFire
         value = worker.sample
 
         unless valid_sample?(value)
-          logger.error "[HireFire] The sampler for dyno #{worker.name.inspect} returned " \
-            "#{value.inspect}, expected a non-negative number. Sample dropped."
+          Log.safe(logger, :error, "[HireFire] The sampler for dyno #{worker.name.inspect} returned " \
+            "#{value.inspect}, expected a non-negative number. Sample dropped.")
           next
         end
 
         HireFire.configuration.buffer.sample_worker(worker.name, coerce_sample(value))
       rescue => e
-        logger.error "[HireFire] The sampler for dyno #{worker.name.inspect} raised " \
-          "#{e.class}: #{e.message}"
+        Log.safe(logger, :error, "[HireFire] The sampler for dyno #{worker.name.inspect} raised " \
+          "#{e.class}: #{e.message}")
       end
     end
 

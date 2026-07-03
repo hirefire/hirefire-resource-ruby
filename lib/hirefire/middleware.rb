@@ -34,13 +34,7 @@ module HireFire
       end
     rescue => e
       # Never raise the library's own bookkeeping into the customer's request.
-      safe_log_error("[HireFire] Middleware error: #{e.message}")
-    end
-
-    def safe_log_error(message)
-      HireFire.configuration.logger.error(message)
-    rescue
-      nil
+      Log.safe(HireFire.configuration.logger, :error, "[HireFire] Middleware error: #{e.message}")
     end
 
     def log_request_queue_time(request_queue_time)

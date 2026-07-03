@@ -87,8 +87,8 @@ class HireFire::CPUTest < Minitest::Test
     assert_empty buffer.flush[:cpu]
   end
 
-  def test_non_positive_wall_delta_skips_the_sample
-    # Same instant + positive usage delta isolates the wall_delta <= 0 guard.
+  def test_non_positive_elapsed_delta_skips_the_sample
+    # Same instant + positive usage delta isolates the elapsed_delta <= 0 backstop.
     HireFire::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
     HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
@@ -98,6 +98,24 @@ class HireFire::CPUTest < Minitest::Test
       assert_nil collector.sample
     end
     assert_empty buffer.flush[:cpu]
+  end
+
+  def test_elapsed_delta_uses_the_monotonic_clock_not_wall_time
+    HireFire::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
+    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+
+    collector = HireFire::CPU.new("clock")
+    collector.stubs(:monotonic).returns(100.0, 101.0)
+
+    # Wall clock frozen at the same second for both reads: a wall-clock elapsed delta
+    # would be 0 and skip. The monotonic clock advances 1s, so 0.5 CPU-seconds over it
+    # => 50%, bucketed by the (frozen) wall second.
+    Timecop.freeze(Time.at(1000)) do
+      collector.sample
+      collector.sample
+    end
+
+    assert_equal({"clock" => {1000 => [50.0]}}, buffer.flush[:cpu])
   end
 
   def test_skips_sample_when_available_cpus_is_nil

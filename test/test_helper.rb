@@ -31,6 +31,18 @@ require "timecop"
 
 Timecop.mock_process_clock = true
 
+# The dispatcher and lease pace off CLOCK_MONOTONIC (immune to wall-clock/NTP steps).
+# Timecop.freeze does not advance the monotonic clock by the frozen wall delta, so route
+# CLOCK_MONOTONIC through the frozen wall time here. Tests then drive pacing with
+# Timecop.freeze exactly as they drive the wall-clock sample timestamps. Every other clock
+# id (the CPU process-clock source) is left untouched.
+Process.singleton_class.prepend(Module.new do
+  def clock_gettime(clock_id, *args)
+    return Time.now.to_f if clock_id == Process::CLOCK_MONOTONIC
+    super
+  end
+end)
+
 class Minitest::Test
   IDENTITY_ENV = %w[HIREFIRE_SERVICE_NAME DYNO RENDER_SERVICE_NAME RENDER RENDER_CPU_COUNT].freeze
 

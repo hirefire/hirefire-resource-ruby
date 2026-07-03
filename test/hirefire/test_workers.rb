@@ -66,6 +66,17 @@ class HireFire::WorkersTest < Minitest::Test
     assert_equal [{"name" => "worker", "sample" => 7}], buffer.flush[:workers]
   end
 
+  def test_a_raising_logger_does_not_escape_sampling
+    HireFire.configure do |config|
+      config.dyno(:worker) { raise "Redis down" }
+    end
+    raising_logger = Object.new
+    raising_logger.define_singleton_method(:error) { |*| raise IOError, "closed stream" }
+    HireFire.configuration.logger = raising_logger
+
+    HireFire.configuration.workers.sample # must not propagate the logger's IOError
+  end
+
   def test_enumerable
     workers = HireFire::Workers.new
     workers << HireFire::Worker.new(:worker) { 1 }

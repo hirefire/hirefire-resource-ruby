@@ -648,4 +648,24 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_empty HireFire.configuration.buffer.flush[:web]
     assert_includes log.string, "Dispatch error"
   end
+
+  def test_dispatch_pacing_follows_the_monotonic_clock_not_the_wall_clock
+    stub_lease
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_web_only
+    # Drive the monotonic pacing clock independently of the wall clock.
+    clock = 500.0
+    dispatcher.define_singleton_method(:monotonic) { clock }
+
+    Timecop.freeze(Time.at(1000)) do
+      dispatcher.send(:tick) # first dispatch, next due at monotonic 501
+      clock = 502.0 # monotonic advances past the 1s interval, wall clock unchanged
+      dispatcher.send(:tick) # dispatches again on the same wall second
+    end
+
+    # Two dispatches on one frozen wall second: pacing follows the monotonic clock, not the
+    # wall clock (which would have skipped the second, zero-wall-delta dispatch).
+    assert_equal 2, bodies.size
+  end
 end

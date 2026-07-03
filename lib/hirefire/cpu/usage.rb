@@ -21,7 +21,21 @@ module HireFire
       }.freeze
 
       def total_seconds
-        cgroup_v2_seconds || cgroup_v1_seconds || proc_namespace_seconds || process_seconds
+        reading.first
+      end
+
+      def reading
+        if (seconds = cgroup_v2_seconds)
+          [seconds, :cgroup_v2]
+        elsif (seconds = cgroup_v1_seconds)
+          [seconds, :cgroup_v1]
+        elsif (seconds = proc_namespace_seconds)
+          [seconds, :proc]
+        elsif (seconds = process_seconds)
+          [seconds, :process]
+        else
+          [nil, nil]
+        end
       end
 
       def cgroup_v2_seconds

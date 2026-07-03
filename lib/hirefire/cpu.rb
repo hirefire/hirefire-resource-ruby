@@ -8,18 +8,21 @@ module HireFire
       @name = name.to_s
       @last_usage = nil
       @last_time = nil
+      @last_source = nil
     end
 
     def sample
       time = Time.now.to_f
-      usage = Usage.total_seconds
+      usage, source = Usage.reading
 
       previous_usage = @last_usage
       previous_time = @last_time
+      previous_source = @last_source
       @last_usage = usage
       @last_time = time
+      @last_source = source
 
-      return if usage.nil? || previous_usage.nil?
+      return if usage.nil? || previous_usage.nil? || source != previous_source
 
       wall_delta = time - previous_time
       usage_delta = usage - previous_usage

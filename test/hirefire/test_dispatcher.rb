@@ -348,7 +348,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
   def test_dispatches_cpu_samples_in_the_samples_format
     HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
-    HireFire::CPU::Usage.stubs(:total_seconds).returns(0.0, 0.5)
+    HireFire::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [0.5, :cgroup_v2])
     bodies = capture_ingest_bodies
 
     dispatcher = configure_cpu_only("clock")
@@ -363,7 +363,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
   def test_cpu_first_tick_seeds_baseline_without_dispatching
     HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
-    HireFire::CPU::Usage.stubs(:total_seconds).returns(0.0)
+    HireFire::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2])
     bodies = capture_ingest_bodies
 
     dispatcher = configure_cpu_only("clock")
@@ -374,7 +374,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
   def test_cpu_samples_are_not_repopulated_on_dispatch_failure
     HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
-    HireFire::CPU::Usage.stubs(:total_seconds).returns(0.0, 0.5)
+    HireFire::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [0.5, :cgroup_v2])
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 500)
 
     dispatcher = configure_cpu_only("clock")

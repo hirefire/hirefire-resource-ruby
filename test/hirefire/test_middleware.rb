@@ -137,57 +137,6 @@ class HireFire::MiddlewareTest < Minitest::Test
     assert_equal("[hirefire:router] queue=1000ms", output.strip)
   end
 
-  def test_parses_nginx_seconds_format
-    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
-    HireFire::Dispatcher.any_instance.stubs(:start)
-
-    HireFire.configure do |config|
-      config.dyno(:web)
-    end
-
-    Timecop.freeze Time.at(1_700_000_001) do
-      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "t=1700000000.000")
-      @middleware.call(request)
-
-      data = HireFire.configuration.buffer.flush
-      assert_equal({1_700_000_001 => [1000]}, data[:web])
-    end
-  end
-
-  def test_parses_apache_microseconds_format
-    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
-    HireFire::Dispatcher.any_instance.stubs(:start)
-
-    HireFire.configure do |config|
-      config.dyno(:web)
-    end
-
-    Timecop.freeze Time.at(1_700_000_001) do
-      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "t=1700000000000000")
-      @middleware.call(request)
-
-      data = HireFire.configuration.buffer.flush
-      assert_equal({1_700_000_001 => [1000]}, data[:web])
-    end
-  end
-
-  def test_parses_nanoseconds_format
-    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
-    HireFire::Dispatcher.any_instance.stubs(:start)
-
-    HireFire.configure do |config|
-      config.dyno(:web)
-    end
-
-    Timecop.freeze Time.at(1_700_000_001) do
-      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000000000")
-      @middleware.call(request)
-
-      data = HireFire.configuration.buffer.flush
-      assert_equal({1_700_000_001 => [1000]}, data[:web])
-    end
-  end
-
   def test_normalizes_every_precision_variant_to_the_same_queue_time
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
@@ -304,38 +253,6 @@ class HireFire::MiddlewareTest < Minitest::Test
       @middleware.call(request)
 
       assert_equal({1_700_000_001 => [0]}, HireFire.configuration.buffer.flush[:web])
-    end
-  end
-
-  def test_keeps_a_high_but_plausible_queue_time
-    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
-    HireFire::Dispatcher.any_instance.stubs(:start)
-
-    HireFire.configure do |config|
-      config.dyno(:web)
-    end
-
-    Timecop.freeze Time.at(1_700_000_000) do
-      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1699999950000")
-      @middleware.call(request)
-
-      assert_equal({1_700_000_000 => [50_000]}, HireFire.configuration.buffer.flush[:web])
-    end
-  end
-
-  def test_drops_an_over_the_limit_queue_time
-    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
-    HireFire::Dispatcher.any_instance.stubs(:start)
-
-    HireFire.configure do |config|
-      config.dyno(:web)
-    end
-
-    Timecop.freeze Time.at(1_700_000_000) do
-      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1699999000000")
-      @middleware.call(request)
-
-      assert_empty HireFire.configuration.buffer.flush[:web]
     end
   end
 

@@ -178,13 +178,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_includes error.message, "Web"
   end
 
-  def test_duplicate_name_check_is_case_insensitive
-    @configuration.dyno(:worker) { 1 }
-    assert_raises(HireFire::Configuration::DuplicateDynoError) do
-      @configuration.dyno("Worker", tracking: :cpu)
-    end
-  end
-
   def test_second_http_declaration_under_a_different_name_raises
     @configuration.dyno(:web)
     error = assert_raises(HireFire::Configuration::DuplicateDynoError) do

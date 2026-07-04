@@ -108,6 +108,21 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_requested request
   end
 
+  def test_logs_the_payload_when_verbose_is_set
+    ENV["HIREFIRE_VERBOSE"] = "1"
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+
+    Timecop.freeze Time.at(1000) do
+      HireFire.configuration.buffer.sample_web(12)
+      dispatcher.send(:tick)
+    end
+
+    assert_includes log.string, "Dispatching metrics"
+  end
+
   def test_no_dispatch_when_nothing_configured
     stub_lease
     dispatcher = HireFire.configuration.dispatcher
@@ -259,6 +274,21 @@ class HireFire::DispatcherTest < Minitest::Test
 
     assert_equal 2, bodies.size
     assert_equal %w[1011 1012], bodies[1][0]["samples"].keys.sort
+  end
+
+  def test_an_oversized_payload_without_web_data_drops_without_touching_the_watermark
+    stub_lease(granted: true)
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    HireFire.configuration.dyno("w" * 70_000) { 1 }
+    dispatcher = HireFire.configuration.dispatcher
+
+    dispatcher.send(:worker_tick)
+    dispatcher.send(:tick)
+
+    assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
+    assert_includes log.string, "Dropped metrics payload"
+    assert_nil dispatcher.instance_variable_get(:@last_web_second)
   end
 
   def test_dispatch_tick_does_not_run_worker_sampling
@@ -536,6 +566,32 @@ class HireFire::DispatcherTest < Minitest::Test
     refute dispatcher.running?
   end
 
+  def test_a_hung_worker_sampler_does_not_stall_web_dispatch
+    stub_lease(granted: true)
+    sampler_gate = Queue.new
+    dispatched = Queue.new
+
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_return do |request|
+        body = JSON.parse(request.body)
+        dispatched << body if body.any? { |e| e["name"] == "web" }
+        {status: 200}
+      end
+
+    HireFire.configuration.dyno(:web)
+    HireFire.configuration.dyno(:worker) { sampler_gate.pop }
+    dispatcher = HireFire.configuration.dispatcher
+    HireFire.configuration.buffer.sample_web(5)
+
+    dispatcher.start
+    body = dispatched.pop
+
+    assert(body.any? { |e| e["name"] == "web" })
+
+    sampler_gate << 0
+    dispatcher.stop
+  end
+
   def test_stop_flushes_the_buffer
     bodies = capture_ingest_bodies
 
@@ -642,6 +698,16 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher.send(:tick)
 
     assert_empty HireFire.configuration.buffer.flush[:web]
+    assert_includes log.string, "Dispatch error"
+  end
+
+  def test_tick_survives_a_payload_build_error
+    stub_lease
+    HireFire.configuration.buffer.stubs(:flush).raises(RuntimeError.new("boom"))
+
+    dispatcher = configure_web_only
+    dispatcher.send(:tick)
+
     assert_includes log.string, "Dispatch error"
   end
 

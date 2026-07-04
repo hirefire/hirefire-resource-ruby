@@ -180,6 +180,18 @@ class HireFire::ClientTest < Minitest::Test
     assert_nil client.instance_variable_get(:@http)
   end
 
+  def test_close_swallows_a_failing_connection_shutdown
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]")
+    established = client.instance_variable_get(:@http)
+
+    established.stubs(:finish).raises(IOError.new("closed stream"))
+
+    client.close
+
+    assert_nil client.instance_variable_get(:@http)
+  end
+
   def test_request_lease_sends_process_id
     request = stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .with(headers: {
@@ -244,6 +256,18 @@ class HireFire::ClientTest < Minitest::Test
     custom_client = HireFire::Client.new
 
     request = stub_request(:post, "https://custom.hirefire.io/prefix/metrics/ingest")
+      .to_return(status: 200)
+
+    custom_client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+
+    assert_requested request
+  end
+
+  def test_custom_data_url_honors_a_path_prefix
+    ENV["HIREFIRE_DATA_URL"] = "https://proxy.example.com/hf"
+    custom_client = HireFire::Client.new
+
+    request = stub_request(:post, "https://proxy.example.com/hf/metrics/ingest")
       .to_return(status: 200)
 
     custom_client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')

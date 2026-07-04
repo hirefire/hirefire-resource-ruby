@@ -45,6 +45,7 @@ class Minitest::Test
   def setup
     ENV["HIREFIRE_TOKEN"] = nil
     ENV["HIREFIRE_DATA_URL"] = nil
+    ENV["HIREFIRE_VERBOSE"] = nil
     IDENTITY_ENV.each { |key| ENV[key] = nil }
     HireFire.reset
     HireFire.configuration.logger = Logger.new(File::NULL)
@@ -54,6 +55,7 @@ class Minitest::Test
   def teardown
     ENV["HIREFIRE_TOKEN"] = nil
     ENV["HIREFIRE_DATA_URL"] = nil
+    ENV["HIREFIRE_VERBOSE"] = nil
     IDENTITY_ENV.each { |key| ENV[key] = nil }
     HireFire.reset
     super

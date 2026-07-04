@@ -40,12 +40,16 @@ module HireFire
 
       def cgroup_v2_seconds
         line = read(CGROUP_V2_USAGE)&.lines&.find { |l| l.start_with?("usage_usec") }
-        line.split.last.to_f / 1_000_000.0 if line
+        return unless line
+
+        parts = line.split
+        usec = number(parts[1]) if parts.length > 1
+        usec / 1_000_000.0 if usec
       end
 
       def cgroup_v1_seconds
-        usage = read(CGROUP_V1_USAGE)
-        usage.to_f / 1_000_000_000.0 if usage
+        usage = number(read(CGROUP_V1_USAGE))
+        usage / 1_000_000_000.0 if usage
       end
 
       def proc_namespace_seconds
@@ -71,7 +75,11 @@ module HireFire
         fields = content[(close + 1)..].split
         return if fields.length < 13
 
-        fields[11].to_i + fields[12].to_i
+        utime = Integer(fields[11], 10, exception: false)
+        stime = Integer(fields[12], 10, exception: false)
+        return if utime.nil? || stime.nil?
+
+        utime + stime
       end
 
       def clock_ticks
@@ -95,8 +103,11 @@ module HireFire
         quota, period = value.split
         return if quota.nil? || quota == "max"
 
-        period = period.to_f
-        quota.to_f / period if period > 0
+        quota = number(quota)
+        period = number(period)
+        return if quota.nil? || period.nil? || quota <= 0 || period <= 0
+
+        quota / period
       end
 
       def cgroup_v1_quota
@@ -129,6 +140,10 @@ module HireFire
         File.read(path).strip if File.readable?(path)
       rescue SystemCallError
         nil
+      end
+
+      def number(value)
+        Float(value, exception: false)
       end
     end
   end

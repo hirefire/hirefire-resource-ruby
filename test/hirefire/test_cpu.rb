@@ -158,6 +158,12 @@ class HireFire::CPU::UsageTest < Minitest::Test
     assert_in_delta 3.0, Usage.total_seconds, 0.0001
   end
 
+  def test_total_seconds_falls_through_on_malformed_cgroup_v2
+    Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("usage_usec garbage")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns("3000000000")
+    assert_in_delta 3.0, Usage.total_seconds, 0.0001
+  end
+
   def test_reading_labels_the_active_source
     Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("usage_usec 2500000")
     seconds, source = Usage.reading
@@ -171,6 +177,16 @@ class HireFire::CPU::UsageTest < Minitest::Test
     seconds, source = Usage.reading
     assert_in_delta 3.0, seconds, 0.0001
     assert_equal :cgroup_v1, source
+  end
+
+  def test_reading_returns_nil_when_every_source_fails
+    Usage.stubs(:cgroup_v2_seconds).returns(nil)
+    Usage.stubs(:cgroup_v1_seconds).returns(nil)
+    Usage.stubs(:proc_namespace_seconds).returns(nil)
+    Usage.stubs(:process_seconds).returns(nil)
+
+    assert_equal [nil, nil], Usage.reading
+    assert_nil Usage.total_seconds
   end
 
   def test_total_seconds_falls_back_to_proc_namespace_sum
@@ -207,6 +223,20 @@ class HireFire::CPU::UsageTest < Minitest::Test
 
   def test_available_cpus_ignores_unlimited_v2_quota
     Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("max 100000")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns(nil)
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
+  def test_available_cpus_falls_through_on_malformed_quota
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("abc 100000")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns(nil)
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
+  def test_available_cpus_ignores_a_non_positive_v2_quota
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("0 100000")
     Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns(nil)
     Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns(nil)
     assert_equal Etc.nprocessors, Usage.available_cpus
@@ -250,6 +280,13 @@ class HireFire::CPU::UsageTest < Minitest::Test
   def test_entitlement_ignored_off_heroku
     Usage.stubs(:read).returns(nil)
     Usage.stubs(:read).with(Usage::CEDAR_MEMORY_LIMIT).returns("536870912")
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
+  def test_heroku_entitlement_without_a_readable_memory_limit_falls_through
+    ENV["DYNO"] = "web.1"
+    Usage.stubs(:read).returns(nil)
+    Usage.stubs(:read).with(Usage::CEDAR_MEMORY_LIMIT).returns(nil)
     assert_equal Etc.nprocessors, Usage.available_cpus
   end
 
@@ -341,11 +378,24 @@ class HireFire::CPU::UsageTest < Minitest::Test
     assert_nil Usage.stat_ticks("123 (ruby) S 0 1")
   end
 
+  def test_stat_ticks_returns_nil_for_non_numeric_fields
+    assert_nil Usage.stat_ticks("1 (ruby) S 0 1 1 0 -1 0 0 0 0 0 abc def 0 0 20 0 1 0 9 0 0")
+  end
+
   def test_proc_namespace_seconds_nil_when_every_entry_is_unreadable
     Dir.stubs(:glob).with(Usage::PROC_STAT_GLOB).returns(["/proc/1/stat", "/proc/2/stat"])
     Usage.stubs(:read).with("/proc/1/stat").returns(nil)
     Usage.stubs(:read).with("/proc/2/stat").returns(nil)
 
     assert_nil Usage.proc_namespace_seconds
+  end
+
+  def test_a_garbled_proc_stat_entry_is_skipped_and_the_rest_counted
+    Dir.stubs(:glob).with(Usage::PROC_STAT_GLOB).returns(["/proc/1/stat", "/proc/2/stat"])
+    Usage.stubs(:read).with("/proc/1/stat").returns("1 (ruby) S 0 1 1 0 -1 0 0 0 0 0 500 250 0 0 20 0 1 0 9 0 0")
+    Usage.stubs(:read).with("/proc/2/stat").returns("2 garbled line without a comm paren")
+    Usage.stubs(:clock_ticks).returns(100)
+
+    assert_in_delta 7.5, Usage.proc_namespace_seconds, 0.0001
   end
 end

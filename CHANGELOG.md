@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Malformed cgroup CPU usage, `/proc/[pid]/stat`, and CPU quota readings now fall through to the next source instead of parsing to zero. A zero usage baseline could report a spurious CPU spike on the next real reading, and a zero quota silently disabled CPU sampling.
 - Internal dispatch pacing, lease renewal, and the CPU utilization delta now measure elapsed time on a monotonic clock, so a system clock adjustment (e.g. an NTP step) no longer skews the dispatch cadence, lease renewal, or a CPU reading. The metric timestamps themselves stay wall-clock, as the server requires.
 - A user-supplied logger that raises from its logging method (a custom logger, or the default one writing to a closed stream) is now caught rather than propagated, so it can no longer escape a dispatcher or worker guard and halt metric reporting, or abort boot from `HireFire.configure`.
 - `HireFire::Macro::GoodJob.job_queue_latency` orders by `COALESCE(scheduled_at, created_at)`. On older GoodJob schemas an immediate job has a `NULL` `scheduled_at`, which sorted last and hid an old immediate job behind a newer scheduled one. Reported latency was too low and may be (correctly) higher after this fix.

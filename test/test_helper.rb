@@ -28,10 +28,13 @@ require "mocha/minitest"
 require "webmock/minitest"
 require "timecop"
 
+# Timecop mocks Time.now but leaves two Process clocks live; bridge both to the frozen
+# wall time so a single Timecop.freeze drives every clock the code (and Sidekiq) reads:
+#   - mock_process_clock freezes CLOCK_REALTIME, which Sidekiq stamps enqueued_at from.
+#   - the prepend freezes CLOCK_MONOTONIC, which Timecop never freezes and which the
+#     dispatcher and lease pace off.
 Timecop.mock_process_clock = true
 
-# Timecop.freeze does not advance CLOCK_MONOTONIC, which the dispatcher and lease pace off.
-# Route it through the frozen wall time so tests drive monotonic pacing with Timecop.freeze.
 Process.singleton_class.prepend(Module.new do
   def clock_gettime(clock_id, *args)
     return Time.now.to_f if clock_id == Process::CLOCK_MONOTONIC

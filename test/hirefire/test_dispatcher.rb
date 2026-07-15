@@ -566,6 +566,26 @@ class HireFire::DispatcherTest < Minitest::Test
     refute dispatcher.running?
   end
 
+  def test_stale_loop_generation_stops_after_restart
+    dispatcher = configure_web_only
+    generation = 1
+    dispatcher.instance_variable_set(:@running, true)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    dispatcher.instance_variable_set(:@generation, generation)
+
+    assert dispatcher.send(:loop_active?, generation)
+
+    dispatcher.instance_variable_set(:@running, false)
+    dispatcher.instance_variable_set(:@pid, nil)
+    refute dispatcher.send(:loop_active?, generation)
+
+    dispatcher.instance_variable_set(:@generation, 2)
+    dispatcher.instance_variable_set(:@running, true)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    refute dispatcher.send(:loop_active?, generation)
+    assert dispatcher.send(:loop_active?, 2)
+  end
+
   def test_a_hung_worker_sampler_does_not_stall_web_dispatch
     stub_lease(granted: true)
     sampler_gate = Queue.new

@@ -17,6 +17,7 @@ module HireFire
       @mutex = Mutex.new
       @running = false
       @pid = nil
+      @generation = 0
       @thread = nil
       @worker_thread = nil
       @last_web_second = nil
@@ -32,8 +33,10 @@ module HireFire
 
         buffer.discard_inherited if @pid && @pid != Process.pid
 
-        @thread = Thread.new { loop_until_stopped { tick } }
-        @worker_thread = Thread.new { loop_until_stopped { worker_tick } } if @workers.any?
+        @generation += 1
+        generation = @generation
+        @thread = Thread.new { loop_until_stopped(generation) { tick } }
+        @worker_thread = Thread.new { loop_until_stopped(generation) { worker_tick } } if @workers.any?
         @running = true
         @pid = Process.pid
       end
@@ -77,8 +80,12 @@ module HireFire
 
     private
 
-    def loop_until_stopped
-      while running?
+    def loop_active?(generation)
+      @mutex.synchronize { @running && @pid == Process.pid && @generation == generation }
+    end
+
+    def loop_until_stopped(generation)
+      while loop_active?(generation)
         yield
         sleep 1
       end

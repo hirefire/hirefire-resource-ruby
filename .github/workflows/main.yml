@@ -98,5 +98,14 @@ jobs:
         with:
           ruby-version: 4.0
           bundler-cache: true
+      - name: Verify tag matches package version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          expected="v$(ruby -e 'require_relative "lib/hirefire/version"; print HireFire::VERSION')"
+          if [ "$TAG" != "$expected" ]; then
+            echo "Tag $TAG does not match package version $expected"
+            exit 1
+          fi
       - name: Release Gem
         uses: rubygems/release-gem@v1

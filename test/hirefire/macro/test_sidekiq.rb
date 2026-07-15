@@ -141,13 +141,11 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     5.times { enqueue_scheduled }
     enqueue
 
-    # max_scheduled: 0 counts no scheduled jobs (not "no limit"), leaving only the enqueued one.
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 0, skip_retries: true, skip_working: true)
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: 0, skip_retries: true, skip_working: true)
   end
 
   def test_server_lookup_pages_and_caps_across_the_zrange_boundary
-    # 2_300 spans three of the Lua scan's 1000-entry pages.
     total = 2_300
     at = Time.now.to_i - 100
 
@@ -183,8 +181,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   end
 
   def test_server_lookup_reraises_non_noscript_script_errors
-    # An unparseable payload makes the Lua script abort with a non-NOSCRIPT
-    # error, which must propagate rather than trigger the load-and-retry path.
     Sidekiq.redis do |connection|
       case identify_redis_client(connection)
       when :redis

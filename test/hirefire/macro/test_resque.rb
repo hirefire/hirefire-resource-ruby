@@ -73,7 +73,6 @@ class HireFire::Macro::ResqueTest < Minitest::Test
   end
 
   def test_job_queue_size_pages_scheduled_timestamps_across_the_batch_boundary
-    # 1_001 timestamps span two of the schedule scan's 1000-per-page batches.
     now = Time.now.to_i
 
     Resque.redis.pipelined do |pipeline|
@@ -88,7 +87,6 @@ class HireFire::Macro::ResqueTest < Minitest::Test
   end
 
   def test_job_queue_size_pages_scheduled_jobs_within_a_timestamp_across_the_batch_boundary
-    # 1_500 jobs in one timestamp span two of the per-timestamp LRANGE pages.
     timestamp = Time.now.to_i - 100
 
     Resque.redis.pipelined do |pipeline|

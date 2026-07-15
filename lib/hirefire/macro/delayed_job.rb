@@ -10,6 +10,8 @@ module HireFire
         extend HireFire::Utility
         extend self
 
+        # Raised when neither Active Record nor Mongoid can be detected as the Delayed::Job
+        # persistence backend.
         class MapperNotDetectedError < StandardError; end
 
         # Calculates the maximum job queue latency using Delayed::Job. If no queues are specified,

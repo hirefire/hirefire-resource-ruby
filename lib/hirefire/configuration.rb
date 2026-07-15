@@ -3,13 +3,40 @@
 require "logger"
 
 module HireFire
+  # Declares what each process tracks (http, job metrics, CPU) and holds shared settings such as
+  # the token and logger.
+  #
+  # @!attribute [r] web
+  #   The http collector once an http process is declared, otherwise +nil+.
+  #   @return [HireFire::Web, nil]
+  # @!attribute [r] workers
+  #   Job-metric collectors declared via sampler blocks on {#service} or {#dyno}.
+  #   @return [HireFire::Workers]
+  # @!attribute [r] cpu
+  #   CPU collectors declared via {#service} or {#dyno} with +tracking: :cpu+.
+  #   @return [Array<HireFire::CPU>]
+  # @!attribute [rw] logger
+  #   Logger used for HireFire diagnostic messages. Defaults to a stdout logger. Set to +nil+
+  #   (or a logger missing the log methods) to silence diagnostics.
+  #   @return [#error, #warn, #info, nil]
+  # @!attribute [rw] log_queue_metrics
+  #   When true, the HTTP middleware prints +[hirefire:router] queue=…ms+ for each sample.
+  #   @return [Boolean]
   class Configuration
+    # Raised when {#service} or {#dyno} cannot resolve a collector because neither +tracking+ nor a
+    # sampler block was given. Bare +dyno(:web)+ is valid: the +"web"+ name implies http without
+    # either argument.
     class MissingSamplerError < StandardError; end
 
+    # Raised when a sampler block is given alongside +tracking: :http+ or +tracking: :cpu+, which
+    # collect their values automatically and do not take a sampler.
     class UnexpectedSamplerError < StandardError; end
 
+    # Raised when +tracking+ is given a value the method does not accept.
     class UnknownCollectorError < StandardError; end
 
+    # Raised when a dyno name was already declared (names are compared case-insensitively), or a
+    # second http process is declared in the same app process.
     class DuplicateDynoError < StandardError; end
 
     SERVICE_COLLECTORS = {http: :http, cpu: :cpu}.freeze
@@ -31,6 +58,13 @@ module HireFire
       @mutex = Mutex.new
     end
 
+    # The HireFire API token. Returns the value assigned in code when it is not +nil+, else the
+    # +HIREFIRE_TOKEN+ environment variable, else +nil+. Assigning +nil+ clears the in-code value so
+    # the environment variable is consulted again. It does not force the token off when
+    # +HIREFIRE_TOKEN+ is set. A token present when {HireFire.configure} runs starts the dispatcher
+    # and enables reporting.
+    #
+    # @return [String, nil]
     def token
       @token || ENV["HIREFIRE_TOKEN"]
     end
@@ -125,10 +159,16 @@ module HireFire
       register(name, collector, &sampler)
     end
 
+    # In-memory metric buffer that accumulates samples between dispatcher flushes.
+    #
+    # @return [HireFire::Buffer]
     def buffer
       @buffer || @mutex.synchronize { @buffer ||= Buffer.new }
     end
 
+    # Periodic reporter that samples workers/CPU and flushes buffered metrics to the API.
+    #
+    # @return [HireFire::Dispatcher]
     def dispatcher
       @dispatcher || @mutex.synchronize do
         @dispatcher ||= Dispatcher.new(
@@ -140,6 +180,9 @@ module HireFire
       end
     end
 
+    # Stops the dispatcher if one was started.
+    #
+    # @return [void]
     def stop_dispatcher
       @dispatcher&.stop
     end

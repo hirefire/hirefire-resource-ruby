@@ -2,6 +2,9 @@
 
 module HireFire
   module Errors
+    # Mixin that defines {#job_queue_latency} as always raising
+    # {JobQueueLatencyUnsupportedError}. Extended by queue macros that have no latency metric
+    # (Resque, Bunny).
     module JobQueueLatencyUnsupported
       # Job queue latency is not supported for this backend. Calling this always raises.
       #

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module HireFire
+  # Periodic reporter that samples workers/CPU and flushes buffered metrics to the API.
   class Dispatcher
     WEB_BACKFILL_LIMIT = 60
     PAYLOAD_SIZE_LIMIT = 65_536
@@ -25,6 +26,10 @@ module HireFire
       @next_dispatch_at = nil
     end
 
+    # Starts the dispatcher loops.
+    #
+    # @return [Boolean] +true+ when started. +false+ if already running in this process, or if
+    #   starting the loops failed (the failure is logged).
     def start
       return false if @running && @pid == Process.pid
 
@@ -49,6 +54,13 @@ module HireFire
       false
     end
 
+    # Stops the dispatcher loops and closes transport resources.
+    #
+    # Joins local loop threads for up to 5 seconds each, then performs a best-effort final flush
+    # before closing the HTTP client and lease connection. Loop generations prevent a hung thread
+    # that outlives the join from resuming work after a later {#start}.
+    #
+    # @return [Boolean] +true+ once the dispatcher has stopped, +false+ when it was not running.
     def stop
       threads = nil
 
@@ -74,6 +86,9 @@ module HireFire
       true
     end
 
+    # Whether the dispatcher is currently running in this process.
+    #
+    # @return [Boolean]
     def running?
       @mutex.synchronize { @running && @pid == Process.pid }
     end

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# HireFire singleton entrypoint: configure processes and report metrics.
 module HireFire
   extend self
 
@@ -26,10 +27,17 @@ module HireFire
     configuration
   end
 
+  # The process-wide shared configuration.
+  #
+  # @return [HireFire::Configuration]
   def configuration
     @configuration ||= Configuration.new
   end
 
+  # Stops any running dispatcher and replaces the configuration with a fresh, empty one. Mainly
+  # for tests and reconfiguration between runs.
+  #
+  # @return [void]
   def reset
     @configuration&.stop_dispatcher
     @configuration = nil

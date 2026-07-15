@@ -1,13 +1,24 @@
 # frozen_string_literal: true
 
 module HireFire
+  # Rack middleware that samples request queue time from the +X-Request-Start+ (or
+  # +X-Queue-Start+) header on each request. Insert it early in the middleware stack (the
+  # {HireFire::Railtie} does this automatically for Rails).
+  #
+  # When +configuration.web+ and +configuration.token+ are both set, records a queue-time sample
+  # (milliseconds) and starts the dispatcher. When +log_queue_metrics+ is true, also prints
+  # +[hirefire:router] queue=…ms+. Failures in this path are logged and swallowed so the host app
+  # is unaffected.
   class Middleware
     REQUEST_QUEUE_TIME_LIMIT = 60_000
 
+    # @param app [#call] the next Rack application
     def initialize(app)
       @app = app
     end
 
+    # @param env [Hash] the Rack environment
+    # @return [Array] the Rack response triple
     def call(env)
       process_request_queue_time(env)
       @app.call(env)

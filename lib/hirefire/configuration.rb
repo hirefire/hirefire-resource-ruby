@@ -219,7 +219,6 @@ module HireFire
         end
         @web = Web.new(name)
       when :job
-        raise MissingSamplerError, "Missing sampler for #{name.inspect} { ... }" unless sampler
         @workers << Worker.new(name, &sampler)
       when :cpu
         reject_sampler!(name, sampler)

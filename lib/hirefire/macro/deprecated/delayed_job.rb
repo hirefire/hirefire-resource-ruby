@@ -40,7 +40,6 @@ module HireFire
               query = query.where(queue: queues) unless queues.empty?
               query.count
             when :active_record_2
-              # Note: There is no queue column in delayed_job <= 2.x
               query = ::Delayed::Job.scoped(conditions: ["run_at <= ? AND failed_at is NULL", Time.now.utc])
               query = query.scoped(conditions: ["priority >= ?", options[:min_priority]]) if options.key?(:min_priority)
               query = query.scoped(conditions: ["priority <= ?", options[:max_priority]]) if options.key?(:max_priority)

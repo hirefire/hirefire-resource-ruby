@@ -64,8 +64,6 @@ module HireFire
         private
 
         def fast_lookup_capable?(queues, all_queues)
-          # When no queue names are provided (or all of them are), much faster
-          # counts are possible using Sidekiq::Stats and Redis
           queues.sort == all_queues.sort
         end
 
@@ -97,9 +95,6 @@ module HireFire
 
           if !options[:skip_scheduled]
             max = options[:max_scheduled]
-
-            # For potentially long-running loops, compare all jobs against
-            # time when the set snapshot was taken to avoid incorrect counts.
             now = Time.now
 
             in_schedule = ::Sidekiq::ScheduledSet.new.inject(0) do |memo, job|
@@ -123,9 +118,9 @@ module HireFire
 
           if !options[:skip_working]
             in_progress = ::Sidekiq::Workers.new.count do |key, tid, job|
-              if job.is_a?(Hash) # Sidekiq < 7.2.1
+              if job.is_a?(Hash)
                 queues.include?(job["queue"]) && job["run_at"] <= now_as_i
-              else # Sidekiq >= 7.2.1
+              else
                 queues.include?(job.queue) && job.run_at <= now
               end
             end

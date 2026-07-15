@@ -130,7 +130,6 @@ module HireFire
             job = job_payload ? JSON.parse(job_payload) : {}
 
             if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("8.0.0")
-              # Sidekiq 8 stores timestamps as epoch milliseconds.
               job["enqueued_at"] ? Time.now.to_f - job["enqueued_at"] / 1000.0 : 0.0
             else
               job["enqueued_at"] ? Time.now.to_f - job["enqueued_at"] : 0.0
@@ -338,17 +337,15 @@ module HireFire
           now_as_i = now.to_i
 
           ::Sidekiq::Workers.new.count do |key, tid, job|
-            if job.is_a?(Hash) # Sidekiq < 7.2.1
+            if job.is_a?(Hash)
               (queues.empty? || queues.include?(job["queue"])) && job["run_at"] <= now_as_i
-            else # Sidekiq >= 7.2.1
+            else
               (queues.empty? || queues.include?(job.queue)) && job.run_at <= now
             end
           end
         end
 
         def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: false, max_scheduled: nil)
-          # Match the client: nil is "no limit", 0 or negative is "count none".
-          # The Lua script can't take a nil argv, so "no limit" is encoded as -1.
           max_scheduled = max_scheduled.nil? ? -1 : [max_scheduled.to_i, 0].max
           ::Sidekiq.redis do |connection|
             now = Time.now.to_i

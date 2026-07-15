@@ -78,9 +78,6 @@ module HireFire
 
       private
 
-      # One bind placeholder per queue. The previous "{a,b}" array-literal
-      # param mis-parsed any queue name containing a comma (or array-literal
-      # special characters) into multiple names.
       def filter_by_queues_if_any(queues)
         return "" unless queues.any?
         placeholders = (1..queues.size).map { |i| "$#{i}" }.join(", ")

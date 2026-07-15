@@ -33,8 +33,6 @@ module HireFire
         query = query.where(performed_at: nil)
         query = query.where.not(error_event: discarded_enum).or(query.where(error_event: nil)) if error_event_supported?
         query = query.where("scheduled_at <= ?", Time.now).or(query.where(scheduled_at: nil))
-        # Immediate jobs have a NULL scheduled_at that sorts last under plain ASC,
-        # hiding old jobs. COALESCE matches GoodJob's schedule_ordered scope.
         query = query.order(Arel.sql("COALESCE(scheduled_at, created_at) ASC"))
 
         if (job = query.first)

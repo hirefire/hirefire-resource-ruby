@@ -6,8 +6,6 @@ module HireFire
   module Macro
     module Bunny
       extend HireFire::Macro::Deprecated::Bunny
-      # job_queue_latency is unsupported for Bunny and always raises
-      # HireFire::Errors::JobQueueLatencyUnsupportedError.
       extend HireFire::Errors::JobQueueLatencyUnsupported
       extend HireFire::Utility
       extend self
@@ -74,16 +72,12 @@ module HireFire
 
       private
 
-      # A missing queue's passive declare makes the broker close the channel (404).
-      # Closing it again raises, masking the real error and leaking the connection.
       def close_channel(channel)
         channel&.close
       rescue ::Bunny::Exception, Timeout::Error
         nil
       end
 
-      # Likewise isolated: a failing connection close (e.g. a broken socket)
-      # must not mask the body's error or supersede the channel close.
       def close_connection(connection)
         connection&.close
       rescue ::Bunny::Exception, Timeout::Error
@@ -93,8 +87,6 @@ module HireFire
       def open_channel(connection, close_connection_on_failure:)
         connection.create_channel
       rescue
-        # create_channel runs before the caller's ensure, so an owned connection
-        # would leak on failure. A borrowed connection is left to its owner.
         close_connection(connection) if close_connection_on_failure
         raise
       end

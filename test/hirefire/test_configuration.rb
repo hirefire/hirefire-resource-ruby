@@ -346,6 +346,19 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_nil @configuration.token
   end
 
+  def test_token_empty_string_is_not_overridden_by_env
+    ENV["HIREFIRE_TOKEN"] = "from-env"
+    @configuration.token = ""
+    assert_equal "", @configuration.token
+  end
+
+  def test_token_nil_falls_back_to_env
+    ENV["HIREFIRE_TOKEN"] = "from-env"
+    @configuration.token = "custom-token"
+    @configuration.token = nil
+    assert_equal "from-env", @configuration.token
+  end
+
   def test_dyno_rejects_a_positional_second_argument
     assert_raises(ArgumentError) { @configuration.dyno(:web, :cpu) }
   end

@@ -26,6 +26,10 @@ This library integrates Ruby applications with HireFire's Heroku Dyno Autoscaler
 
 The test suite runs against these minimum versions and the current latest release of each runtime and library. Older versions may still work, but are not officially supported.
 
+**Documentation:**
+
+Public API prose is YARD on the consumer-facing surface. Published gems are browsable on [rubydoc.info](https://www.rubydoc.info/gems/hirefire-resource). Locally: `bundle exec rake doc`.
+
 ---
 
 Since 2011, HireFire has helped over 1,500 companies autoscale more than 5,000 [Heroku] applications across 10,000+ web and worker dynos.
@@ -38,7 +42,7 @@ Learn more at the [home page][HireFire].
 
 ## Development
 
-Requires [Docker](https://www.docker.com/). PostgreSQL, MongoDB, Redis, and RabbitMQ for the macro tests run in containers. `bin/services up` starts them on Docker-assigned free host ports recorded in a git-ignored `.env` (read by the test suite). `bin/services down` stops them and removes `.env`.
+Requires [Docker](https://www.docker.com/) and [mise](https://mise.jdx.dev/). PostgreSQL, MongoDB, Redis, and RabbitMQ for the macro tests run in containers, and mise installs the pinned Ruby from `.tool-versions`. `bin/services up` starts them on Docker-assigned free host ports recorded in a git-ignored `.env` (read by the test suite). `bin/services down` stops them and removes `.env`. Because the ports are assigned fresh at startup, multiple worktrees, and any system-wide databases, run side by side without conflicts.
 
 - Run `bin/setup` to prepare the environment.
 - Run `bin/services up` / `bin/services down` to start / stop the database containers.

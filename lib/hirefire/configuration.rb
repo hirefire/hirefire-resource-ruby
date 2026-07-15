@@ -73,8 +73,8 @@ module HireFire
     # implies `tracking: :http` on its own, and `:cpu` is the only `tracking:` value it accepts.
     #
     # Resolution: `tracking: :cpu` tracks CPU, a sampler block tracks job metrics, and the name "web"
-    # (case-insensitive) tracks http on its own. `:cpu` is the only `tracking:` value `dyno`
-    # accepts. For an http process under a non-"web" name, use `service(name, tracking: :http)`.
+    # (case-insensitive) tracks http on its own. For an http process under a non-"web" name, use
+    # `service(name, tracking: :http)`.
     #
     # @param name [String, Symbol] the process name. Must be non-empty.
     # @param tracking [Symbol, String, nil] `:cpu`, or omit.

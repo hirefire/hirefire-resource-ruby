@@ -346,10 +346,15 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_nil @configuration.token
   end
 
-  def test_token_empty_string_is_not_overridden_by_env
+  def test_token_empty_string_is_treated_as_absent
     ENV["HIREFIRE_TOKEN"] = "from-env"
     @configuration.token = ""
-    assert_equal "", @configuration.token
+    assert_nil @configuration.token
+  end
+
+  def test_token_empty_env_is_treated_as_absent
+    ENV["HIREFIRE_TOKEN"] = ""
+    assert_nil @configuration.token
   end
 
   def test_token_nil_falls_back_to_env

@@ -59,14 +59,16 @@ module HireFire
     end
 
     # The HireFire API token. Returns the value assigned in code when it is not +nil+, else the
-    # +HIREFIRE_TOKEN+ environment variable, else +nil+. Assigning +nil+ clears the in-code value so
-    # the environment variable is consulted again. It does not force the token off when
-    # +HIREFIRE_TOKEN+ is set. A token present when {HireFire.configure} runs starts the dispatcher
-    # and enables reporting.
+    # +HIREFIRE_TOKEN+ environment variable, else +nil+. An empty string (in code or from the env)
+    # is treated as absent (+nil+), so it neither enables reporting nor is sent on the wire.
+    # Assigning +nil+ clears the in-code value so the environment variable is consulted again.
+    # Assigning an empty string forces the token off even when +HIREFIRE_TOKEN+ is set. A non-empty
+    # token present when {HireFire.configure} runs starts the dispatcher and enables reporting.
     #
     # @return [String, nil]
     def token
-      @token || ENV["HIREFIRE_TOKEN"]
+      value = @token.nil? ? ENV["HIREFIRE_TOKEN"] : @token
+      value if value && !value.empty?
     end
 
     # Declares a service by dyno name. Like {#service}, but the name "web" (case-insensitive)

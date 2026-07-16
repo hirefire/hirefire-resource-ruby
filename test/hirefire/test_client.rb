@@ -237,6 +237,15 @@ class HireFire::ClientTest < Minitest::Test
     assert_includes error.message, "HIREFIRE_TOKEN"
   end
 
+  def test_raises_with_empty_token
+    ENV["HIREFIRE_TOKEN"] = ""
+
+    error = assert_raises(HireFire::Client::RequestError) do
+      client.submit_samples("[]")
+    end
+
+    assert_includes error.message, "HIREFIRE_TOKEN"
+  end
 
   def test_custom_data_url
     ENV["HIREFIRE_DATA_URL"] = "https://custom.hirefire.io"

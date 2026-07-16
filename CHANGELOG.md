@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - HTTP metric and lease requests now set `write_timeout` to the same 5-second budget as connect and read, so a peer that accepts then stalls during the request body cannot pin the dispatch loop for the stdlib's 60-second write default.
+- An empty token (`""` in code or `HIREFIRE_TOKEN=""`) is treated as absent: the dispatcher does not start, middleware does not sample, and no empty `HireFire-Token` is sent. Assigning `config.token = ""` also forces reporting off when the env var is set.
 - Dispatcher loop threads bind to a start generation, so a hung loop that outlives `stop`'s join cannot resume work after a later `start` (matching the Python and Node clients).
 - Malformed cgroup CPU usage, `/proc/[pid]/stat`, and CPU quota readings now fall through to the next source instead of parsing to zero. A zero usage baseline could report a spurious CPU spike on the next real reading, and a zero quota silently disabled CPU sampling.
 - Internal dispatch pacing, lease renewal, and the CPU utilization delta now measure elapsed time on a monotonic clock, so a system clock adjustment (e.g. an NTP step) no longer skews the dispatch cadence, lease renewal, or a CPU reading. The metric timestamps themselves stay wall-clock, as the server requires.

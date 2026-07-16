@@ -14,3 +14,6 @@
 /gemfiles/*.gemfile.lock
 CLAUDE.md
 .worktreeinclude
+.claude/settings.local.json
+.cursor/sandbox.json
+.cursorignore

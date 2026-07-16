@@ -86,8 +86,9 @@ module HireFire
       reset_connection
       http = Net::HTTP.new(uri.host, uri.port, nil)
       http.use_ssl = uri.scheme == "https"
-      http.read_timeout = @timeout
       http.open_timeout = @timeout
+      http.read_timeout = @timeout
+      http.write_timeout = @timeout
       http.keep_alive_timeout = 60
       http.start
       @owner_pid = Process.pid

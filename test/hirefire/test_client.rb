@@ -148,6 +148,16 @@ class HireFire::ClientTest < Minitest::Test
     assert_operator client.instance_variable_get(:@http).keep_alive_timeout, :>, 30
   end
 
+  def test_open_read_and_write_timeouts_match
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]")
+    http = client.instance_variable_get(:@http)
+
+    assert_equal 5, http.open_timeout
+    assert_equal 5, http.read_timeout
+    assert_equal 5, http.write_timeout
+  end
+
   def test_reconnects_and_retries_once_on_a_desynced_keep_alive_response
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
     client.submit_samples("[]")
@@ -226,6 +236,7 @@ class HireFire::ClientTest < Minitest::Test
 
     assert_includes error.message, "HIREFIRE_TOKEN"
   end
+
 
   def test_custom_data_url
     ENV["HIREFIRE_DATA_URL"] = "https://custom.hirefire.io"

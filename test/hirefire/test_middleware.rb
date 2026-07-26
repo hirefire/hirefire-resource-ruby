@@ -41,19 +41,24 @@ class HireFire::MiddlewareTest < Minitest::Test
     end
 
     HireFire.configuration.dispatcher.stubs(:start)
+    HireFire.configuration.dispatcher.stubs(:ensure_job_queue_loop)
 
     Timecop.freeze Time.at(1_700_000_001) do
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
-      @middleware.call(request)
+      status, headers, body = @middleware.call(request)
 
+      assert_equal 200, status
+      assert_equal({}, headers)
+      assert_equal ["Hello"], body
       data = HireFire.configuration.buffer.flush
-      assert_equal({1_700_000_001 => [1000]}, data[:web])
+      assert_equal({1_700_000_001 => {sum: 1000.0, count: 1}}, data.dig("web", "rqt"))
     end
   end
 
   def test_reads_x_queue_start_when_request_start_is_absent
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -63,13 +68,14 @@ class HireFire::MiddlewareTest < Minitest::Test
       request = Rack::MockRequest.env_for("/", "HTTP_X_QUEUE_START" => "1700000000000")
       @middleware.call(request)
 
-      assert_equal({1_700_000_001 => [1000]}, HireFire.configuration.buffer.flush[:web])
+      assert_equal({1_700_000_001 => {sum: 1000.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
     end
   end
 
   def test_prefers_x_request_start_over_x_queue_start
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -81,7 +87,45 @@ class HireFire::MiddlewareTest < Minitest::Test
         "HTTP_X_QUEUE_START" => "1699999996000")
       @middleware.call(request)
 
-      assert_equal({1_700_000_001 => [1000]}, HireFire.configuration.buffer.flush[:web])
+      assert_equal({1_700_000_001 => {sum: 1000.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
+    end
+  end
+
+  def test_falls_back_to_x_queue_start_when_request_start_is_blank
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/",
+        "HTTP_X_REQUEST_START" => "",
+        "HTTP_X_QUEUE_START" => "1700000000000")
+      @middleware.call(request)
+
+      assert_equal({1_700_000_001 => {sum: 1000.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
+    end
+  end
+
+  def test_falls_back_to_x_queue_start_when_request_start_is_whitespace
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/",
+        "HTTP_X_REQUEST_START" => "  \t  ",
+        "HTTP_X_QUEUE_START" => "1700000000000")
+      @middleware.call(request)
+
+      assert_equal({1_700_000_001 => {sum: 1000.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
     end
   end
 
@@ -93,6 +137,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     end
 
     HireFire.configuration.dispatcher.expects(:start).once
+    HireFire.configuration.dispatcher.expects(:ensure_job_queue_loop).once
 
     Timecop.freeze Time.at(1_700_000_001) do
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
@@ -140,6 +185,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   def test_normalizes_every_precision_variant_to_the_same_queue_time
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -155,7 +201,7 @@ class HireFire::MiddlewareTest < Minitest::Test
         request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => header)
         @middleware.call(request)
 
-        assert_equal({1_700_000_001 => [750]}, HireFire.configuration.buffer.flush[:web],
+        assert_equal({1_700_000_001 => {sum: 750.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"),
           "#{unit} variant should normalize to 750ms")
       end
     end
@@ -164,6 +210,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   def test_clamps_a_future_microsecond_start_to_zero
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -173,13 +220,14 @@ class HireFire::MiddlewareTest < Minitest::Test
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000005000000")
       @middleware.call(request)
 
-      assert_equal({1_700_000_001 => [0]}, HireFire.configuration.buffer.flush[:web])
+      assert_equal({1_700_000_001 => {sum: 0.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
     end
   end
 
   def test_drops_an_over_the_limit_nanosecond_start
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -189,13 +237,14 @@ class HireFire::MiddlewareTest < Minitest::Test
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1699999000000000000")
       @middleware.call(request)
 
-      assert_empty HireFire.configuration.buffer.flush[:web]
+      assert_nil HireFire.configuration.buffer.flush.dig("web", "rqt")
     end
   end
 
   def test_ignores_unparseable_request_start
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -204,12 +253,13 @@ class HireFire::MiddlewareTest < Minitest::Test
     request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "garbage")
     @middleware.call(request)
 
-    assert_empty HireFire.configuration.buffer.flush[:web]
+    assert_nil HireFire.configuration.buffer.flush.dig("web", "rqt")
   end
 
   def test_ignores_implausible_request_start
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -218,12 +268,13 @@ class HireFire::MiddlewareTest < Minitest::Test
     request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "t=0.05")
     @middleware.call(request)
 
-    assert_empty HireFire.configuration.buffer.flush[:web]
+    assert_nil HireFire.configuration.buffer.flush.dig("web", "rqt")
   end
 
   def test_lower_guard_boundary_accepts_1e9_and_rejects_below
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -232,17 +283,18 @@ class HireFire::MiddlewareTest < Minitest::Test
     Timecop.freeze Time.at(1_000_000_001) do
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1000000000")
       @middleware.call(request)
-      assert_equal({1_000_000_001 => [1000]}, HireFire.configuration.buffer.flush[:web])
+      assert_equal({1_000_000_001 => {sum: 1000.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
 
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "999999999")
       @middleware.call(request)
-      assert_empty HireFire.configuration.buffer.flush[:web]
+      assert_nil HireFire.configuration.buffer.flush.dig("web", "rqt")
     end
   end
 
   def test_clamps_a_future_request_start_to_zero
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -252,13 +304,14 @@ class HireFire::MiddlewareTest < Minitest::Test
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000005000")
       @middleware.call(request)
 
-      assert_equal({1_700_000_001 => [0]}, HireFire.configuration.buffer.flush[:web])
+      assert_equal({1_700_000_001 => {sum: 0.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
     end
   end
 
   def test_cap_boundary_keeps_exactly_the_limit_and_drops_one_over
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -267,17 +320,18 @@ class HireFire::MiddlewareTest < Minitest::Test
     Timecop.freeze Time.at(1_700_000_000) do
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1699999940000")
       @middleware.call(request)
-      assert_equal({1_700_000_000 => [60_000]}, HireFire.configuration.buffer.flush[:web])
+      assert_equal({1_700_000_000 => {sum: 60000.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
 
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1699999939999")
       @middleware.call(request)
-      assert_empty HireFire.configuration.buffer.flush[:web]
+      assert_nil HireFire.configuration.buffer.flush.dig("web", "rqt")
     end
   end
 
   def test_no_request_start_header_is_a_noop
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -285,16 +339,34 @@ class HireFire::MiddlewareTest < Minitest::Test
 
     response = @request.get("/")
     assert_equal 200, response.status
-    assert_empty HireFire.configuration.buffer.flush[:web]
+    assert_nil HireFire.configuration.buffer.flush.dig("web", "rqt")
   end
 
-  def test_does_not_sample_without_a_web_collector
+  def test_always_on_samples_without_a_http_source
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    ENV["DYNO"] = "web.1"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
-    request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
-    @middleware.call(request)
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+      @middleware.call(request)
 
-    assert_empty HireFire.configuration.buffer.flush[:web]
+      assert_equal({1_700_000_001 => {sum: 1000.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
+    end
+  end
+
+  def test_does_not_sample_without_identity_or_explicit_http_name
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+      @middleware.call(request)
+
+      assert_empty HireFire.configuration.buffer.flush
+    end
   end
 
   def test_does_not_sample_without_a_token
@@ -305,7 +377,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
     @middleware.call(request)
 
-    assert_empty HireFire.configuration.buffer.flush[:web]
+    assert_nil HireFire.configuration.buffer.flush.dig("web", "rqt")
   end
 
   def test_an_internal_failure_does_not_break_the_request
@@ -332,6 +404,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   def test_a_raising_logger_does_not_break_the_request
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -346,7 +419,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     end
     HireFire.configuration.logger = raising_logger
 
-    HireFire.configuration.web.stubs(:sample).raises("sampling blew up")
+    HireFire::Source::HTTP.any_instance.stubs(:sample).raises("sampling blew up")
 
     Timecop.freeze Time.at(1_700_000_001) do
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
@@ -360,6 +433,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   def test_an_error_raised_by_the_host_app_still_propagates
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
 
     HireFire.configure do |config|
       config.dyno(:web)
@@ -374,21 +448,32 @@ class HireFire::MiddlewareTest < Minitest::Test
     end
   end
 
-  def test_returns_the_apps_response_on_the_sampling_path
+  def test_marks_http_active_for_tokened_request_without_platform_web_role
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    ENV["HIREFIRE_SERVICE_NAME"] = "api"
     HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
+    HireFire.boot
 
-    HireFire.configure do |config|
-      config.dyno(:web)
-    end
+    refute HireFire.configuration.rqt_enabled?
 
     Timecop.freeze Time.at(1_700_000_001) do
       request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
-      status, headers, body = @middleware.call(request)
-
-      assert_equal 200, status
-      assert_equal({}, headers)
-      assert_equal ["Hello"], body
+      @middleware.call(request)
     end
+
+    assert HireFire.configuration.rqt_enabled?
+    assert_equal({1_700_000_001 => {sum: 1000.0, count: 1}}, HireFire.configuration.buffer.flush.dig("api", "rqt"))
+  end
+
+  def test_does_not_mark_http_active_without_token
+    ENV["HIREFIRE_SERVICE_NAME"] = "api"
+    HireFire.boot
+
+    request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+    @middleware.call(request)
+
+    refute HireFire.configuration.rqt_enabled?
+    assert_empty HireFire.configuration.buffer.flush
   end
 end

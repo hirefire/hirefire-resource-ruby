@@ -45,4 +45,15 @@ class HireFire::UtilityTest < Minitest::Test
       normalize_queues(["  ", ""], allow_empty: false)
     end
   end
+
+  def test_only_blank_entries_return_empty_when_empty_is_allowed
+    assert_equal Set.new, normalize_queues(["  ", ""], allow_empty: true)
+  end
+
+  def test_missing_queue_error_message
+    error = assert_raises HireFire::Errors::MissingQueueError do
+      normalize_queues([], allow_empty: false)
+    end
+    assert_match(/queue/i, error.message)
+  end
 end

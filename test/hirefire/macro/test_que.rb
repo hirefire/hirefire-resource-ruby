@@ -91,6 +91,36 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Que.job_queue_size
   end
 
+  def test_v0_size_path_counts_due_jobs_without_finished_filter
+    HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
+
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", run_at: Time.now + 100})
+
+    assert_equal 2, HireFire::Macro::Que.job_queue_size
+    assert_equal 1, HireFire::Macro::Que.job_queue_size(:default)
+  end
+
+  def test_v0_size_path_includes_finished_jobs
+    HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
+
+    job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
+    Que.execute("UPDATE que_jobs SET finished_at = NOW() WHERE id = #{job.que_attrs[:id]};")
+
+    # v0 SQL has no finished_at/expired_at predicates (those columns are v1+).
+    assert_equal 1, HireFire::Macro::Que.job_queue_size
+  end
+
+  def test_v0_latency_path_reports_oldest_due_job
+    HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
+
+    enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 60})
+    enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 10})
+
+    assert_in_delta 60, HireFire::Macro::Que.job_queue_latency, LATENCY_DELTA
+  end
+
   def test_deprecated_queue_method
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
     assert_equal 1, HireFire::Macro::Que.queue(:default)

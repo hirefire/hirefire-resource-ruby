@@ -23,4 +23,15 @@ class HireFire::LogTest < Minitest::Test
 
     assert_nil HireFire::Log.safe(logger, :error, "boom")
   end
+
+  def test_safe_with_nil_logger
+    assert_nil HireFire::Log.safe(nil, :error, "boom")
+  end
+
+  def test_safe_returns_logger_result_on_success
+    logger = Object.new
+    logger.define_singleton_method(:info) { |msg| "logged:#{msg}" }
+
+    assert_equal "logged:ok", HireFire::Log.safe(logger, :info, "ok")
+  end
 end

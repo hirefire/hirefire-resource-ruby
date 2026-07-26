@@ -46,21 +46,22 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_in_delta 600, HireFire::Macro::GoodJob.job_queue_latency, LATENCY_DELTA
   end
 
-  def test_job_queue_latency_with_unfinished_jobs
+  def test_job_queue_latency_excludes_running_jobs
     job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
-    good_job_class.where(active_job_id: job_id).update_all(performed_at: 1.minute.ago)
+    mark_running(job_id, at: 1.minute.ago)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
+  end
+
+  def test_job_queue_latency_excludes_finished_before_perform_without_discard_event
+    job_id = Timecop.freeze(2.minutes.ago) { BasicJob.perform_later.job_id }
+    mark_finished_before_perform(job_id, finished_at: 1.minute.ago, scheduled_at: 2.minutes.ago)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
   end
 
   def test_job_queue_latency_with_discarded_jobs
     skip "GoodJob #{::GoodJob::VERSION} does not support error events" unless error_event_supported?
     job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
-    good_job_class.where(active_job_id: job_id).update_all(
-      performed_at: nil,
-      scheduled_at: 1.minute.ago,
-      finished_at: 1.minute.ago,
-      error_event: discarded_enum
-    )
+    mark_discarded(job_id, at: 1.minute.ago)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
   end
 
@@ -69,11 +70,12 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
     good_job_class.where(active_job_id: job_id).update_all(
       performed_at: nil,
+      finished_at: nil,
       scheduled_at: 1.minute.ago,
       error_event: retried_enum
     )
     assert_in_delta 60, HireFire::Macro::GoodJob.job_queue_latency, LATENCY_DELTA
-    good_job_class.where(active_job_id: job_id).update_all(performed_at: Time.now)
+    mark_running(job_id, at: Time.now)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
   end
 
@@ -95,21 +97,29 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
   end
 
-  def test_job_queue_size_with_unfinished_jobs
+  def test_job_queue_size_includes_null_scheduled_at
     job_id = BasicJob.perform_later.job_id
-    good_job_class.where(active_job_id: job_id).update_all(performed_at: 1.minute.ago)
+    good_job_class.where(active_job_id: job_id).update_all(scheduled_at: nil)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default)
+  end
+
+  def test_job_queue_size_excludes_running_jobs
+    job_id = BasicJob.perform_later.job_id
+    mark_running(job_id, at: 1.minute.ago)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
+  end
+
+  def test_job_queue_size_excludes_finished_before_perform_without_discard_event
+    job_id = Timecop.freeze(2.minutes.ago) { BasicJob.perform_later.job_id }
+    mark_finished_before_perform(job_id, finished_at: 1.minute.ago, scheduled_at: 2.minutes.ago)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
   end
 
   def test_job_queue_size_with_discarded_jobs
     skip "GoodJob #{::GoodJob::VERSION} does not support error events" unless error_event_supported?
     job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
-    good_job_class.where(active_job_id: job_id).update_all(
-      performed_at: nil,
-      scheduled_at: 1.minute.ago,
-      finished_at: 1.minute.ago,
-      error_event: discarded_enum
-    )
+    mark_discarded(job_id, at: 1.minute.ago)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
   end
 
@@ -118,12 +128,40 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     job_id = Timecop.freeze(1.minute.ago) { BasicJob.perform_later.job_id }
     good_job_class.where(active_job_id: job_id).update_all(
       performed_at: nil,
+      finished_at: nil,
       scheduled_at: 1.minute.ago,
       error_event: retried_enum
     )
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
-    good_job_class.where(active_job_id: job_id).update_all(performed_at: Time.now)
+    mark_running(job_id, at: Time.now)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
+  end
+
+  def test_ready_queue_ignores_terminal_and_running_neighbors
+    ready_id = Timecop.freeze(3.minutes.ago) { BasicJob.perform_later.job_id }
+    running_id = Timecop.freeze(2.minutes.ago) { BasicJob.perform_later.job_id }
+    finished_id = Timecop.freeze(4.minutes.ago) { BasicJob.perform_later.job_id }
+
+    mark_running(running_id, at: 2.minutes.ago)
+    mark_finished_before_perform(finished_id, finished_at: 1.minute.ago, scheduled_at: 4.minutes.ago)
+
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default)
+    assert_in_delta 180, HireFire::Macro::GoodJob.job_queue_latency, LATENCY_DELTA
+
+    remaining = good_job_class.where(active_job_id: ready_id).where(finished_at: nil, performed_at: nil)
+    assert_equal 1, remaining.count
+  end
+
+  def test_finished_success_rows_are_excluded
+    job_id = Timecop.freeze(5.minutes.ago) { BasicJob.perform_later.job_id }
+    good_job_class.where(active_job_id: job_id).update_all(
+      performed_at: 4.minutes.ago,
+      finished_at: 3.minutes.ago,
+      scheduled_at: 5.minutes.ago
+    )
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
   end
 
   def test_error_event_support_follows_schema_not_version
@@ -141,6 +179,33 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   end
 
   private
+
+  def mark_running(job_id, at:)
+    good_job_class.where(active_job_id: job_id).update_all(
+      performed_at: at,
+      finished_at: nil
+    )
+  end
+
+  def mark_finished_before_perform(job_id, finished_at:, scheduled_at:)
+    attrs = {
+      performed_at: nil,
+      finished_at: finished_at,
+      scheduled_at: scheduled_at
+    }
+    attrs[:error_event] = nil if error_event_supported?
+    good_job_class.where(active_job_id: job_id).update_all(attrs)
+  end
+
+  def mark_discarded(job_id, at:)
+    attrs = {
+      performed_at: nil,
+      scheduled_at: at,
+      finished_at: at
+    }
+    attrs[:error_event] = discarded_enum if error_event_supported?
+    good_job_class.where(active_job_id: job_id).update_all(attrs)
+  end
 
   def prepare_database
     db_config = Rails.configuration.database_configuration[Rails.env]

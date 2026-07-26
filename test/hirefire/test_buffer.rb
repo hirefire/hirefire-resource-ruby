@@ -7,152 +7,238 @@ class HireFire::BufferTest < Minitest::Test
     @buffer ||= HireFire::Buffer.new
   end
 
-  def test_sample_web
+  def test_sample_rqt_accumulates_sum_and_count
     Timecop.freeze Time.at(100) do
-      buffer.sample_web(12)
-      buffer.sample_web(8)
+      buffer.sample("web", "rqt", 10)
+      buffer.sample("web", "rqt", 20)
+      buffer.sample("web", "rqt", 30)
     end
 
     data = buffer.flush
-    assert_equal({100 => [12, 8]}, data[:web])
+    assert_equal({sum: 60.0, count: 3}, data["web"]["rqt"][100])
   end
 
-  def test_discard_inherited_clears_workers_and_cpu_but_keeps_web
+  def test_discard_inherited_clears_all_strategies
     Timecop.freeze Time.at(100) do
-      buffer.sample_web(7)
-      buffer.sample_worker("worker", 5)
-      buffer.sample_cpu("web", 12.5)
+      buffer.sample("web", "rqt", 7)
+      buffer.sample("worker", "jql", 5)
+      buffer.sample("web", "cpu", 12.5)
 
       buffer.discard_inherited
 
-      data = buffer.flush
-      assert_equal({100 => [7]}, data[:web])
-      assert_empty data[:workers]
-      assert_empty data[:cpu]
+      assert_empty buffer.flush
     end
   end
 
-  def test_sample_web_groups_by_timestamp
+  def test_rqt_caps_count_at_sample_count_limit
     Timecop.freeze Time.at(100) do
-      buffer.sample_web(12)
+      # Seed near the cap without iterating 1e6 times.
+      series = buffer.send(:series_for, "web", "rqt")
+      series[100] = {sum: 0.0, count: HireFire::Buffer::SAMPLE_COUNT_LIMIT}
+      buffer.sample("web", "rqt", 1)
+
+      data = buffer.flush
+      assert_equal HireFire::Buffer::SAMPLE_COUNT_LIMIT, data["web"]["rqt"][100][:count]
+    end
+  end
+
+  def test_non_rqt_latest_wins_bare_scalar
+    Timecop.freeze Time.at(100) do
+      buffer.sample("worker", "jqs", 1)
+      buffer.sample("worker", "jqs", 99)
+      buffer.sample("web", "cpu", 10.0)
+      buffer.sample("web", "cpu", 37.5)
+
+      data = buffer.flush
+      assert_equal 99, data["worker"]["jqs"][100]
+      assert_equal 37.5, data["web"]["cpu"][100]
+    end
+  end
+
+  def test_non_rqt_latest_wins_without_replace_kwarg
+    Timecop.freeze Time.at(100) do
+      buffer.sample("worker", "jqs", 1)
+      buffer.sample("worker", "jqs", 99)
+
+      data = buffer.flush
+      assert_equal 99, data["worker"]["jqs"][100]
+    end
+  end
+
+  def test_sample_rqt_groups_by_timestamp
+    Timecop.freeze Time.at(100) do
+      buffer.sample("web", "rqt", 12)
     end
 
     Timecop.freeze Time.at(101) do
-      buffer.sample_web(8)
+      buffer.sample("web", "rqt", 8)
     end
 
     data = buffer.flush
-    assert_equal({100 => [12], 101 => [8]}, data[:web])
+    assert_equal({100 => {sum: 12.0, count: 1}, 101 => {sum: 8.0, count: 1}}, data["web"]["rqt"])
   end
 
-  def test_sample_worker
-    buffer.sample_worker("worker", 42)
-    buffer.sample_worker("mailer", 18)
+  def test_sample_job_strategies
+    buffer.sample("worker", "jql", 42)
+    buffer.sample("mailer", "jqs", 18)
 
     data = buffer.flush
-    assert_equal [
-      {"name" => "worker", "sample" => 42},
-      {"name" => "mailer", "sample" => 18}
-    ], data[:workers]
+    assert_equal 42, data["worker"]["jql"].values.first
+    assert_equal 18, data["mailer"]["jqs"].values.first
   end
 
-  def test_flush_returns_both_and_resets
+  def test_flush_returns_and_resets
     Timecop.freeze Time.at(100) do
-      buffer.sample_web(5)
+      buffer.sample("web", "rqt", 5)
+      buffer.sample("worker", "jql", 10)
     end
 
-    buffer.sample_worker("worker", 10)
+    data = buffer.flush
+    assert_equal({100 => {sum: 5.0, count: 1}}, data["web"]["rqt"])
+    assert_equal({100 => 10}, data["worker"]["jql"])
 
     data = buffer.flush
-    assert_equal({100 => [5]}, data[:web])
-    assert_equal [{"name" => "worker", "sample" => 10}], data[:workers]
-
-    data = buffer.flush
-    assert_empty data[:web]
-    assert_empty data[:workers]
+    assert_empty data
   end
 
-  def test_sample_worker_latest_wins_per_name
-    buffer.sample_worker("worker", 42)
-    buffer.sample_worker("mailer", 18)
-    buffer.sample_worker("worker", 7)
+  def test_multi_strategy_under_one_name
+    Timecop.freeze Time.at(100) do
+      buffer.sample("web", "rqt", 12)
+      buffer.sample("web", "cpu", 37.5)
+    end
 
     data = buffer.flush
-    assert_equal [
-      {"name" => "worker", "sample" => 7},
-      {"name" => "mailer", "sample" => 18}
-    ], data[:workers]
+    assert_equal({100 => {sum: 12.0, count: 1}}, data["web"]["rqt"])
+    assert_equal({100 => 37.5}, data["web"]["cpu"])
   end
 
-  def test_sample_web_bounded_when_dispatch_is_starved
+  def test_sample_rqt_bounded_when_dispatch_is_starved
     (1000..1070).each do |second|
-      Timecop.freeze(Time.at(second)) { buffer.sample_web(1) }
+      Timecop.freeze(Time.at(second)) { buffer.sample("web", "rqt", 1) }
     end
 
     data = buffer.flush
-    assert_operator data[:web].size, :<=, 66
-    assert_equal 1006, data[:web].keys.min
-    assert_equal 1070, data[:web].keys.max
+    assert_operator data["web"]["rqt"].size, :<=, 66
+    assert_equal 1006, data["web"]["rqt"].keys.min
+    assert_equal 1070, data["web"]["rqt"].keys.max
   end
 
   def test_sample_cpu_bounded_when_dispatch_is_starved
     (1000..1070).each do |second|
-      Timecop.freeze(Time.at(second)) { buffer.sample_cpu("clock", 50.0) }
+      Timecop.freeze(Time.at(second)) { buffer.sample("clock", "cpu", 50.0) }
     end
 
     data = buffer.flush
-    assert_operator data[:cpu]["clock"].size, :<=, 66
-    assert_equal 1070, data[:cpu]["clock"].keys.max
+    assert_operator data["clock"]["cpu"].size, :<=, 66
+    assert_equal 1070, data["clock"]["cpu"].keys.max
   end
 
-  def test_repopulate_web_within_ttl
+  def test_repopulate_rqt_within_ttl
     Timecop.freeze Time.at(100) do
-      buffer.repopulate_web({90 => [5], 30 => [10]})
+      buffer.repopulate("web", "rqt", {
+        90 => {sum: 5.0, count: 1},
+        30 => {sum: 10.0, count: 1}
+      })
     end
 
     data = buffer.flush
-    assert_equal({90 => [5]}, data[:web])
-    refute data[:web].key?(30)
+    assert_equal({90 => {sum: 5.0, count: 1}}, data["web"]["rqt"])
+    refute data["web"]["rqt"].key?(30)
   end
 
-  def test_repopulate_web_merges_with_existing
+  def test_vector_c_repopulate_merge_sum_and_count
+    # Normative vector C: repopulate {10,1} + live {30,2} → {40,3}
     Timecop.freeze Time.at(100) do
-      buffer.sample_web(1)
+      buffer.repopulate("web", "rqt", {100 => {sum: 10.0, count: 1}})
+      buffer.sample("web", "rqt", 15)
+      buffer.sample("web", "rqt", 15)
     end
 
+    assert_equal({sum: 40.0, count: 3}, buffer.flush["web"]["rqt"][100])
+  end
+
+  def test_repopulate_accepts_string_keys
     Timecop.freeze Time.at(100) do
-      buffer.repopulate_web({100 => [2, 3]})
+      buffer.repopulate("web", "rqt", {100 => {"sum" => 5.0, "count" => 1}})
     end
 
+    assert_equal({sum: 5.0, count: 1}, buffer.flush["web"]["rqt"][100])
+  end
+
+  def test_repopulate_clamps_to_sample_count_limit
+    Timecop.freeze Time.at(100) do
+      limit = HireFire::Buffer::SAMPLE_COUNT_LIMIT
+      buffer.repopulate("web", "rqt", {100 => {sum: limit.to_f, count: limit}})
+      buffer.repopulate("web", "rqt", {100 => {sum: 100.0, count: 100}})
+      bucket = buffer.flush["web"]["rqt"][100]
+      assert_equal limit, bucket[:count]
+      assert_in_delta 1.0, bucket[:sum] / bucket[:count], 0.001
+    end
+  end
+
+  def test_repopulate_rqt_keeps_the_second_exactly_at_the_ttl_boundary
+    Timecop.freeze Time.at(100) do
+      buffer.repopulate("web", "rqt", {40 => {sum: 5.0, count: 1}})
+    end
+
+    assert_equal({40 => {sum: 5.0, count: 1}}, buffer.flush["web"]["rqt"])
+  end
+
+  def test_custom_ttl_is_honored_by_repopulate
+    custom = HireFire::Buffer.new(ttl: 10)
+    Timecop.freeze Time.at(100) do
+      custom.repopulate("web", "rqt", {
+        95 => {sum: 1.0, count: 1},
+        80 => {sum: 2.0, count: 1}
+      })
+    end
+
+    data = custom.flush
+    assert_equal({95 => {sum: 1.0, count: 1}}, data["web"]["rqt"])
+    refute data["web"]["rqt"].key?(80)
+  end
+
+  def test_sample_coerces_symbol_strategy_to_string
+    Timecop.freeze Time.at(100) do
+      buffer.sample("web", :rqt, 3)
+    end
+
+    assert_equal({100 => {sum: 3.0, count: 1}}, buffer.flush["web"]["rqt"])
+  end
+
+  def test_concurrent_sample_flush_and_repopulate
+    errors = []
+    mutex = Mutex.new
+
+    threads = 8.times.map do |i|
+      Thread.new do
+        80.times do |j|
+          buffer.sample("web", "rqt", j)
+          buffer.sample("worker", "jql", j) if j.even?
+          buffer.repopulate("web", "rqt", {Time.now.to_i => {sum: i.to_f, count: 1}}) if (j % 10).zero?
+          buffer.flush if (j % 17).zero?
+        end
+      rescue => e
+        mutex.synchronize { errors << e }
+      end
+    end
+    threads.each(&:join)
+
+    assert_empty errors, errors.map(&:message).join(", ")
     data = buffer.flush
-    assert_equal [1, 2, 3], data[:web][100]
+    assert_kind_of Hash, data
   end
 
-  def test_flush_returns_and_resets_cpu
-    Timecop.freeze Time.at(1000) do
-      buffer.sample_cpu("clock", 50.0)
+  def test_repopulate_skips_non_hash_and_non_positive_count
+    Timecop.freeze Time.at(200) do
+      buffer.repopulate("web", "rqt", {
+        190 => 12,
+        191 => {sum: 5.0, count: 0},
+        192 => {sum: 7.0, count: -1},
+        193 => {sum: 9.0, count: 1}
+      })
     end
 
-    data = buffer.flush
-    assert_equal({"clock" => {1000 => [50.0]}}, data[:cpu])
-
-    assert_empty buffer.flush[:cpu]
-  end
-
-  def test_sample_cpu_groups_values_within_a_second
-    Timecop.freeze Time.at(1000) do
-      buffer.sample_cpu("clock", 40.0)
-      buffer.sample_cpu("clock", 60.0)
-    end
-
-    assert_equal({"clock" => {1000 => [40.0, 60.0]}}, buffer.flush[:cpu])
-  end
-
-  def test_repopulate_web_keeps_the_second_exactly_at_the_ttl_boundary
-    Timecop.freeze Time.at(100) do
-      buffer.repopulate_web({40 => [5]})
-    end
-
-    assert_equal({40 => [5]}, buffer.flush[:web])
+    assert_equal({193 => {sum: 9.0, count: 1}}, buffer.flush["web"]["rqt"])
   end
 end

@@ -14,6 +14,14 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
   end
 
+  def test_supports_plan_strategy_size_only
+    refute HireFire::Macro::Bunny.supports_plan_strategy?("jql")
+    refute HireFire::Macro::Bunny.supports_plan_strategy?(:jql)
+    assert HireFire::Macro::Bunny.supports_plan_strategy?("jqs")
+    assert HireFire::Macro::Bunny.supports_plan_strategy?(:jqs)
+    refute HireFire::Macro::Bunny.supports_plan_strategy?("rpm")
+  end
+
   def test_job_queue_latency_unsupported_raises_error
     assert_raises HireFire::Errors::JobQueueLatencyUnsupportedError do
       HireFire::Macro::Bunny.job_queue_latency(:default)
@@ -118,7 +126,54 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
   end
 
+  def test_acquire_connection_env_url_cascade
+    keys = %w[AMQP_URL RABBITMQ_URL RABBITMQ_BIGWIG_URL CLOUDAMQP_URL]
+    saved = keys.to_h { |k| [k, ENV[k]] }
+    keys.each { |k| ENV.delete(k) }
+
+    # Higher-priority key wins when several are set (order of the || chain).
+    ENV["AMQP_URL"] = "amqp://amqp.example/vhost"
+    ENV["RABBITMQ_URL"] = "amqp://rabbitmq.example/vhost"
+    ENV["RABBITMQ_BIGWIG_URL"] = "amqp://bigwig.example/vhost"
+    ENV["CLOUDAMQP_URL"] = "amqp://cloudamqp.example/vhost"
+    expect_bunny_connection("amqp://amqp.example/vhost")
+
+    # First unset, second wins over lower keys.
+    keys.each { |k| ENV.delete(k) }
+    ENV["RABBITMQ_URL"] = "amqp://rabbitmq.example/vhost"
+    ENV["RABBITMQ_BIGWIG_URL"] = "amqp://bigwig.example/vhost"
+    ENV["CLOUDAMQP_URL"] = "amqp://cloudamqp.example/vhost"
+    expect_bunny_connection("amqp://rabbitmq.example/vhost")
+
+    # Each name alone, then the localhost default.
+    cascade = [
+      ["AMQP_URL", "amqp://amqp-only.example/vhost"],
+      ["RABBITMQ_URL", "amqp://rabbitmq-only.example/vhost"],
+      ["RABBITMQ_BIGWIG_URL", "amqp://bigwig-only.example/vhost"],
+      ["CLOUDAMQP_URL", "amqp://cloudamqp-only.example/vhost"]
+    ]
+    cascade.each do |set_key, url|
+      keys.each { |k| ENV.delete(k) }
+      ENV[set_key] = url
+      expect_bunny_connection(url)
+    end
+
+    keys.each { |k| ENV.delete(k) }
+    expect_bunny_connection("amqp://guest:guest@localhost:5672")
+  ensure
+    keys.each { |k| ENV.delete(k) }
+    saved.each { |k, v| ENV[k] = v }
+  end
+
   private
+
+  def expect_bunny_connection(url)
+    fake = mock("bunny-#{url}")
+    fake.expects(:start).returns(true)
+    ::Bunny.expects(:new).with(url).returns(fake)
+    result = HireFire::Macro::Bunny.send(:acquire_connection, nil)
+    assert_same fake, result
+  end
 
   def with_connection(options = {})
     connection = ::Bunny.new(AMQP_URL)

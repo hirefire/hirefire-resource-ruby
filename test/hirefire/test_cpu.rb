@@ -3,104 +3,138 @@
 require "test_helper"
 require "tempfile"
 
-class HireFire::CPUTest < Minitest::Test
+class HireFire::Source::CPUTest < Minitest::Test
   def buffer
     HireFire.configuration.buffer
   end
 
   def test_first_sample_only_seeds_the_baseline
-    HireFire::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) { assert_nil collector.sample }
-    assert_empty buffer.flush[:cpu]
+    assert_empty buffer.flush
   end
 
   def test_second_sample_buffers_normalized_percentage
-    HireFire::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
-    assert_equal({"clock" => {1001 => [50.0]}}, buffer.flush[:cpu])
+    assert_equal({1001 => 50.0}, buffer.flush.dig("clock", "cpu"))
   end
 
   def test_normalizes_by_available_cpus
-    HireFire::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0, :cgroup_v2])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(4.0)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(4.0)
 
-    collector = HireFire::CPU.new("worker")
+    collector = HireFire::Source::CPU.new("worker")
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
-    assert_equal({"worker" => {1001 => [25.0]}}, buffer.flush[:cpu])
+    assert_equal({1001 => 25.0}, buffer.flush.dig("worker", "cpu"))
+  end
+
+  def test_normalizes_by_fractional_available_cpus
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [0.25, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(0.5)
+
+    collector = HireFire::Source::CPU.new("clock")
+    Timecop.freeze(Time.at(1000)) { collector.sample }
+    Timecop.freeze(Time.at(1001)) { collector.sample }
+
+    # 0.25 cores used / 0.5 entitlement * 100 = 50%
+    assert_equal({1001 => 50.0}, buffer.flush.dig("clock", "cpu"))
+  end
+
+  def test_sample_rounds_percentage_to_two_decimal_places
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0 / 3.0, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
+
+    collector = HireFire::Source::CPU.new("clock")
+    Timecop.freeze(Time.at(1000)) { collector.sample }
+    Timecop.freeze(Time.at(1001)) { collector.sample }
+
+    assert_equal({1001 => 33.33}, buffer.flush.dig("clock", "cpu"))
   end
 
   def test_clamps_to_100_percent
-    HireFire::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [5.0, :cgroup_v2])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [5.0, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
-    assert_equal({"clock" => {1001 => [100.0]}}, buffer.flush[:cpu])
+    assert_equal({1001 => 100.0}, buffer.flush.dig("clock", "cpu"))
+  end
+
+  def test_zero_utilization_buffers_zero
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.0, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
+
+    collector = HireFire::Source::CPU.new("clock")
+    Timecop.freeze(Time.at(1000)) { collector.sample }
+    Timecop.freeze(Time.at(1001)) { collector.sample }
+
+    assert_equal({1001 => 0.0}, buffer.flush.dig("clock", "cpu"))
   end
 
   def test_negative_usage_delta_skips_and_reseeds_the_baseline
-    HireFire::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [5.0, :cgroup_v2], [5.5, :cgroup_v2])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [5.0, :cgroup_v2], [5.5, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
     Timecop.freeze(Time.at(1002)) { collector.sample }
 
-    assert_equal({"clock" => {1002 => [50.0]}}, buffer.flush[:cpu])
+    assert_equal({1002 => 50.0}, buffer.flush.dig("clock", "cpu"))
   end
 
   def test_source_change_skips_and_reseeds_the_baseline
-    HireFire::CPU::Usage.stubs(:reading).returns([10.0, :process], [11.0, :cgroup_v2], [11.5, :cgroup_v2])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :process], [11.0, :cgroup_v2], [11.5, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
     Timecop.freeze(Time.at(1002)) { collector.sample }
 
-    assert_equal({"clock" => {1002 => [50.0]}}, buffer.flush[:cpu])
+    assert_equal({1002 => 50.0}, buffer.flush.dig("clock", "cpu"))
   end
 
   def test_skips_sample_when_usage_unavailable
-    HireFire::CPU::Usage.stubs(:reading).returns([nil, nil])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([nil, nil])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
-    assert_empty buffer.flush[:cpu]
+    assert_empty buffer.flush
   end
 
   def test_non_positive_elapsed_delta_skips_the_sample
-    HireFire::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) do
       collector.sample
       assert_nil collector.sample
     end
-    assert_empty buffer.flush[:cpu]
+    assert_empty buffer.flush
   end
 
   def test_elapsed_delta_uses_the_monotonic_clock_not_wall_time
-    HireFire::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock")
     HireFire::Clock.stubs(:monotonic).returns(100.0, 101.0)
 
     Timecop.freeze(Time.at(1000)) do
@@ -108,44 +142,44 @@ class HireFire::CPUTest < Minitest::Test
       collector.sample
     end
 
-    assert_equal({"clock" => {1000 => [50.0]}}, buffer.flush[:cpu])
+    assert_equal({1000 => 50.0}, buffer.flush.dig("clock", "cpu"))
   end
 
   def test_skips_sample_when_available_cpus_is_nil
-    HireFire::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0, :cgroup_v2])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(nil)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(nil)
 
-    collector = HireFire::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
-    assert_empty buffer.flush[:cpu]
+    assert_empty buffer.flush
   end
 
   def test_skips_sample_when_available_cpus_is_zero
-    HireFire::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0, :cgroup_v2])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(0.0)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(0.0)
 
-    collector = HireFire::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
-    assert_empty buffer.flush[:cpu]
+    assert_empty buffer.flush
   end
 
   def test_recovers_after_an_initially_unavailable_usage_source
-    HireFire::CPU::Usage.stubs(:reading).returns([nil, nil], [10.0, :cgroup_v2], [10.5, :cgroup_v2])
-    HireFire::CPU::Usage.stubs(:available_cpus).returns(1.0)
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([nil, nil], [10.0, :cgroup_v2], [10.5, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock")
     Timecop.freeze(Time.at(1000)) { assert_nil collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
     Timecop.freeze(Time.at(1002)) { collector.sample }
 
-    assert_equal({"clock" => {1002 => [50.0]}}, buffer.flush[:cpu])
+    assert_equal({1002 => 50.0}, buffer.flush.dig("clock", "cpu"))
   end
 end
 
-class HireFire::CPU::UsageTest < Minitest::Test
-  Usage = HireFire::CPU::Usage
+class HireFire::Source::CPU::UsageTest < Minitest::Test
+  Usage = HireFire::Source::CPU::Usage
 
   def test_total_seconds_prefers_cgroup_v2
     Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("usage_usec 2500000\nuser_usec 1000000")
@@ -177,6 +211,29 @@ class HireFire::CPU::UsageTest < Minitest::Test
     seconds, source = Usage.reading
     assert_in_delta 3.0, seconds, 0.0001
     assert_equal :cgroup_v1, source
+  end
+
+  def test_reading_labels_proc_source
+    Usage.stubs(:cgroup_v2_seconds).returns(nil)
+    Usage.stubs(:cgroup_v1_seconds).returns(nil)
+    Dir.stubs(:glob).with(Usage::PROC_STAT_GLOB).returns(["/proc/1/stat"])
+    Usage.stubs(:read).with("/proc/1/stat").returns("1 (ruby) S 0 1 1 0 -1 0 0 0 0 0 500 250 0 0 20 0 1 0 9 0 0")
+    Usage.stubs(:clock_ticks).returns(100)
+
+    seconds, source = Usage.reading
+    assert_in_delta 7.5, seconds, 0.0001
+    assert_equal :proc, source
+  end
+
+  def test_reading_labels_process_source
+    Usage.stubs(:cgroup_v2_seconds).returns(nil)
+    Usage.stubs(:cgroup_v1_seconds).returns(nil)
+    Usage.stubs(:proc_namespace_seconds).returns(nil)
+    Usage.stubs(:process_seconds).returns(1.25)
+
+    seconds, source = Usage.reading
+    assert_in_delta 1.25, seconds, 0.0001
+    assert_equal :process, source
   end
 
   def test_reading_returns_nil_when_every_source_fails
@@ -239,6 +296,20 @@ class HireFire::CPU::UsageTest < Minitest::Test
     Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("0 100000")
     Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns(nil)
     Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns(nil)
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
+  def test_available_cpus_ignores_non_positive_v2_period
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("50000 0")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns(nil)
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
+  def test_available_cpus_ignores_non_positive_v1_period
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns("150000")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns("0")
     assert_equal Etc.nprocessors, Usage.available_cpus
   end
 
@@ -314,6 +385,17 @@ class HireFire::CPU::UsageTest < Minitest::Test
   def test_render_without_a_cpu_count_falls_through_to_processor_count
     ENV["RENDER"] = "true"
     Usage.stubs(:read).returns(nil)
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
+  def test_render_cpu_count_zero_or_non_numeric_falls_through
+    ENV["RENDER"] = "true"
+    Usage.stubs(:read).returns(nil)
+
+    ENV["RENDER_CPU_COUNT"] = "0"
+    assert_equal Etc.nprocessors, Usage.available_cpus
+
+    ENV["RENDER_CPU_COUNT"] = "nope"
     assert_equal Etc.nprocessors, Usage.available_cpus
   end
 

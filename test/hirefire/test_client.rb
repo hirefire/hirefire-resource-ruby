@@ -21,7 +21,7 @@ class HireFire::ClientTest < Minitest::Test
   def test_submit_samples_sends_payload
     request = stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .with(
-        body: '[{"name":"web","samples":{"1000":[]}}]',
+        body: '[{"name":"web","metrics":{"1000":[]}}]',
         headers: {
           "Content-Type" => "application/json",
           "HireFire-Token" => "test-token-value",
@@ -30,7 +30,7 @@ class HireFire::ClientTest < Minitest::Test
       )
       .to_return(status: 200)
 
-    client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+    client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
 
     assert_requested request
   end
@@ -39,7 +39,7 @@ class HireFire::ClientTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .to_return(status: 401)
 
-    result = client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+    result = client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
 
     assert_nil result
   end
@@ -49,7 +49,7 @@ class HireFire::ClientTest < Minitest::Test
       .to_return(status: 500)
 
     error = assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+      client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
     end
 
     assert_includes error.message, "500"
@@ -60,15 +60,56 @@ class HireFire::ClientTest < Minitest::Test
       .to_return(status: 422)
 
     assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+      client.submit_samples('[{"name":"web","metrics":{"rqt":{"1000":[]}}}]')
     end
+  end
+
+  def test_submit_samples_returns_payload_too_large_on_413
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_return(status: 413, body: '{"error":"payload too large"}')
+
+    assert_equal :payload_too_large, client.submit_samples("[]")
+  end
+
+  def test_submit_samples_treats_code_413_without_entity_too_large_class_as_payload_too_large
+    generic = Net::HTTPResponse.allocate
+    generic.instance_variable_set(:@read, true)
+    generic.instance_variable_set(:@code, "413")
+    generic.instance_variable_set(:@message, "Payload Too Large")
+    generic.instance_variable_set(:@header, {})
+    generic.instance_variable_set(:@body, '{"error":"payload too large"}')
+
+    refute generic.is_a?(Net::HTTPRequestEntityTooLarge)
+    client.stubs(:execute).returns(generic)
+
+    assert_equal :payload_too_large, client.submit_samples("[]")
+  end
+
+  def test_connection_bypasses_ambient_http_proxy
+    ENV["http_proxy"] = "http://proxy.invalid:8080"
+    ENV["HTTP_PROXY"] = "http://proxy.invalid:8080"
+    ENV["https_proxy"] = "http://proxy.invalid:8080"
+    ENV["HTTPS_PROXY"] = "http://proxy.invalid:8080"
+
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]")
+    http = client.instance_variable_get(:@http)
+
+    # Net::HTTP.new(host, port, nil) forces p_addr nil so ambient http(s)_proxy is ignored.
+    assert_nil http.proxy_address
+    refute http.proxy_from_env?
+  ensure
+    ENV.delete("http_proxy")
+    ENV.delete("HTTP_PROXY")
+    ENV.delete("https_proxy")
+    ENV.delete("HTTPS_PROXY")
   end
 
   def test_submit_samples_raises_on_timeout
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_timeout
 
     error = assert_raises(HireFire::Client::RequestError) do
-      client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+      client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
     end
 
     assert_includes error.message, "timed out"
@@ -85,7 +126,7 @@ class HireFire::ClientTest < Minitest::Test
         .to_raise(transport_error)
 
       error = assert_raises(HireFire::Client::RequestError) do
-        client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+        client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
       end
 
       assert_includes error.message, "Network error"
@@ -133,6 +174,7 @@ class HireFire::ClientTest < Minitest::Test
     inherited = client.instance_variable_get(:@http)
 
     client.instance_variable_set(:@owner_pid, client.instance_variable_get(:@owner_pid) - 1)
+    inherited.expects(:finish).never
 
     client.submit_samples("[]")
     rebuilt = client.instance_variable_get(:@http)
@@ -254,7 +296,7 @@ class HireFire::ClientTest < Minitest::Test
     request = stub_request(:post, "https://custom.hirefire.io/metrics/ingest")
       .to_return(status: 200)
 
-    custom_client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+    custom_client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
 
     assert_requested request
   end
@@ -266,7 +308,7 @@ class HireFire::ClientTest < Minitest::Test
     request = stub_request(:post, "http://localhost:9999/metrics/ingest")
       .to_return(status: 200)
 
-    custom_client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+    custom_client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
 
     assert_requested request
   end
@@ -278,7 +320,7 @@ class HireFire::ClientTest < Minitest::Test
     request = stub_request(:post, "https://custom.hirefire.io/prefix/metrics/ingest")
       .to_return(status: 200)
 
-    custom_client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+    custom_client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
 
     assert_requested request
   end
@@ -290,7 +332,7 @@ class HireFire::ClientTest < Minitest::Test
     request = stub_request(:post, "https://proxy.example.com/hf/metrics/ingest")
       .to_return(status: 200)
 
-    custom_client.submit_samples('[{"name":"web","samples":{"1000":[]}}]')
+    custom_client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
 
     assert_requested request
   end
@@ -306,5 +348,54 @@ class HireFire::ClientTest < Minitest::Test
     client.request_lease("abc123")
 
     assert_requested request
+  end
+
+  def test_retries_once_on_each_stale_connection_error
+    [
+      EOFError.new("end of file"),
+      Errno::ECONNABORTED.new,
+      Errno::EPIPE.new,
+      Net::ProtocolError.new("protocol error")
+    ].each do |error|
+      fresh = HireFire::Client.new
+      stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+      fresh.submit_samples("[]")
+
+      stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+        .to_raise(error).then
+        .to_return(status: 200)
+
+      result = fresh.submit_samples("[]")
+      assert_kind_of Net::HTTPSuccess, result, error.class.name
+    end
+  end
+
+  def test_does_not_retry_twice_on_persistent_stale_errors
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]")
+
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_raise(Errno::ECONNRESET).then
+      .to_raise(Errno::ECONNRESET)
+
+    assert_raises(HireFire::Client::RequestError) { client.submit_samples("[]") }
+  end
+
+  def test_reconnects_when_host_or_port_changes
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]")
+    first = client.instance_variable_get(:@http)
+
+    ENV["HIREFIRE_DATA_URL"] = "https://other.example.com"
+    # Client memoizes ingest URI; build a fresh client for the new host.
+    other = HireFire::Client.new
+    stub_request(:post, "https://other.example.com/metrics/ingest").to_return(status: 200)
+    other.submit_samples("[]")
+    second = other.instance_variable_get(:@http)
+
+    refute_same first, second
+    assert_equal "other.example.com", second.address
+  ensure
+    ENV.delete("HIREFIRE_DATA_URL")
   end
 end

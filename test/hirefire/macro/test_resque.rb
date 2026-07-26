@@ -17,6 +17,14 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     end
   end
 
+  def test_supports_plan_strategy_size_only
+    refute HireFire::Macro::Resque.supports_plan_strategy?("jql")
+    refute HireFire::Macro::Resque.supports_plan_strategy?(:jql)
+    assert HireFire::Macro::Resque.supports_plan_strategy?("jqs")
+    assert HireFire::Macro::Resque.supports_plan_strategy?(:jqs)
+    refute HireFire::Macro::Resque.supports_plan_strategy?("rpm")
+  end
+
   def test_job_queue_size_without_jobs
     assert_equal 0, HireFire::Macro::Resque.job_queue_size
   end

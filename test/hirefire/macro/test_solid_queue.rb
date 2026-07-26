@@ -157,10 +157,6 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     assert_equal 3, HireFire::Macro::SolidQueue.job_queue_size(:default, :"mailer_*") # default + the two mailer_ queues
   end
 
-  def test_railtie_inserts_middleware_at_the_front_of_the_stack
-    assert_equal HireFire::Middleware, Rails.application.middleware.first.klass
-  end
-
   def test_job_queue_size_with_claimed_jobs
     insert_claimed_job(BasicJob)
     insert_claimed_job(BasicJob, queue: :mailer)

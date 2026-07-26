@@ -43,7 +43,14 @@ Process.singleton_class.prepend(Module.new do
 end)
 
 class Minitest::Test
-  IDENTITY_ENV = %w[HIREFIRE_SERVICE_NAME DYNO RENDER_SERVICE_NAME RENDER RENDER_CPU_COUNT].freeze
+  IDENTITY_ENV = %w[
+    HIREFIRE_SERVICE_NAME
+    DYNO
+    RENDER_SERVICE_NAME
+    RENDER_SERVICE_TYPE
+    RENDER
+    RENDER_CPU_COUNT
+  ].freeze
 
   def setup
     ENV["HIREFIRE_TOKEN"] = nil

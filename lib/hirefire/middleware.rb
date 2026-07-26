@@ -5,10 +5,10 @@ module HireFire
   # +X-Queue-Start+) header on each request. Insert it early in the middleware stack (the
   # {HireFire::Railtie} does this automatically for Rails).
   #
-  # When +configuration.web+ and +configuration.token+ are both set, records a queue-time sample
-  # (milliseconds) and starts the dispatcher. When +log_queue_metrics+ is true, also prints
-  # +[hirefire:router] queue=…ms+. Failures in this path are logged and swallowed so the host app
-  # is unaffected.
+  # When a token is present, records a queue-time sample (milliseconds) under the process
+  # {HireFire::Configuration#http_name} and starts the dispatcher. Explicit http registration is
+  # optional. When +log_queue_metrics+ is true, also prints +[hirefire:router] queue=…ms+.
+  # Failures in this path are logged and swallowed so the host app is unaffected.
   class Middleware
     REQUEST_QUEUE_TIME_LIMIT = 60_000
 
@@ -27,7 +27,10 @@ module HireFire
     private
 
     def process_request_queue_time(env)
-      request_start = env["HTTP_X_REQUEST_START"] || env["HTTP_X_QUEUE_START"]
+      # Prefer X-Request-Start, then X-Queue-Start. Blank / whitespace-only values are
+      # absent so an empty Request-Start does not block Queue-Start fallback.
+      request_start = present_header(env["HTTP_X_REQUEST_START"]) ||
+        present_header(env["HTTP_X_QUEUE_START"])
       return unless request_start
 
       request_queue_time = calculate_request_queue_time(request_start)
@@ -35,9 +38,11 @@ module HireFire
 
       configuration = HireFire.configuration
 
-      if configuration.web && configuration.token
-        configuration.web.sample(request_queue_time)
+      if configuration.token
+        configuration.mark_http_active!
+        configuration.http_source&.sample(request_queue_time)
         configuration.dispatcher.start
+        configuration.dispatcher.ensure_job_queue_loop
       end
 
       if configuration.log_queue_metrics
@@ -49,6 +54,13 @@ module HireFire
 
     def log_request_queue_time(request_queue_time)
       puts "[hirefire:router] queue=#{request_queue_time}ms"
+    end
+
+    def present_header(value)
+      return if value.nil?
+
+      stripped = value.to_s.strip
+      stripped unless stripped.empty?
     end
 
     def calculate_request_queue_time(timestamp)

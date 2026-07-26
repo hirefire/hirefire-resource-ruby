@@ -1,13 +1,16 @@
 # frozen_string_literal: true
 
+require_relative "../plan/hooks"
 require_relative "deprecated/resque"
 
 module HireFire
   module Macro
     module Resque
-      extend HireFire::Errors::JobQueueLatencyUnsupported
       extend HireFire::Macro::Deprecated::Resque
       extend HireFire::Utility
+      extend HireFire::Plan::Hooks
+      # After Hooks so supports_plan_strategy? rejects jql.
+      extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
 
       SIZE_METHODS = [
@@ -67,17 +70,19 @@ module HireFire
       end
 
       def scheduled_size(queues)
-        cursor = 0
         batch = 1000
         total_size = 0
         current_time = Time.now.to_i
+        # Score-cursor pagination (exclusive min). Offset-based LIMIT re-skips from 0
+        # each page and is O(n²) on large delayed sets.
+        min_score = "-inf"
 
         loop do
           timestamps = ::Resque.redis.zrangebyscore(
             "delayed_queue_schedule",
-            "-inf",
+            min_score,
             current_time,
-            limit: [cursor, batch]
+            limit: [0, batch]
           )
 
           break if timestamps.empty?
@@ -114,7 +119,7 @@ module HireFire
 
           break if timestamps.size < batch
 
-          cursor += batch
+          min_score = "(#{timestamps.last}"
         end
 
         total_size

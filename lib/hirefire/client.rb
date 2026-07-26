@@ -9,7 +9,8 @@ module HireFire
     # Raised when a HireFire API request cannot complete successfully.
     #
     # Covers a missing token, transport/timeout failures, 5xx or other unexpected statuses (a 401
-    # is treated as "no grant" and does not raise), and failed lease responses.
+    # is treated as "no grant" and does not raise; a 413 is returned as +:payload_too_large+ and
+    # does not raise), and failed lease responses.
     class RequestError < StandardError; end
 
     STALE_CONNECTION_ERRORS = [
@@ -43,9 +44,15 @@ module HireFire
         response
       when Net::HTTPUnauthorized
         nil
+      when Net::HTTPRequestEntityTooLarge
+        :payload_too_large
       when Net::HTTPServerError
         raise RequestError, "Server responded with #{response.code} status."
       else
+        # Net::HTTP maps 413 to HTTPRequestEntityTooLarge; fall back on code for stacks
+        # that return a generic response object.
+        return :payload_too_large if response.code.to_i == 413
+
         raise RequestError, "Unexpected response code #{response.code}."
       end
     end
@@ -100,12 +107,17 @@ module HireFire
         @http.address == uri.host && @http.port == uri.port
     end
 
+    # Close and drop the keep-alive client. After a fork the child must not call
+    # +finish+ on the parent's socket FD — only abandon the reference.
     def reset_connection
-      @http&.finish if @http&.started?
+      if @http && @owner_pid == Process.pid
+        @http.finish if @http.started?
+      end
     rescue IOError, SystemCallError
       nil
     ensure
       @http = nil
+      @owner_pid = nil
     end
 
     def stale_connection?(error)

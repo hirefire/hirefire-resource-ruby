@@ -3,18 +3,20 @@
 require "logger"
 
 module HireFire
-  # Declares what each process tracks (http, job metrics, CPU) and holds shared settings such as
-  # the token and logger.
+  # Holds process-wide settings (token, logger) and optional local declarations via {#dyno}.
   #
-  # @!attribute [r] web
-  #   The http collector once an http process is declared, otherwise +nil+.
-  #   @return [HireFire::Web, nil]
-  # @!attribute [r] workers
-  #   Job-metric collectors declared via sampler blocks on {#service} or {#dyno}.
-  #   @return [HireFire::Workers]
-  # @!attribute [r] cpu
-  #   CPU collectors declared via {#service} or {#dyno} with +tracking: :cpu+.
-  #   @return [Array<HireFire::CPU>]
+  # Always-on sources (request queue time on the HTTP middleware path, and CPU when process
+  # identity resolves) do not require an explicit {#dyno} declaration. Local job-queue sampler
+  # blocks remain the escape hatch for custom probes and legacy root installs until lease plans
+  # cover them fully.
+  #
+  # @!attribute [r] http
+  #   The explicit HTTP source once declared via {#dyno}(:"web"), otherwise +nil+. Always-on RQT
+  #   still reports under {#http_name} when no explicit HTTP source is set.
+  #   @return [HireFire::Source::HTTP, nil]
+  # @!attribute [r] job_queues
+  #   Local job-queue sources declared via sampler blocks on {#dyno}.
+  #   @return [HireFire::Source::JobQueues]
   # @!attribute [rw] logger
   #   Logger used for HireFire diagnostic messages. Defaults to a stdout logger. Set to +nil+
   #   (or a logger missing the log methods) to silence diagnostics.
@@ -23,39 +25,30 @@ module HireFire
   #   When true, the HTTP middleware prints +[hirefire:router] queue=…ms+ for each sample.
   #   @return [Boolean]
   class Configuration
-    # Raised when {#service} or {#dyno} cannot resolve a collector because neither +tracking+ nor a
-    # sampler block was given. Bare +dyno(:web)+ is valid: the +"web"+ name implies http without
-    # either argument.
+    # Raised when {#dyno} cannot resolve a source because a non-+"web"+ name was given without a
+    # sampler block. Bare +dyno(:web)+ is valid: the +"web"+ name implies http without a block.
     class MissingSamplerError < StandardError; end
 
-    # Raised when a sampler block is given alongside +tracking: :http+ or +tracking: :cpu+, which
-    # collect their values automatically and do not take a sampler.
-    class UnexpectedSamplerError < StandardError; end
-
-    # Raised when +tracking+ is given a value the method does not accept.
-    class UnknownCollectorError < StandardError; end
-
-    # Raised when a dyno name was already declared (names are compared case-insensitively), or a
-    # second http process is declared in the same app process.
+    # Raised when a dyno name was already declared for the same source kind (names are compared
+    # case-insensitively), or a second http process is declared in the same app process.
     class DuplicateDynoError < StandardError; end
 
-    SERVICE_COLLECTORS = {http: :http, cpu: :cpu}.freeze
-    DYNO_COLLECTORS = {cpu: :cpu}.freeze
-
-    attr_reader :web, :workers, :cpu, :log_queue_metrics
+    attr_reader :http, :job_queues, :log_queue_metrics
     attr_writer :token, :log_queue_metrics
     attr_accessor :logger
 
     def initialize
-      @web = nil
-      @workers = Workers.new
-      @cpu = []
-      @names = []
+      @http = nil
+      @job_queues = Source::JobQueues.new
+      @sources_by_name = {}
       @dispatcher = nil
       @logger = Logger.new($stdout)
       @token = nil
       @log_queue_metrics = false
       @mutex = Mutex.new
+      @always_on_cpu = nil
+      @always_on_http = nil
+      @http_active = false
     end
 
     # The HireFire API token. Returns the value assigned in code when it is not +nil+, else the
@@ -63,102 +56,56 @@ module HireFire
     # is treated as absent (+nil+), so it neither enables reporting nor is sent on the wire.
     # Assigning +nil+ clears the in-code value so the environment variable is consulted again.
     # Assigning an empty string forces the token off even when +HIREFIRE_TOKEN+ is set. A non-empty
-    # token present when {HireFire.configure} runs starts the dispatcher and enables reporting.
+    # token present when {HireFire.configure} or {HireFire.boot} runs starts the dispatcher and
+    # enables reporting.
     #
     # @return [String, nil]
     def token
       value = @token.nil? ? ENV["HIREFIRE_TOKEN"] : @token
-      value if value && !value.empty?
+      return nil if value.nil?
+
+      value = value.to_s.strip
+      value unless value.empty?
     end
 
-    # Declares a service by dyno name. Like {#service}, but the name "web" (case-insensitive)
-    # implies `tracking: :http` on its own, and `:cpu` is the only `tracking:` value it accepts.
+    # Declares a process by dyno name (Heroku Procfile-shaped). No +tracking:+ keyword: CPU is
+    # always-on when identity resolves, and RQT is armed by platform web role, middleware traffic,
+    # or the +"web"+ name convention below.
     #
-    # Resolution: `tracking: :cpu` tracks CPU, a sampler block tracks job metrics, and the name "web"
-    # (case-insensitive) tracks http on its own. For an http process under a non-"web" name, use
-    # `service(name, tracking: :http)`.
+    # Resolution: a sampler block tracks job-queue metrics (+jql+ / +jqs+). The name +"web"+
+    # (case-insensitive) tracks http on its own. Otherwise a sampler is required.
+    #
+    # Prefer zero-config ({HireFire.boot} / railtie + token) for request queue time, CPU, and
+    # lease-driven job-queue metrics. Use {#dyno} for local job-queue sampler blocks (custom probes, legacy
+    # root) and optional explicit +web+ http registration.
     #
     # @param name [String, Symbol] the process name. Must be non-empty.
-    # @param tracking [Symbol, String, nil] `:cpu`, or omit.
     # @yield a sampler returning the current job-queue metric (a non-negative, finite number).
     # @return [void]
     # @raise [ArgumentError] the name is empty.
-    # @raise [MissingSamplerError] a non-"web" name given with neither `tracking: :cpu` nor a sampler.
-    # @raise [UnexpectedSamplerError] a sampler given alongside `tracking: :cpu`.
-    # @raise [UnknownCollectorError] `tracking:` given anything other than `:cpu`.
-    # @raise [DuplicateDynoError] the name was already declared, or a second http process was declared.
+    # @raise [MissingSamplerError] a non-"web" name given without a sampler.
+    # @raise [DuplicateDynoError] the name was already declared for the same source kind, or a
+    #   second http process was declared.
     # @example
-    #   config.dyno(:web) # "web" implies http
+    #   config.dyno(:web) # optional; "web" implies http (zero-config usually enough)
     #   config.dyno(:worker) { HireFire::Macro::Sidekiq.job_queue_size(:default) }
-    #   config.dyno(:encoder, tracking: :cpu)
-    def dyno(name, tracking: nil, &sampler)
+    def dyno(name, &sampler)
       name = coerce_name!(name)
 
-      collector =
-        if tracking
-          DYNO_COLLECTORS.fetch(tracking.to_s.to_sym) do
-            raise UnknownCollectorError,
-              "Unknown value #{tracking.inspect} for config.dyno(:#{name}, tracking: ...). " \
-              "config.dyno only tracks :cpu. Pass a sampler block for job metrics, " \
-              "or use config.service to track :http explicitly."
-          end
-        elsif sampler
-          :job
+      source =
+        if sampler
+          :job_queue
         elsif name.casecmp?("web")
           :http
         else
           raise MissingSamplerError,
             "config.dyno(:#{name}) could not be resolved: it needs a sampler block " \
-            "(job metrics) or tracking: :cpu. Only the \"web\" name implies http on its own. " \
-            "Use config.service(:#{name}, tracking: :http) for an http process under another name."
+            "(job-queue metrics). Only the \"web\" name implies http on its own. " \
+            "RQT is always-on via platform web role or middleware traffic; " \
+            "CPU is always-on when process identity resolves."
         end
 
-      register(name, collector, &sampler)
-    end
-
-    # Declares what a process tracks. The name is a label with no implicit meaning, so what to
-    # track is always explicit. Pass exactly one of `tracking:` or a sampler block:
-    #
-    # - `tracking: :http`: web request queue-time metrics, sampled from this process's own HTTP
-    #   traffic by the framework middleware (at most one http process per app process).
-    # - a sampler block returning the current value: job queue metrics, typically via a queue
-    #   macro (e.g. `HireFire::Macro::Sidekiq.job_queue_latency`).
-    # - `tracking: :cpu`: this process's CPU utilization.
-    #
-    # {#dyno} is this method plus the convention that the name "web" implies `:http`.
-    #
-    # @param name [String, Symbol] the process name. Must be non-empty.
-    # @param tracking [Symbol, String, nil] `:http` or `:cpu`. Omit when passing a sampler.
-    # @yield a sampler returning the current job-queue metric (a non-negative, finite number).
-    # @return [void]
-    # @raise [ArgumentError] the name is empty.
-    # @raise [MissingSamplerError] neither `tracking:` nor a sampler was given.
-    # @raise [UnexpectedSamplerError] a sampler given alongside `tracking: :http` or `:cpu`.
-    # @raise [UnknownCollectorError] `tracking:` given an unsupported value.
-    # @raise [DuplicateDynoError] the name was already declared, or a second http process was declared.
-    # @example
-    #   config.service(:web, tracking: :http)
-    #   config.service(:worker) { HireFire::Macro::Sidekiq.job_queue_size(:default) }
-    #   config.service(:encoder, tracking: :cpu)
-    def service(name, tracking: nil, &sampler)
-      name = coerce_name!(name)
-
-      collector =
-        if tracking
-          SERVICE_COLLECTORS.fetch(tracking.to_s.to_sym) do
-            raise UnknownCollectorError,
-              "Unknown value #{tracking.inspect} for config.service(:#{name}, tracking: ...). " \
-              "Expected tracking: :http or :cpu, or a sampler block for job metrics."
-          end
-        elsif sampler
-          :job
-        else
-          raise MissingSamplerError,
-            "config.service(:#{name}) could not be resolved: pass tracking: :http, :cpu, " \
-            "or a sampler block for job metrics."
-        end
-
-      register(name, collector, &sampler)
+      register(name, source, &sampler)
     end
 
     # In-memory metric buffer that accumulates samples between dispatcher flushes.
@@ -168,25 +115,116 @@ module HireFire
       @buffer || @mutex.synchronize { @buffer ||= Buffer.new }
     end
 
-    # Periodic reporter that samples workers/CPU and flushes buffered metrics to the API.
+    # Periodic reporter that samples job queues and CPU and flushes buffered metrics to the API.
     #
     # @return [HireFire::Dispatcher]
     def dispatcher
-      @dispatcher || @mutex.synchronize do
-        @dispatcher ||= Dispatcher.new(
-          web: @web,
-          workers: @workers,
-          cpu: active_cpu_collectors,
-          web_liveness: web_liveness?
-        )
-      end
+      @dispatcher || @mutex.synchronize { @dispatcher ||= Dispatcher.new }
     end
 
     # Stops the dispatcher if one was started.
     #
+    # @param flush [Boolean] forwarded to {HireFire::Dispatcher#stop}
     # @return [void]
-    def stop_dispatcher
-      @dispatcher&.stop
+    def stop_dispatcher(flush: true)
+      @dispatcher&.stop(flush: flush)
+    end
+
+    # Process name used for request-queue-time metrics.
+    #
+    # Prefer an explicit HTTP source name when declared via {#dyno}. Otherwise the resolved
+    # process identity. No invented default (e.g. not +"web"+): without a real name there is
+    # nothing reliable to report under.
+    #
+    # @return [String, nil]
+    def http_name
+      return @http.name if @http
+
+      soft_identity
+    end
+
+    # Marks this process as serving HTTP (middleware has sampled). Universal always-on RQT arm
+    # for any platform once real traffic is observed.
+    #
+    # @return [void]
+    def mark_http_active!
+      @http_active = true
+    end
+
+    # Whether this process should emit the +rqt+ wire metric (real samples and/or liveness).
+    #
+    # Arming layers (any one is enough):
+    # 1. **Traffic-first (universal):** middleware has sampled (+mark_http_active!+).
+    # 2. **Explicit:** HTTP source declared via {#dyno}(:"web").
+    # 3. **Platform role (optional pre-traffic):** Heroku process type +"web"+ (Cedar/Fir
+    #    +DYNO+ strip) or Render +RENDER_SERVICE_TYPE=web+. See {HireFire::Identity.platform_http_role?}.
+    #
+    # Other platforms without a role signal wait for traffic (or explicit +dyno(:web)+). That is
+    # intentional and only affects idle heartbeats before the first request.
+    #
+    # @return [Boolean]
+    def rqt_enabled?
+      @http || @http_active || HireFire::Identity.platform_http_role?
+    end
+
+    # The HTTP source used for sampling, creating an always-on source when none was declared
+    # and a report name is known.
+    #
+    # @return [HireFire::Source::HTTP, nil]
+    def http_source
+      return @http if @http
+
+      name = http_name
+      return nil if name.nil?
+
+      if @always_on_http.nil? || !@always_on_http.name.casecmp?(name)
+        @always_on_http = Source::HTTP.new(name)
+      end
+      @always_on_http
+    end
+
+    # Whether +rqt+ liveness claims (heartbeats and backfill) may be synthesized for this process.
+    #
+    # Requires RQT arming, a resolved process identity, and that identity matching {#http_name}.
+    # Unresolved identity never synthesizes liveness (no guessing).
+    #
+    # @return [Boolean]
+    def rqt_liveness?
+      return false unless rqt_enabled?
+
+      identity = soft_identity
+      return false if identity.nil? || http_name.nil?
+
+      identity.casecmp?(http_name)
+    end
+
+    # Always-on CPU source for this process when identity resolves.
+    #
+    # Unresolved identity yields no CPU sources (no declaration can enable CPU without
+    # identity) and logs once so operators notice missing +HIREFIRE_SERVICE_NAME+ / platform
+    # identity env.
+    #
+    # @return [Array<HireFire::Source::CPU>]
+    def active_cpu_sources
+      identity = soft_identity
+      if identity.nil?
+        warn_cpu_unresolved_once
+        return []
+      end
+
+      if @always_on_cpu.nil? || !@always_on_cpu.name.casecmp?(identity)
+        @always_on_cpu = Source::CPU.new(identity)
+      end
+      [@always_on_cpu]
+    end
+
+    # Drop process-local always-on source instances after a fork so CPU baselines are not
+    # inherited from the parent. Called from {HireFire::Dispatcher} on child restart.
+    #
+    # @return [void]
+    def reset_after_fork
+      @always_on_cpu = nil
+      @always_on_http = nil
     end
 
     private
@@ -196,81 +234,67 @@ module HireFire
 
       if name.empty?
         raise ArgumentError,
-          "config.dyno and config.service require a dyno name as their first " \
-          "argument (got #{name.inspect})."
+          "config.dyno requires a dyno name as its first argument (got #{name.inspect})."
       end
 
       name
     end
 
-    def register(name, collector, &sampler)
-      if @names.any? { |existing| existing.casecmp?(name) }
+    def register(name, source, &sampler)
+      key = name.downcase
+      kinds = @sources_by_name[key] || []
+
+      if kinds.include?(source)
         raise DuplicateDynoError,
           "Duplicate declaration for #{name.inspect}. " \
-          "Each dyno name maps to exactly one collector."
+          "Each dyno name maps to at most one source of each kind."
       end
 
-      case collector
+      case source
       when :http
-        reject_sampler!(name, sampler)
-        if @web
+        if @http
           raise DuplicateDynoError,
             "#{name.inspect} conflicts with the earlier http declaration for " \
-            "#{@web.name.inspect}. Request metrics are collected from this process's own " \
-            "http traffic, so only one http collector can be declared, under any name."
+            "#{@http.name.inspect}. Request metrics are collected from this process's own " \
+            "http traffic, so only one HTTP source can be declared, under any name."
         end
-        @web = Web.new(name)
-      when :job
-        @workers << Worker.new(name, &sampler)
-      when :cpu
-        reject_sampler!(name, sampler)
-        @cpu << CPU.new(name)
+        @http = Source::HTTP.new(canonical_name(name))
+      when :job_queue
+        @job_queues << Source::JobQueue.new(canonical_name(name), &sampler)
       end
 
-      @names << name
+      @sources_by_name[key] = kinds + [source]
     end
 
-    def reject_sampler!(name, sampler)
-      return unless sampler
+    def canonical_name(name)
+      existing = @sources_by_name.keys.find { |key| key.casecmp?(name) }
+      return name unless existing
 
-      raise UnexpectedSamplerError,
-        "#{name.inspect} does not take a sampler block " \
-        "(its values are collected automatically)."
+      [@http&.name, *@job_queues.map(&:name)].compact.find { |n| n.casecmp?(name) } || name
     end
 
-    def active_cpu_collectors
-      return [] if @cpu.empty?
-
-      identity = resolved_identity
-
-      if identity.nil?
-        Log.safe(logger, :error, "[HireFire] CPU metrics are configured but this process's identity " \
-          "could not be resolved, so the CPU collector is disabled. Set the " \
-          "HIREFIRE_SERVICE_NAME environment variable to this process's dyno name.")
-        return []
-      end
-
-      @cpu.select { |collector| collector.name.casecmp?(identity) }
+    def soft_identity
+      warn_heroku_conflict_once
+      HireFire::Identity.resolve
     end
 
-    def web_liveness?
-      return true unless @web
+    def warn_heroku_conflict_once
+      return if defined?(@heroku_conflict_warned)
+      return unless HireFire::Identity.heroku_conflict?
 
-      identity = resolved_identity
-      identity.nil? || identity.casecmp?(@web.name)
+      @heroku_conflict_warned = true
+      Log.safe(logger, :warn, "[HireFire] HIREFIRE_SERVICE_NAME (#{HireFire::Identity.explicit}) does not " \
+        "match the Heroku DYNO prefix (#{HireFire::Identity.heroku_dyno}). Heroku config vars " \
+        "are app-wide, so this makes every dyno identify as the same name. Set it inline per " \
+        "process in the Procfile, or unset it to use automatic detection.")
     end
 
-    def resolved_identity
-      return @resolved_identity if defined?(@resolved_identity)
+    def warn_cpu_unresolved_once
+      return if defined?(@cpu_unresolved_warned)
 
-      if HireFire::Identity.heroku_conflict?
-        Log.safe(logger, :warn, "[HireFire] HIREFIRE_SERVICE_NAME (#{HireFire::Identity.explicit}) does not " \
-          "match the Heroku DYNO prefix (#{HireFire::Identity.heroku_dyno}). Heroku config vars " \
-          "are app-wide, so this makes every dyno identify as the same name. Set it inline per " \
-          "process in the Procfile, or unset it to use automatic detection.")
-      end
-
-      @resolved_identity = HireFire::Identity.resolve
+      @cpu_unresolved_warned = true
+      Log.safe(logger, :warn, "[HireFire] CPU metrics disabled: process identity is unresolved. " \
+        "Set HIREFIRE_SERVICE_NAME, or rely on DYNO / RENDER_SERVICE_NAME where available.")
     end
   end
 end

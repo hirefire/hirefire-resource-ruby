@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../plan/hooks"
 require_relative "deprecated/que"
 
 module HireFire
@@ -7,6 +8,7 @@ module HireFire
     module Que
       extend HireFire::Macro::Deprecated::Que
       extend HireFire::Utility
+      extend HireFire::Plan::Hooks
       extend self
 
       VERSION_1_0_0 = Gem::Version.new("1.0.0")

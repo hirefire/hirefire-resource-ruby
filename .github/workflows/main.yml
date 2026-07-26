@@ -73,11 +73,34 @@ jobs:
       fail-fast: false
       matrix:
         ruby-version:
+          - 3.1
           - 3.2
           - 3.3
           - 3.4
           - 4.0
         appraisal: ${{ fromJson(needs.appraisals.outputs.list) }}
+        exclude:
+          # Rails 8 and Sidekiq 8 require Ruby >= 3.2
+          - ruby-version: 3.1
+            appraisal: rails_8
+          - ruby-version: 3.1
+            appraisal: sidekiq_8
+          - ruby-version: 3.1
+            appraisal: solid_queue_1
+          - ruby-version: 3.1
+            appraisal: good_job_3
+          - ruby-version: 3.1
+            appraisal: good_job_4
+          - ruby-version: 3.1
+            appraisal: que_1
+          - ruby-version: 3.1
+            appraisal: que_2
+          - ruby-version: 3.1
+            appraisal: queue_classic_4
+          - ruby-version: 3.1
+            appraisal: delayed_job_active_record_4
+          - ruby-version: 3.1
+            appraisal: delayed_job_mongoid_3
     steps:
       - name: Check out repository
         uses: actions/checkout@v6

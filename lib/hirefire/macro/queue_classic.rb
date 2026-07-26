@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../plan/hooks"
 require_relative "deprecated/queue_classic"
 
 module HireFire
@@ -7,6 +8,7 @@ module HireFire
     module QC
       extend HireFire::Macro::Deprecated::QC
       extend HireFire::Utility
+      extend HireFire::Plan::Hooks
       extend self
 
       # Calculates the maximum job queue latency using Queue Classic. If no queues are specified, it

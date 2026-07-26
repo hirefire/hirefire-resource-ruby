@@ -1,10 +1,20 @@
 ## HireFire Integration Library for Ruby Applications
 
-This library integrates Ruby applications with HireFire's Heroku Dyno Autoscalers. Instructions specific to supported web frameworks and worker libraries are provided during the setup process.
+This library integrates Ruby applications with HireFire's autoscalers. It pushes
+request queue time, CPU, and job-queue metrics to `data.hirefire.io`. Setup steps
+for each web framework and worker library are shown in the HireFire dashboard
+during install.
+
+**Zero-config (common path):** set `HIREFIRE_TOKEN`, install the gem, and for Rails
+the railtie inserts middleware and boots when a token is present. Request queue
+time arms from traffic (and platform web-role hints). CPU is always-on when
+process identity resolves (`HIREFIRE_SERVICE_NAME`, Heroku `DYNO`, or
+`RENDER_SERVICE_NAME`). Job queues are driven by lease collection plans from the
+dashboard (or optional local `config.dyno` sampler blocks).
 
 **Supported runtimes:**
 
-- Ruby 3.2+
+- Ruby 3.1+
 
 **Supported web frameworks:**
 
@@ -19,10 +29,10 @@ This library integrates Ruby applications with HireFire's Heroku Dyno Autoscaler
 - Good Job 3+
 - Delayed Job (Active Record 4+, Mongoid 3+)
 - Sidekiq 7+
-- Resque 2+
+- Resque 2+ (size only, no job queue latency)
 - Que 1+
 - QC 4+
-- Bunny 2+
+- Bunny 2+ (size only, no job queue latency)
 
 The test suite runs against these minimum versions and the current latest release of each runtime and library. Older versions may still work, but are not officially supported.
 

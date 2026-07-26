@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "set"
+
 module HireFire
   module Utility
     private
@@ -18,3 +20,4 @@ module HireFire
     end
   end
 end
+

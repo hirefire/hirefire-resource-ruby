@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "helpers/active_record_connection"
+require_relative "../plan/hooks"
 require_relative "deprecated/delayed_job"
 
 module HireFire
@@ -8,6 +10,8 @@ module HireFire
       module Job
         extend HireFire::Macro::Deprecated::Delayed::Job
         extend HireFire::Utility
+        extend HireFire::Macro::Helpers::ActiveRecordConnection
+        extend HireFire::Plan::Hooks
         extend self
 
         # Raised when neither Active Record nor Mongoid can be detected as the Delayed::Job
@@ -30,22 +34,24 @@ module HireFire
         # @example Calculate latency across "default" and "mailer" queues
         #   HireFire::Macro::Delayed::Job.job_queue_latency(:default, :mailer)
         def job_queue_latency(*queues)
-          queues = normalize_queues(queues, allow_empty: true)
-          query = ::Delayed::Job.where(failed_at: nil).order(run_at: :asc)
+          with_connection do
+            queues = normalize_queues(queues, allow_empty: true)
+            query = ::Delayed::Job.where(failed_at: nil).order(run_at: :asc)
 
-          case mapper
-          when :active_record
-            query = query.where("run_at <= ?", Time.now)
-            query = query.where(queue: queues) if queues.any?
-          when :mongoid
-            query = query.where(run_at: {"$lte" => Time.now})
-            query = query.in(queue: queues.to_a) if queues.any?
-          end
+            case mapper
+            when :active_record
+              query = query.where("run_at <= ?", Time.now)
+              query = query.where(queue: queues) if queues.any?
+            when :mongoid
+              query = query.where(run_at: {"$lte" => Time.now})
+              query = query.in(queue: queues.to_a) if queues.any?
+            end
 
-          if (job = query.first)
-            Time.now - job.run_at
-          else
-            0.0
+            if (job = query.first)
+              Time.now - job.run_at
+            else
+              0.0
+            end
           end
         end
 
@@ -65,19 +71,21 @@ module HireFire
         # @example Calculate size across "default" and "mailer" queues
         #   HireFire::Macro::Delayed::Job.job_queue_size(:default, :mailer)
         def job_queue_size(*queues)
-          queues = normalize_queues(queues, allow_empty: true)
-          query = ::Delayed::Job.where(failed_at: nil)
+          with_connection do
+            queues = normalize_queues(queues, allow_empty: true)
+            query = ::Delayed::Job.where(failed_at: nil)
 
-          case mapper
-          when :active_record
-            query = query.where("run_at <= ?", Time.now)
-            query = query.where(queue: queues) if queues.any?
-          when :mongoid
-            query = query.where(run_at: {"$lte" => Time.now})
-            query = query.in(queue: queues.to_a) if queues.any?
+            case mapper
+            when :active_record
+              query = query.where("run_at <= ?", Time.now)
+              query = query.where(queue: queues) if queues.any?
+            when :mongoid
+              query = query.where(run_at: {"$lte" => Time.now})
+              query = query.in(queue: queues.to_a) if queues.any?
+            end
+
+            query.count
           end
-
-          query.count
         end
 
         private

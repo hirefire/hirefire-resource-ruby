@@ -1,9 +1,14 @@
 # frozen_string_literal: true
 
+require_relative "helpers/active_record_connection"
+require_relative "../plan/hooks"
+
 module HireFire
   module Macro
     module SolidQueue
       extend HireFire::Utility
+      extend HireFire::Macro::Helpers::ActiveRecordConnection
+      extend HireFire::Plan::Hooks
       extend self
 
       LATENCY_METHODS = [
@@ -31,11 +36,13 @@ module HireFire
       # @example Calculate latency across "mailer_*" queues (i.e. mailer_notification, mailer_newsletter)
       #   HireFire::Macro::SolidQueue.job_queue_latency(:"mailer_*")
       def job_queue_latency(*queues)
-        queues, now = determine_queues(queues), Time.now
+        with_connection do
+          queues, now = determine_queues(queues), Time.now
 
-        LATENCY_METHODS.map do |latency_method|
-          method(latency_method).call(queues, now: now)
-        end.max
+          LATENCY_METHODS.map do |latency_method|
+            method(latency_method).call(queues, now: now)
+          end.max
+        end
       end
 
       SIZE_METHODS = [
@@ -64,10 +71,12 @@ module HireFire
       # @example Calculate size across "mailer_*" queues (i.e. mailer_notification, mailer_newsletter)
       #   HireFire::Macro::SolidQueue.job_queue_size(:"mailer_*")
       def job_queue_size(*queues)
-        queues = determine_queues(queues)
+        with_connection do
+          queues = determine_queues(queues)
 
-        SIZE_METHODS.sum do |count_method|
-          method(count_method).call(queues)
+          SIZE_METHODS.sum do |count_method|
+            method(count_method).call(queues)
+          end
         end
       end
 

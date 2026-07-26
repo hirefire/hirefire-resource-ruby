@@ -1,14 +1,26 @@
 # frozen_string_literal: true
 
+require_relative "../plan/hooks"
 require_relative "deprecated/bunny"
 
 module HireFire
   module Macro
     module Bunny
       extend HireFire::Macro::Deprecated::Bunny
-      extend HireFire::Errors::JobQueueLatencyUnsupported
       extend HireFire::Utility
+      extend HireFire::Plan::Hooks
+      # After Hooks so supports_plan_strategy? rejects jql.
+      extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
+
+      # HireFire-specific AMQP URL for plan sampling (takes precedence over generic env defaults
+      # inside {#job_queue_size} when passed as +amqp_url:+).
+      #
+      # @return [Hash]
+      def plan_connection_options
+        url = presence(ENV["HIREFIRE_BUNNY_URL"]) || presence(ENV["HIREFIRE_AMQP_URL"])
+        url ? {amqp_url: url} : {}
+      end
 
       # Calculates the total job queue size using Bunny.
       #
@@ -71,6 +83,13 @@ module HireFire
       end
 
       private
+
+      def presence(value)
+        return if value.nil?
+
+        stripped = value.to_s.strip
+        stripped unless stripped.empty?
+      end
 
       def close_channel(channel)
         channel&.close

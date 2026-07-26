@@ -1,13 +1,39 @@
 # frozen_string_literal: true
 
 require "digest/sha1"
+require_relative "../plan/hooks"
 require_relative "deprecated/sidekiq"
 
 module HireFire
   module Macro
     module Sidekiq
       extend HireFire::Macro::Deprecated::Sidekiq
+      extend HireFire::Plan::Hooks
       extend self
+
+      # Lease-plan option schema: strategy → field → coercion type.
+      PLAN_OPTION_SCHEMA = {
+        "jql" => {
+          "skip_retries" => :boolean,
+          "skip_scheduled" => :boolean
+        }.freeze,
+        "jqs" => {
+          "skip_retries" => :boolean,
+          "skip_scheduled" => :boolean,
+          "skip_working" => :boolean,
+          "max_scheduled" => :non_negative_integer,
+          "server" => :boolean
+        }.freeze
+      }.freeze
+
+      # Filter and coerce lease-plan +options+ for Sidekiq sampling.
+      #
+      # @param strategy [String] +"jql"+ or +"jqs"+
+      # @param options [Object] raw plan options (Hash or ignored)
+      # @return [Hash]
+      def plan_options(strategy, options)
+        extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
+      end
 
       # Calculates the maximum job queue latency using Sidekiq. If no queues are specified, it
       # measures latency across all available queues.
@@ -128,15 +154,21 @@ module HireFire
 
           max_latencies = oldest_jobs.map do |job_payload|
             job = job_payload ? JSON.parse(job_payload) : {}
-
-            if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("8.0.0")
-              job["enqueued_at"] ? Time.now.to_f - job["enqueued_at"] / 1000.0 : 0.0
-            else
-              job["enqueued_at"] ? Time.now.to_f - job["enqueued_at"] : 0.0
-            end
+            job_enqueued_latency(job)
           end
 
           (max_latencies.max || 0.0).to_f
+        end
+
+        def job_enqueued_latency(job)
+          timestamp = job["enqueued_at"] || job["created_at"]
+          return 0.0 unless timestamp
+
+          if timestamp.is_a?(Float)
+            Time.now.to_f - timestamp
+          else
+            Time.now.to_f - timestamp.to_f / 1000.0
+          end
         end
 
         def set_latency(set, queues)
@@ -216,7 +248,7 @@ module HireFire
              return size
           end
 
-          local function working_size(queues)
+          local function working_size(queues, now)
              local size = 0
              local cursor = "0"
 
@@ -231,7 +263,8 @@ module HireFire
                    for i = 2, #worker_data, 2 do
                       local worker = cjson_decode(worker_data[i])
 
-                      if next(queues) == nil or queues[worker.queue] then
+                      if (next(queues) == nil or queues[worker.queue])
+                         and tonumber(worker.run_at or 0) <= now then
                          size = size + 1
                       end
                    end
@@ -263,7 +296,7 @@ module HireFire
           end
 
           if not skip_working then
-             size = size + working_size(queues)
+             size = size + working_size(queues, now)
           end
 
           return size

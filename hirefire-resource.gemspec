@@ -22,7 +22,7 @@ Gem::Specification.new do |spec|
       f.start_with?(*%w[lib/ README.md LICENSE CHANGELOG.md hirefire-resource.gemspec])
     end
   end
-  spec.required_ruby_version = ">= 2.7.0"
+  spec.required_ruby_version = ">= 3.1.0"
   spec.add_dependency "logger"
   spec.add_development_dependency "appraisal", "~> 2"
 end

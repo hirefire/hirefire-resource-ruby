@@ -135,7 +135,6 @@ DEPENDENCIES
   hirefire-resource!
   minitest
   mocha
-  parallel (< 2)
   rack
   rake
   simplecov

@@ -3,7 +3,7 @@
 require "test_helper"
 require "securerandom"
 
-ENV["REDIS_URL"] ||= "redis://localhost:#{ENV.fetch("REDIS_PORT", 6379)}/15"
+ENV["REDIS_URL"] ||= "redis://localhost:#{ENV.fetch("REDIS_PORT", 6379)}/0"
 
 require "sidekiq/api"
 

@@ -31,7 +31,7 @@ up() {
   fi
 
   if [ "$started" -eq 1 ] || [ ! -f .env ]; then
-    printf 'POSTGRES_PORT=%s\nMONGODB_PORT=%s\nREDIS_PORT=%s\nRABBITMQ_PORT=%s\nREDIS_URL=redis://localhost:%s/15\nAMQP_URL=amqp://guest:guest@localhost:%s\n' \
+    printf 'POSTGRES_PORT=%s\nMONGODB_PORT=%s\nREDIS_PORT=%s\nRABBITMQ_PORT=%s\nREDIS_URL=redis://localhost:%s/0\nAMQP_URL=amqp://guest:guest@localhost:%s\n' \
       "$postgres_port" "$mongodb_port" "$redis_port" "$rabbitmq_port" "$redis_port" "$rabbitmq_port" > .env
   fi
 

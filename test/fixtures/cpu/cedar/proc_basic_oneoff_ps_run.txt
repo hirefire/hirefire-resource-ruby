@@ -1,0 +1,4 @@
+# Source: hirefire-resource/cpu-platform-samples.md
+# Section: Cedar Basic one-off PID 1 ps-run zero ticks (2026-07-27)
+# Path: /proc/1/stat
+1 (ps-run) S 0 1 1 34816 2 4194560 144 0 0 0 0 0 0 0 20 0 1 0 298311904 1384448 248 18446744073709551615 1 1 0 0 0 0 0 0 65536 0 0 0 17 2 0 0 0 0 0 0 0 0 0 0 0 0 0

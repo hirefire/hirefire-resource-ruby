@@ -1,0 +1,12 @@
+# Source: hirefire-resource/cpu-platform-samples.md
+# Section: Fir dyno-1c-0.5gb one-off (2026-07-27T05:15:16Z)
+# Path: /sys/fs/cgroup/cpu.stat
+usage_usec 31663
+user_usec 10554
+system_usec 21108
+nice_usec 0
+nr_periods 11
+nr_throttled 0
+throttled_usec 0
+nr_bursts 0
+burst_usec 0

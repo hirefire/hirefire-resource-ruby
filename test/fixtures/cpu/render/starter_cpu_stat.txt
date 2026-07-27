@@ -1,0 +1,12 @@
+# Source: hirefire-resource/cpu-platform-samples.md
+# Section: Render Starter one-off job (2026-07-27T05:33:18Z)
+# Path: /sys/fs/cgroup/cpu.stat
+usage_usec 858123
+user_usec 262877
+system_usec 595246
+core_sched.force_idle_usec 0
+nr_periods 19
+nr_throttled 14
+throttled_usec 648773
+nr_bursts 0
+burst_usec 0

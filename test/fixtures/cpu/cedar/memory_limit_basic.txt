@@ -1,0 +1,4 @@
+# Source: hirefire-resource/cpu-platform-samples.md
+# Section: Cedar Basic / Standard-1X (2026-07-27)
+# Path: /sys/fs/cgroup/memory/memory.limit_in_bytes
+536870912

@@ -1,0 +1,4 @@
+# Source: hirefire-resource/cpu-platform-samples.md
+# Section: Render Pro plan-srv-010 (2026-07-27)
+# Path: /sys/fs/cgroup/cpu.max
+200000 100000

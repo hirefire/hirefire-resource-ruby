@@ -1,0 +1,4 @@
+# Source: hirefire-resource/cpu-platform-samples.md
+# Section: Fir dyno-1c-0.5gb / dyno-1c-* (2026-07-27)
+# Path: /sys/fs/cgroup/cpu.max
+90000 100000

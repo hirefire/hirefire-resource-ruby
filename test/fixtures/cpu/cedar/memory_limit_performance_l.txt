@@ -1,0 +1,4 @@
+# Source: hirefire-resource/cpu-platform-samples.md
+# Section: Cedar Performance-L / Private-L / Shield-L (2026-07-27)
+# Path: /sys/fs/cgroup/memory/memory.limit_in_bytes
+15032385536

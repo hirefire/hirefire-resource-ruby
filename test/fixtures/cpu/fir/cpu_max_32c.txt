@@ -1,0 +1,4 @@
+# Source: hirefire-resource/cpu-platform-samples.md
+# Section: Fir dyno-32c-64gb (2026-07-27)
+# Path: /sys/fs/cgroup/cpu.max
+2880000 100000

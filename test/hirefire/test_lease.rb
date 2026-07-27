@@ -185,10 +185,161 @@ class HireFire::LeaseTest < Minitest::Test
         "HireFire-Sample-Frequency" => "15"
       }, body: {version: 1, job_queues: []}.to_json)
 
+    original_process_id = lease.process_id
     lease.request_if_due(hold: ->(_) { false })
 
     refute lease.granted?
     assert_empty lease.job_queues
+    # Rotate process_id so the exclusive server lease is not sticky-renewed.
+    refute_equal original_process_id, lease.process_id
+  end
+
+  def test_sample_frequency_decrease_pulls_next_sample_forward
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "15",
+        "HireFire-Lease-TTL" => "60"
+      }, body: {version: 1, job_queues: []}.to_json)
+      .then
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "1",
+        "HireFire-Lease-TTL" => "60"
+      }, body: {version: 1, job_queues: []}.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+    assert lease.granted?
+    lease.sample_if_due { :sampled }
+    far_deadline = lease.instance_variable_get(:@next_sample_at)
+
+    # Advance past TTL so renew is due; frequency drops 15→1.
+    lease.instance_variable_set(:@expires_at, HireFire::Clock.monotonic - 1)
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert_equal 1, lease.sample_frequency
+    sooner = lease.instance_variable_get(:@next_sample_at)
+    assert_operator sooner, :<, far_deadline
+  end
+
+  def test_demote_clears_grant_and_invalidates_inflight_epoch
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "15"
+      }, body: {version: 1, job_queues: [{"name" => "worker", "strategy" => "jql"}]}.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+    assert lease.granted?
+
+    lease.demote!
+    refute lease.granted?
+    assert_empty lease.job_queues
+  end
+
+  def test_demote_during_inflight_request_discards_late_grant
+    target = lease
+    client = target.instance_variable_get(:@client)
+    client.define_singleton_method(:request_lease) do |_process_id|
+      target.demote!
+      response = Net::HTTPOK.new("1.1", "200", "OK")
+      response.instance_variable_set(:@read, true)
+      body = {version: 1, job_queues: [{"name" => "worker", "strategy" => "jql"}]}.to_json
+      headers = {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "30",
+        "HireFire-Lease-TTL" => "120"
+      }
+      response.define_singleton_method(:body) { body }
+      response.define_singleton_method(:[]) { |key| headers[key] }
+      response.define_singleton_method(:key?) { |key| headers.key?(key) }
+      response
+    end
+
+    target.request_if_due(hold: ->(_) { true })
+
+    refute target.granted?
+    assert_empty target.job_queues
+    assert_equal 15, target.sample_frequency
+  end
+
+  def test_regrant_rearms_next_sample_immediately
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "60",
+        "HireFire-Lease-TTL" => "15"
+      }, body: {version: 1, job_queues: []}.to_json)
+      .then
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "false",
+        "HireFire-Sample-Frequency" => "60",
+        "HireFire-Lease-TTL" => "15"
+      }, body: "")
+      .then
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "60",
+        "HireFire-Lease-TTL" => "15"
+      }, body: {version: 1, job_queues: []}.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+    assert lease.granted?
+    lease.sample_if_due { :sampled }
+    far = lease.instance_variable_get(:@next_sample_at)
+    assert_operator far, :>, HireFire::Clock.monotonic + 30
+
+    lease.instance_variable_set(:@expires_at, HireFire::Clock.monotonic - 1)
+    lease.request_if_due(hold: ->(_) { true })
+    refute lease.granted?
+
+    lease.instance_variable_set(:@expires_at, HireFire::Clock.monotonic - 1)
+    lease.request_if_due(hold: ->(_) { true })
+    assert lease.granted?
+
+    rearmed = lease.instance_variable_get(:@next_sample_at)
+    assert_operator rearmed, :<=, HireFire::Clock.monotonic + 1
+    assert_operator rearmed, :<, far
+  end
+
+  def test_parse_strips_entry_identity_fields
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "15"
+      }, body: {
+        version: 1,
+        job_queues: [{
+          "name" => "  worker  ",
+          "strategy" => "  jql  ",
+          "adapter" => "  sidekiq  ",
+          "queues" => ["default"]
+        }]
+      }.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert lease.granted?
+    entry = lease.job_queues.first
+    assert_equal "worker", entry["name"]
+    assert_equal "jql", entry["strategy"]
+    assert_equal "sidekiq", entry["adapter"]
+  end
+
+  def test_wrong_shape_plan_body_logs
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "15"
+      }, body: "[1,2,3]")
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert_empty lease.job_queues
+    assert_includes log.string, "not a JSON object"
   end
 
   def test_parses_grant_job_queues_body

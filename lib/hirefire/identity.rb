@@ -16,13 +16,14 @@ module HireFire
       dyno = presence(ENV["DYNO"])
       return unless dyno
 
-      if dyno.include?(".")
+      name = if dyno.include?(".")
         dyno.split(".").first
       else
         # Fir: process-X-Y (e.g. web-12a34b56d-e78f9). X/Y are platform-generated
         # alphanumerics; allow A-Z in case the suffix charset ever includes uppercase.
         dyno.sub(/-[A-Za-z0-9]+-[A-Za-z0-9]+\z/, "")
       end
+      presence(name)
     end
 
     def render_service

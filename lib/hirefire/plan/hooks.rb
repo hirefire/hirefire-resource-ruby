@@ -74,10 +74,16 @@ module HireFire
 
           nil
         when :non_negative_integer
-          return nil if value.nil?
+          # Strict integers only (no Float truncation: Integer(50.9) == 50).
+          case value
+          when Integer
+            value if value >= 0
+          when String
+            return nil unless value.match?(/\A[+-]?\d+\z/)
 
-          int = Integer(value)
-          int if int >= 0
+            int = Integer(value, 10)
+            int if int >= 0
+          end
         end
       rescue ArgumentError, TypeError
         nil

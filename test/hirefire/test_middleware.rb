@@ -145,6 +145,22 @@ class HireFire::MiddlewareTest < Minitest::Test
     end
   end
 
+  def test_ignores_non_finite_request_start_headers
+    ENV["HIREFIRE_TOKEN"] = "test-token"
+    ENV["DYNO"] = "web.1"
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
+
+    ["NaN", "Infinity", "t=Infinity", "1e500"].each do |value|
+      HireFire.reset
+      ENV["HIREFIRE_TOKEN"] = "test-token"
+      ENV["DYNO"] = "web.1"
+      app = ->(_env) { [200, {}, ["ok"]] }
+      middleware = HireFire::Middleware.new(app)
+      middleware.call({"HTTP_X_REQUEST_START" => value})
+      assert_empty HireFire.configuration.buffer.flush, "expected no sample for #{value.inspect}"
+    end
+  end
+
   def test_does_not_start_dispatcher_without_token
     HireFire.configure do |config|
       config.dyno(:web)

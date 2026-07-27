@@ -70,25 +70,36 @@ module HireFire
     Process.singleton_class.prepend(ForkHook)
   end
 
-  # Called in the child after +Process._fork+. Restarts reporting when a token is present.
+  # Called in the child after +Process._fork+. Prefork web workers restart reporting when a token
+  # is present. Fork-per-job children (Resque and similar) abandon inherited dispatcher state so
+  # they do not enter the lease race and do not +at_exit+-flush the parent's buffer.
   #
   # @return [void]
   def after_fork_in_child
-    return unless configuration.token
+    if configuration.prefork_web_handoff?
+      return unless configuration.token
 
-    configuration.dispatcher.start
-    configuration.dispatcher.ensure_job_queue_loop
+      configuration.dispatcher.start
+      configuration.dispatcher.ensure_job_queue_loop
+    else
+      configuration.dispatcher.abandon_inherited_state!
+    end
   rescue => e
     Log.safe(configuration.logger, :error, "[HireFire] After-fork restart failed: #{e.message}")
   end
 
-  # Called in the parent after +Process._fork+. Stops the dispatcher without a final flush so a
-  # prefork master (Puma +preload_app!+, Unicorn) does not keep claiming empty web liveness under
-  # the workers' process name. Children restart via {#after_fork_in_child} or middleware.
-  # A later request in a parent that still serves traffic restarts via middleware {#start}.
+  # Called in the parent after +Process._fork+. For prefork web masters (Puma +preload_app!+,
+  # Unicorn), stops the dispatcher without a final flush so the master does not claim empty web
+  # liveness under the workers' process name. Children restart via {#after_fork_in_child} or
+  # middleware.
+  #
+  # Job-only parents (Resque fork-per-job and similar) are left running: stopping them would kill
+  # fleet job metrics after the first job fork, and middleware cannot restart a pure worker.
   #
   # @return [void]
   def after_fork_in_parent
+    return unless configuration.prefork_web_handoff?
+
     configuration.stop_dispatcher(flush: false)
   rescue => e
     Log.safe(configuration.logger, :error, "[HireFire] After-fork parent stop failed: #{e.message}")

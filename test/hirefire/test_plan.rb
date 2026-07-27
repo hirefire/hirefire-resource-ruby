@@ -366,11 +366,31 @@ class HireFire::PlanTest < Minitest::Test
     queues << ""
     queues << ("x" * (HireFire::Plan::MAX_QUEUE_NAME_BYTES + 1))
 
-    normalized = HireFire::Plan.send(:normalize_queues, queues)
+    normalized = HireFire::Plan.send(:normalize_queues, queues, name: "worker")
 
     assert_equal HireFire::Plan::MAX_QUEUES, normalized.size
     assert_equal "q0", normalized.first
     assert_includes log.string, "truncated"
+  end
+
+  def test_normalize_queues_skips_when_all_names_invalid
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+
+    assert_nil HireFire::Plan.send(:normalize_queues, ["", "  "], name: "worker")
+    assert_includes log.string, "no valid names"
+  end
+
+  def test_normalize_queues_skips_non_array
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+
+    assert_nil HireFire::Plan.send(:normalize_queues, "default", name: "worker")
+    assert_includes log.string, "must be an array"
+  end
+
+  def test_normalize_queues_nil_means_all_queues
+    assert_equal [], HireFire::Plan.send(:normalize_queues, nil, name: "worker")
   end
 
   private

@@ -66,6 +66,26 @@ class HireFire::ConfigurationTest < Minitest::Test
   def test_empty_name_raises
     assert_raises(ArgumentError) { @configuration.dyno(nil) }
     assert_raises(ArgumentError) { @configuration.dyno("") }
+    assert_raises(ArgumentError) { @configuration.dyno("   ") }
+  end
+
+  def test_dyno_strips_name_whitespace
+    @configuration.dyno("  worker  ") { 1 }
+    assert_equal "worker", @configuration.job_queues.find_by_name("worker").name
+  end
+
+  def test_dyno_rejects_name_over_max_bytes
+    too_long = "w" * (128 + 1)
+    error = assert_raises(ArgumentError) { @configuration.dyno(too_long) { 1 } }
+    assert_includes error.message, "128"
+  end
+
+  def test_using_default_logger_flag
+    configuration = HireFire::Configuration.new
+    assert configuration.using_default_logger?
+
+    configuration.logger = Logger.new(File::NULL)
+    refute configuration.using_default_logger?
   end
 
   def test_duplicate_same_kind_raises

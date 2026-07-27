@@ -133,7 +133,10 @@ module HireFire
     end
 
     def base_url
-      ENV.fetch("HIREFIRE_DATA_URL", "https://data.hirefire.io").sub(/\/+\z/, "")
+      raw = ENV.fetch("HIREFIRE_DATA_URL", "https://data.hirefire.io")
+      stripped = raw.to_s.strip.sub(/\/+\z/, "")
+      stripped = "https://data.hirefire.io" if stripped.empty?
+      stripped
     end
 
     def token
@@ -144,8 +147,8 @@ module HireFire
       return if token
 
       raise RequestError, <<~MSG
-        The HIREFIRE_TOKEN environment variable is not set.
-        Set it to your HireFire token to enable metric dispatch.
+        HireFire token is not set.
+        Set HIREFIRE_TOKEN or config.token to enable metric dispatch.
       MSG
     end
   end

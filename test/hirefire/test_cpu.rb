@@ -186,6 +186,21 @@ class HireFire::Source::CPU::UsageTest < Minitest::Test
     assert_in_delta 2.5, Usage.total_seconds, 0.0001
   end
 
+  def test_cgroup_v2_zero_usage_is_accepted_not_fallthrough
+    Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("usage_usec 0\nuser_usec 0")
+    seconds, source = Usage.reading
+    assert_in_delta 0.0, seconds, 0.0001
+    assert_equal :cgroup_v2, source
+  end
+
+  def test_cgroup_v1_zero_usage_is_accepted_not_fallthrough
+    Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns("0")
+    seconds, source = Usage.reading
+    assert_in_delta 0.0, seconds, 0.0001
+    assert_equal :cgroup_v1, source
+  end
+
   def test_total_seconds_falls_back_to_cgroup_v1
     Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns(nil)
     Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns("3000000000")
@@ -434,6 +449,17 @@ class HireFire::Source::CPU::UsageTest < Minitest::Test
   def test_clock_ticks_falls_back_to_100
     Etc.stubs(:sysconf).raises(NotImplementedError)
     assert_equal 100, Usage.clock_ticks
+  end
+
+  def test_positive_clock_ticks_rejects_zero_and_negative
+    Usage.stubs(:clock_ticks).returns(0)
+    assert_equal 100, Usage.positive_clock_ticks
+
+    Usage.stubs(:clock_ticks).returns(-5)
+    assert_equal 100, Usage.positive_clock_ticks
+
+    Usage.stubs(:clock_ticks).returns(250)
+    assert_equal 250, Usage.positive_clock_ticks
   end
 
   def test_cgroup_v2_without_a_usage_usec_line_falls_through_to_v1

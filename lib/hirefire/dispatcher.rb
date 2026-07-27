@@ -20,6 +20,7 @@ module HireFire
       @mutex = Mutex.new
       @running = false
       @stopping = false
+      @stopping_flush = false
       @pid = nil
       @generation = 0
       @thread = nil
@@ -31,6 +32,7 @@ module HireFire
       @plan_override_warned = {}
       @unknown_adapter_warned = {}
       @unsupported_strategy_warned = {}
+      @unknown_strategy_warned = {}
     end
 
     # Starts the dispatcher loops.
@@ -38,25 +40,49 @@ module HireFire
     # @return [Boolean] +true+ when started. +false+ if already running in this process, or if
     #   starting the loops failed (the failure is logged).
     def start
-      return false if @running && @pid == Process.pid && !@stopping
+      return false if healthy_running?
+
+      retired_jq = nil
 
       @mutex.synchronize do
         return false if @stopping
-        return false if @running && @pid == Process.pid
+        return false if healthy_running_locked?
+
+        # Latched @running with a dead main loop: clear so we can respawn (mirrors JQ path).
+        if @running && @pid == Process.pid && !@thread&.alive?
+          @running = false
+          @thread = nil
+          # Retire a still-alive JQ loop from the dead generation before spawning a new one.
+          if @job_queue_thread&.alive?
+            retired_jq = @job_queue_thread
+            @job_queue_thread = nil
+          end
+        end
 
         after_fork = @pid && @pid != Process.pid
         if after_fork
-          buffer.discard_inherited
+          buffer.reinit_after_fork
           reset_dispatch_state_after_fork
+        end
+
+        # Same-PID restart (stop→start or dead-main resurrection): reset pacing/watermark/lease
+        # so we do not inherit a long dispatch window or a stale local grant.
+        unless after_fork
+          reset_dispatch_state_for_restart
+          @lease.demote!
         end
 
         @generation += 1
         generation = @generation
-        @thread = Thread.new { loop_until_stopped(generation) { tick } }
-        @job_queue_thread = Thread.new { loop_until_stopped(generation) { job_queue_tick } } if enter_race?
+        @thread = Thread.new { loop_until_stopped(generation) { tick(generation) } }
+        if enter_race?
+          @job_queue_thread = Thread.new { loop_until_stopped(generation) { job_queue_tick(generation) } }
+        end
         @running = true
         @pid = Process.pid
       end
+
+      join_loop_thread(retired_jq) if retired_jq
 
       Log.safe(logger, :info, "[HireFire] Starting dispatcher.")
 
@@ -71,6 +97,8 @@ module HireFire
     # @return [void]
     def ensure_job_queue_loop
       return if @job_queue_thread&.alive? && @running && @pid == Process.pid && !@stopping
+      # Pure web processes never enter the race: avoid taking the lifecycle mutex on every RQT sample.
+      return unless enter_race?
 
       @mutex.synchronize do
         return if @stopping
@@ -79,7 +107,7 @@ module HireFire
         return unless enter_race?
 
         generation = @generation
-        @job_queue_thread = Thread.new { loop_until_stopped(generation) { job_queue_tick } }
+        @job_queue_thread = Thread.new { loop_until_stopped(generation) { job_queue_tick(generation) } }
       end
     rescue => e
       Log.safe(logger, :error, "[HireFire] Could not start job-queue loop: #{e.message}")
@@ -104,6 +132,7 @@ module HireFire
         return false if @stopping
 
         @stopping = true
+        @stopping_flush = flush
         @running = false
         threads = [@thread, @job_queue_thread].compact if @pid == Process.pid
         @thread = nil
@@ -114,16 +143,35 @@ module HireFire
       begin
         threads&.each { |thread| join_loop_thread(thread) }
 
-        dispatch if flush
-
-        @client.close
-        @lease.close
+        if flush
+          # Final flush is intentional stop work (no generation fence).
+          dispatch
+        else
+          # Prefork parent / no-flush stop: drop buffered samples so a later same-PID
+          # restart does not flush pre-fork data as live metrics.
+          buffer.discard_inherited
+        end
 
         Log.safe(logger, :info, "[HireFire] Dispatcher stopped.")
 
         true
       ensure
-        @mutex.synchronize { @stopping = false }
+        # Always close transports even when final dispatch raises (socket leak otherwise).
+        begin
+          @client.close
+        rescue => e
+          Log.safe(logger, :error, "[HireFire] Client close error: #{e.message}")
+        end
+        begin
+          @lease.demote!
+          @lease.close
+        rescue => e
+          Log.safe(logger, :error, "[HireFire] Lease close error: #{e.message}")
+        end
+        @mutex.synchronize do
+          @stopping = false
+          @stopping_flush = false
+        end
       end
     end
 
@@ -131,12 +179,43 @@ module HireFire
     #
     # @return [Boolean]
     def running?
-      @mutex.synchronize { @running && !@stopping && @pid == Process.pid }
+      @mutex.synchronize { healthy_running_locked? }
+    end
+
+    # Child-side cleanup after a fork that does not restart reporting (job-only / Resque-style).
+    # Clears inherited loop flags, buffer, and lease so +at_exit+ cannot flush the parent's
+    # samples from the short-lived child.
+    #
+    # @return [void]
+    def abandon_inherited_state!
+      @mutex.synchronize do
+        @running = false
+        @stopping = false
+        @stopping_flush = false
+        @thread = nil
+        @job_queue_thread = nil
+        @pid = nil
+        @generation += 1
+      end
+      buffer.reinit_after_fork
+      @lease.demote!
+      @client.close
+      @lease.close
+    rescue => e
+      Log.safe(logger, :error, "[HireFire] Could not abandon inherited dispatcher state: #{e.message}")
     end
 
     private
 
     # --- lifecycle / loops ----------------------------------------------------
+
+    def healthy_running?
+      @running && !@stopping && @pid == Process.pid && @thread&.alive?
+    end
+
+    def healthy_running_locked?
+      @running && !@stopping && @pid == Process.pid && @thread&.alive?
+    end
 
     def loop_active?(generation)
       @mutex.synchronize { @running && !@stopping && @pid == Process.pid && @generation == generation }
@@ -158,18 +237,31 @@ module HireFire
         "[HireFire] Dispatcher loop did not stop within #{JOIN_TIMEOUT}s. Abandoning thread.")
     end
 
-    def tick
+    # +generation+ is set by the live loop so abandoned threads stop mid-tick after {#stop}.
+    # Direct/test calls omit it and always run.
+    def tick(generation = nil)
+      return if generation && !loop_active?(generation)
+
       configuration.active_cpu_sources.each { |source| guard { source.sample } }
-      dispatch_if_due
+      dispatch_if_due(generation)
     end
 
     # Spawned only when {#enter_race?} is true ({#start} / {#ensure_job_queue_loop}).
-    def job_queue_tick
+    def job_queue_tick(generation = nil)
+      return if generation && !loop_active?(generation)
+
       guard { @lease.request_if_due(hold: method(:hold_lease?)) }
+      return if generation && !loop_active?(generation)
+
       guard { @lease.sample_if_due { sample_job_queues } }
     end
 
     def reset_dispatch_state_after_fork
+      reset_dispatch_state_for_restart
+      configuration.reset_after_fork
+    end
+
+    def reset_dispatch_state_for_restart
       @next_dispatch_at = nil
       @last_rqt_second = nil
       @dispatch_frequency = DEFAULT_DISPATCH_FREQUENCY
@@ -177,7 +269,7 @@ module HireFire
       @plan_override_warned = {}
       @unknown_adapter_warned = {}
       @unsupported_strategy_warned = {}
-      configuration.reset_after_fork
+      @unknown_strategy_warned = {}
     end
 
     # --- lease race / job-queue sampling --------------------------------------
@@ -237,8 +329,7 @@ module HireFire
       strategy = entry["strategy"].to_s
 
       unless Plan.known_strategy?(strategy)
-        Log.safe(logger, :error, "[HireFire] Unknown plan strategy #{strategy.inspect} for " \
-          "#{name.inspect}. Entry skipped.")
+        warn_unknown_strategy_once(name, strategy)
         return
       end
 
@@ -279,6 +370,15 @@ module HireFire
         "strategy #{strategy.inspect} for #{name.inspect}. Entry skipped.")
     end
 
+    def warn_unknown_strategy_once(name, strategy)
+      key = "#{name}\0#{strategy}"
+      return if @unknown_strategy_warned[key]
+
+      @unknown_strategy_warned[key] = true
+      Log.safe(logger, :error, "[HireFire] Unknown plan strategy #{strategy.inspect} for " \
+        "#{name.inspect}. Entry skipped.")
+    end
+
     def adapter_present?(entry)
       adapter = entry["adapter"]
       !(adapter.nil? || adapter == "")
@@ -286,29 +386,54 @@ module HireFire
 
     # --- dispatch / payload ---------------------------------------------------
 
-    def dispatch_if_due
+    def dispatch_if_due(generation = nil)
       return if @next_dispatch_at && Clock.monotonic < @next_dispatch_at
+      return if generation && !loop_active?(generation)
 
-      dispatch
-      @next_dispatch_at = Clock.monotonic + @dispatch_frequency
+      dispatch(generation)
+      # Only advance pacing when this generation still owns the process.
+      if generation.nil? || loop_active?(generation)
+        @next_dispatch_at = Clock.monotonic + @dispatch_frequency
+      end
     end
 
     def guard
       yield
     rescue => e
-      Log.safe(logger, :error, "[HireFire] #{e.message}")
+      Log.safe(logger, :error, "[HireFire] #{e.class}: #{e.message}")
     end
 
-    def dispatch
+    # +generation+ fences abandoned loop threads after {#stop}: they must not POST or
+    # repopulate once a later generation owns the process. Final {#stop} flush omits it.
+    def dispatch(generation = nil)
+      return if generation && !loop_active?(generation)
+
       data = buffer.flush
       payload, watermark = build_payload(data)
       return if payload.empty?
 
       body = JSON.generate(payload)
-      return drop_oversized_payload(body, watermark) if body.bytesize > PAYLOAD_SIZE_LIMIT
+      if body.bytesize > PAYLOAD_SIZE_LIMIT
+        return unless generation.nil? || loop_active?(generation) || handoff_to_final_flush?
+
+        return drop_oversized_payload(body, watermark)
+      end
+
+      # Re-check after building the body: stop may have completed during CPU/sample work.
+      # Dead gen must not POST. For stop(flush: true), hand data back so the final flush can
+      # send it. For stop(flush: false), drop (must not undo discard).
+      if generation && !loop_active?(generation)
+        repopulate_rqt(data) if handoff_to_final_flush?
+        return
+      end
 
       Log.safe(logger, :info, "[HireFire] Dispatching metrics: #{body}") if ENV["HIREFIRE_VERBOSE"]
       response = @client.submit_samples(body)
+
+      if generation && !loop_active?(generation)
+        # Response arrived after stop: do not advance watermark or apply frequency for a dead gen.
+        return
+      end
 
       case response
       when :payload_too_large
@@ -320,9 +445,18 @@ module HireFire
       end
     rescue => e
       # Reclaim only rqt so RPM/liveness can recover. Other strategies are re-sampled next cycle.
-      # Pre-encode buckets only (never synthetic backfill empties).
-      repopulate_rqt(data) if data
-      Log.safe(logger, :error, "[HireFire] Dispatch error: #{e.message}")
+      # Pre-encode buckets only (never synthetic backfill empties). Hand off to final flush when
+      # stop(flush: true) is in progress; otherwise skip if this generation died.
+      if data && (generation.nil? || loop_active?(generation) || handoff_to_final_flush?)
+        repopulate_rqt(data)
+      end
+      Log.safe(logger, :error, "[HireFire] Dispatch error: #{e.class}: #{e.message}")
+    end
+
+    # True while {#stop}(flush: true) is joining/finishing: abandoned ticks may return flushed
+    # data to the buffer for the final dispatch. False for stop(flush: false) discard.
+    def handoff_to_final_flush?
+      @mutex.synchronize { @stopping && @stopping_flush }
     end
 
     def repopulate_rqt(data)
@@ -465,7 +599,10 @@ module HireFire
         [mean, n]
       else
         return :omit unless bucket.is_a?(Numeric)
-        return :omit unless bucket.finite? && bucket.between?(0, METRIC_VALUE_LIMIT)
+        unless bucket.finite? && bucket.between?(0, METRIC_VALUE_LIMIT)
+          Log.safe(logger, :error, "[HireFire] Omitting #{strategy} second: non-finite or out-of-range value.")
+          return :omit
+        end
 
         bucket
       end

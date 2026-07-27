@@ -277,6 +277,7 @@ class HireFire::ClientTest < Minitest::Test
     end
 
     assert_includes error.message, "HIREFIRE_TOKEN"
+    assert_includes error.message, "config.token"
   end
 
   def test_raises_with_empty_token
@@ -287,6 +288,17 @@ class HireFire::ClientTest < Minitest::Test
     end
 
     assert_includes error.message, "HIREFIRE_TOKEN"
+  end
+
+  def test_blank_and_slash_only_data_url_falls_back_to_default
+    ["", "   ", "/", "///"].each do |value|
+      ENV["HIREFIRE_DATA_URL"] = value
+      fresh = HireFire::Client.new
+      assert_equal "https://data.hirefire.io", fresh.send(:base_url),
+        "expected default base for #{value.inspect}"
+    end
+  ensure
+    ENV.delete("HIREFIRE_DATA_URL")
   end
 
   def test_custom_data_url

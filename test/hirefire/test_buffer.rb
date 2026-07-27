@@ -38,7 +38,42 @@ class HireFire::BufferTest < Minitest::Test
       buffer.sample("web", "rqt", 1)
 
       data = buffer.flush
-      assert_equal HireFire::Buffer::SAMPLE_COUNT_LIMIT, data["web"]["rqt"][100][:count]
+      bucket = data["web"]["rqt"][100]
+      assert_equal HireFire::Buffer::SAMPLE_COUNT_LIMIT, bucket[:count]
+      # Cap must freeze both sum and count (mean stays honest on the wire).
+      assert_in_delta 0.0, bucket[:sum], 0.0001
+    end
+  end
+
+  def test_sample_ignores_non_finite_and_non_numeric
+    Timecop.freeze Time.at(100) do
+      buffer.sample("web", "rqt", Float::NAN)
+      buffer.sample("web", "rqt", Float::INFINITY)
+      buffer.sample("web", "cpu", "nope")
+      buffer.sample("web", "rqt", 5)
+
+      data = buffer.flush
+      assert_equal({sum: 5.0, count: 1}, data["web"]["rqt"][100])
+      assert_nil data.dig("web", "cpu")
+    end
+  end
+
+  def test_reinit_after_fork_clears_metrics_and_replaces_mutex
+    Timecop.freeze Time.at(100) do
+      buffer.sample("web", "rqt", 7)
+      old_mutex = buffer.instance_variable_get(:@mutex)
+
+      buffer.reinit_after_fork
+
+      refute_same old_mutex, buffer.instance_variable_get(:@mutex)
+      assert_empty buffer.flush
+    end
+  end
+
+  def test_repopulate_rejects_non_rqt_strategy
+    Timecop.freeze Time.at(100) do
+      buffer.repopulate("web", "cpu", {100 => {sum: 1.0, count: 1}})
+      assert_empty buffer.flush
     end
   end
 

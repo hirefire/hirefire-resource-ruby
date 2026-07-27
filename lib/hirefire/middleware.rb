@@ -65,6 +65,7 @@ module HireFire
 
     def calculate_request_queue_time(timestamp)
       value = timestamp.to_s.delete_prefix("t=").to_f
+      return unless value.finite?
       return if value < 1e9
 
       milliseconds = if value < 1e11

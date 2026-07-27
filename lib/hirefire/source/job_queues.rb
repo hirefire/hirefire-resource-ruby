@@ -38,17 +38,26 @@ module HireFire
       # @param strategy [String] +jql+ or +jqs+
       # @return [void]
       def sample_job_queue(job_queue, strategy)
+        return unless job_queue
+
+        strategy = strategy.to_s
+        unless strategy == "jql" || strategy == "jqs"
+          Log.safe(logger, :error, "[HireFire] Unknown job-queue strategy #{strategy.inspect} for " \
+            "#{job_queue.name.inspect}. Sample dropped.")
+          return
+        end
+
         value = job_queue.sample
 
         unless valid_sample?(value)
           Log.safe(logger, :error, "[HireFire] The sampler for #{job_queue.name.inspect} returned " \
-            "#{value.inspect}, expected a non-negative number. Sample dropped.")
+            "#{format_sample_value(value)}, expected a non-negative number. Sample dropped.")
           return
         end
 
-        HireFire.configuration.buffer.sample(job_queue.name, strategy.to_s, coerce_sample(value))
+        HireFire.configuration.buffer.sample(job_queue.name, strategy, coerce_sample(value))
       rescue => e
-        Log.safe(logger, :error, "[HireFire] The sampler for #{job_queue.name.inspect} raised " \
+        Log.safe(logger, :error, "[HireFire] The sampler for #{job_queue&.name.inspect} raised " \
           "#{e.class}: #{e.message}")
       end
 
@@ -60,6 +69,15 @@ module HireFire
 
       def coerce_sample(value)
         (value.is_a?(Integer) || value.is_a?(Float)) ? value : value.to_f
+      end
+
+      def format_sample_value(value)
+        text = value.class.name
+        preview = value.to_s
+        preview = "#{preview.byteslice(0, 64)}…" if preview.bytesize > 64
+        "#{text}(#{preview.inspect})"
+      rescue
+        value.class.name
       end
 
       def logger

@@ -1341,6 +1341,290 @@ class HireFire::DispatcherTest < Minitest::Test
     restarted.join(HireFire::Dispatcher::JOIN_TIMEOUT)
   end
 
+  def test_start_restarts_when_main_loop_thread_is_dead
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    dead = Thread.new {}
+    dead.join
+    refute dead.alive?
+
+    dispatcher.instance_variable_set(:@running, true)
+    dispatcher.instance_variable_set(:@stopping, false)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    dispatcher.instance_variable_set(:@thread, dead)
+    dispatcher.instance_variable_set(:@generation, 1)
+
+    refute dispatcher.running?
+    assert dispatcher.start
+    restarted = dispatcher.instance_variable_get(:@thread)
+    refute_same dead, restarted
+    assert restarted.alive?
+    assert dispatcher.running?
+
+    dispatcher.stop
+  end
+
+  def test_dispatch_with_stale_generation_does_not_post
+    stub_lease
+    ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    HireFire.configuration.buffer.sample("web", "rqt", 10)
+    dispatcher.instance_variable_set(:@running, false)
+    dispatcher.instance_variable_set(:@stopping, false)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    dispatcher.instance_variable_set(:@generation, 2)
+
+    # Generation 1 is stale at entry: no flush, no POST (samples stay buffered).
+    dispatcher.send(:dispatch, 1)
+
+    assert_not_requested ingest
+    data = HireFire.configuration.buffer.flush
+    assert data.dig("web", "rqt")
+  end
+
+  def test_dispatch_dead_gen_after_flush_does_not_repopulate_when_not_final_flush
+    stub_lease
+    ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    HireFire.configuration.buffer.sample("web", "rqt", 10)
+    dispatcher.instance_variable_set(:@running, true)
+    dispatcher.instance_variable_set(:@stopping, false)
+    dispatcher.instance_variable_set(:@stopping_flush, false)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    dispatcher.instance_variable_set(:@generation, 1)
+
+    # After flush, generation dies (stop(flush: false) path). Must not POST and must not
+    # repopulate (would undo discard).
+    calls = 0
+    dispatcher.define_singleton_method(:loop_active?) do |generation|
+      calls += 1
+      calls == 1
+    end
+
+    dispatcher.send(:dispatch, 1)
+
+    assert_not_requested ingest
+    assert_empty HireFire.configuration.buffer.flush
+  end
+
+  def test_dispatch_dead_gen_after_flush_handoffs_for_final_flush
+    stub_lease
+    ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    HireFire.configuration.buffer.sample("web", "rqt", 10)
+    dispatcher.instance_variable_set(:@running, false)
+    dispatcher.instance_variable_set(:@stopping, true)
+    dispatcher.instance_variable_set(:@stopping_flush, true)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    dispatcher.instance_variable_set(:@generation, 1)
+
+    calls = 0
+    dispatcher.define_singleton_method(:loop_active?) do |_generation|
+      calls += 1
+      calls == 1
+    end
+
+    dispatcher.send(:dispatch, 1)
+
+    assert_not_requested ingest
+    data = HireFire.configuration.buffer.flush
+    assert data.dig("web", "rqt")
+  end
+
+  def test_abandon_inherited_state_clears_running_and_buffer
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    assert dispatcher.start
+    HireFire.configuration.buffer.sample("web", "rqt", 7)
+
+    dispatcher.abandon_inherited_state!
+
+    refute dispatcher.running?
+    assert_empty HireFire.configuration.buffer.flush
+  end
+
+  def test_abandon_inherited_state_demotes_and_closes_transports
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    assert dispatcher.start
+    dispatcher.instance_variable_get(:@client).expects(:close).at_least_once
+    dispatcher.instance_variable_get(:@lease).expects(:demote!).at_least_once
+    dispatcher.instance_variable_get(:@lease).expects(:close).at_least_once
+
+    dispatcher.abandon_inherited_state!
+  end
+
+  def test_stop_after_abandon_does_not_post_buffered_samples
+    stub_lease
+    ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    assert dispatcher.start
+    HireFire.configuration.buffer.sample("web", "rqt", 7)
+    dispatcher.abandon_inherited_state!
+    WebMock.reset_executed_requests!
+
+    refute dispatcher.stop
+    assert_not_requested ingest
+    assert_empty HireFire.configuration.buffer.flush
+  end
+
+  def test_dispatch_dead_gen_after_successful_post_skips_watermark_and_frequency
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_return(status: 200, headers: {"HireFire-Dispatch-Frequency" => "10"})
+
+    dispatcher = configure_web_only
+    HireFire.configuration.buffer.sample("web", "rqt", 10)
+    dispatcher.instance_variable_set(:@running, true)
+    dispatcher.instance_variable_set(:@stopping, false)
+    dispatcher.instance_variable_set(:@stopping_flush, false)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    dispatcher.instance_variable_set(:@generation, 1)
+    dispatcher.instance_variable_set(:@last_rqt_second, 999)
+    dispatcher.instance_variable_set(:@dispatch_frequency, 1)
+
+    calls = 0
+    dispatcher.define_singleton_method(:loop_active?) do |_generation|
+      calls += 1
+      # Active through build/POST; dead for post-response apply.
+      calls <= 2
+    end
+
+    dispatcher.send(:dispatch, 1)
+
+    assert_equal 999, dispatcher.instance_variable_get(:@last_rqt_second)
+    assert_equal 1, dispatcher.instance_variable_get(:@dispatch_frequency)
+  end
+
+  def test_dispatch_dead_gen_on_error_does_not_repopulate_without_handoff
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_raise(Errno::ECONNREFUSED)
+
+    dispatcher = configure_web_only
+    HireFire.configuration.buffer.sample("web", "rqt", 10)
+    dispatcher.instance_variable_set(:@running, true)
+    dispatcher.instance_variable_set(:@stopping, false)
+    dispatcher.instance_variable_set(:@stopping_flush, false)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    dispatcher.instance_variable_set(:@generation, 1)
+
+    calls = 0
+    dispatcher.define_singleton_method(:loop_active?) do |_generation|
+      calls += 1
+      # Active for flush/build; dead for rescue repopulate check.
+      calls <= 2
+    end
+
+    dispatcher.send(:dispatch, 1)
+
+    assert_empty HireFire.configuration.buffer.flush
+  end
+
+  def test_dispatch_dead_gen_on_error_handoffs_for_final_flush
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_raise(Errno::ECONNREFUSED)
+
+    dispatcher = configure_web_only
+    HireFire.configuration.buffer.sample("web", "rqt", 10)
+    dispatcher.instance_variable_set(:@running, false)
+    dispatcher.instance_variable_set(:@stopping, true)
+    dispatcher.instance_variable_set(:@stopping_flush, true)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    dispatcher.instance_variable_set(:@generation, 1)
+
+    calls = 0
+    dispatcher.define_singleton_method(:loop_active?) do |_generation|
+      calls += 1
+      calls <= 2
+    end
+
+    dispatcher.send(:dispatch, 1)
+
+    data = HireFire.configuration.buffer.flush
+    assert data.dig("web", "rqt")
+  end
+
+  def test_dispatch_if_due_does_not_advance_pacing_on_dead_gen
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    HireFire.configuration.buffer.sample("web", "rqt", 10)
+    dispatcher.instance_variable_set(:@running, true)
+    dispatcher.instance_variable_set(:@stopping, false)
+    dispatcher.instance_variable_set(:@stopping_flush, false)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    dispatcher.instance_variable_set(:@generation, 1)
+    dispatcher.instance_variable_set(:@next_dispatch_at, nil)
+
+    calls = 0
+    dispatcher.define_singleton_method(:loop_active?) do |_generation|
+      calls += 1
+      # First check in dispatch_if_due and early dispatch pass; later checks fail.
+      calls == 1
+    end
+
+    dispatcher.send(:dispatch_if_due, 1)
+
+    assert_nil dispatcher.instance_variable_get(:@next_dispatch_at)
+  end
+
+  def test_stop_closes_transports_even_when_final_dispatch_raises
+    stub_lease
+    dispatcher = configure_web_only
+    dispatcher.instance_variable_set(:@running, true)
+    dispatcher.instance_variable_set(:@pid, Process.pid)
+    dispatcher.define_singleton_method(:dispatch) { raise "flush failed" }
+
+    dispatcher.instance_variable_get(:@client).expects(:close).at_least_once
+    dispatcher.instance_variable_get(:@lease).expects(:demote!).at_least_once
+    dispatcher.instance_variable_get(:@lease).expects(:close).at_least_once
+
+    assert_raises(RuntimeError) { dispatcher.stop }
+
+    refute dispatcher.instance_variable_get(:@stopping)
+  end
+
+  def test_forked_child_start_reinitializes_buffer_mutex
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    assert dispatcher.start
+    buffer = HireFire.configuration.buffer
+    old_mutex = buffer.instance_variable_get(:@mutex)
+
+    child_pid = Process.pid + 1
+    Process.stubs(:pid).returns(child_pid)
+    assert dispatcher.start
+
+    refute_same old_mutex, buffer.instance_variable_get(:@mutex)
+    assert_empty buffer.flush
+    dispatcher.stop
+  end
+
+  def test_stop_without_flush_discards_buffer
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    dispatcher = configure_web_only
+    assert dispatcher.start
+    HireFire.configuration.buffer.sample("web", "rqt", 42)
+    dispatcher.stop(flush: false)
+
+    assert_empty HireFire.configuration.buffer.flush
+  end
+
   def test_fork_resets_always_on_cpu_and_warn_maps
     stub_lease
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)

@@ -24,10 +24,22 @@ module HireFire
       @sample_frequency = 15
       @owner_pid = Process.pid
       @job_queues = []
+      @epoch = 0
     end
 
     def granted?
       @granted
+    end
+
+    # Drop local grant state without closing the transport. Used on stop/restart so a
+    # later start does not sample on a stale grant while another process holds the server lease.
+    # Bumps +@epoch+ so an in-flight lease HTTP response cannot re-apply grant state.
+    def demote!
+      @epoch += 1
+      @granted = false
+      @job_queues = []
+      @expires_at = Clock.monotonic
+      @next_sample_at = Clock.monotonic
     end
 
     def sample_if_due
@@ -42,15 +54,21 @@ module HireFire
       reset_after_fork if @owner_pid != Process.pid
       return unless Clock.monotonic >= @expires_at
 
+      epoch = @epoch
       @expires_at = Clock.monotonic + @ttl
 
       begin
         response = @client.request_lease(@process_id)
       rescue
+        return if @epoch != epoch
+
         @granted = false
         @job_queues = []
         raise
       end
+
+      # Abandoned after stop/restart: ignore late responses entirely (no field writes).
+      return if @epoch != epoch
 
       if response.is_a?(Net::HTTPUnauthorized)
         @granted = false
@@ -64,26 +82,56 @@ module HireFire
         raise Client::RequestError, "Lease request failed with #{response.code} status."
       end
 
+      # Parse into locals first, then commit only if the epoch is still current so demote!
+      # during this method cannot leave half-applied cadence/plan state.
+      next_sample_frequency = @sample_frequency
+      next_sample_at = @next_sample_at
       if response.key?("HireFire-Sample-Frequency")
-        @sample_frequency = response["HireFire-Sample-Frequency"].to_i.clamp(SAMPLE_FREQUENCY_BOUNDS)
+        previous_frequency = @sample_frequency
+        next_sample_frequency = response["HireFire-Sample-Frequency"].to_i.clamp(SAMPLE_FREQUENCY_BOUNDS)
+        if next_sample_frequency < previous_frequency
+          sooner = Clock.monotonic + next_sample_frequency
+          next_sample_at = sooner if next_sample_at > sooner
+        end
       end
 
+      next_ttl = @ttl
+      next_expires_at = @expires_at
       if response.key?("HireFire-Lease-TTL")
-        @ttl = response["HireFire-Lease-TTL"].to_i.clamp(TTL_BOUNDS)
-        @expires_at = Clock.monotonic + @ttl
+        next_ttl = response["HireFire-Lease-TTL"].to_i.clamp(TTL_BOUNDS)
+        next_expires_at = Clock.monotonic + next_ttl
       end
 
       granted = response["HireFire-Lease-Granted"] == "true"
-      @job_queues = granted ? parse_job_queues(response.body) : []
+      parsed_queues = granted ? parse_job_queues(response.body) : []
 
-      if granted && !hold.call(@job_queues)
+      return if @epoch != epoch
+
+      hold_ok = !granted || hold.call(parsed_queues)
+
+      return if @epoch != epoch
+
+      @sample_frequency = next_sample_frequency
+      @next_sample_at = next_sample_at
+      @ttl = next_ttl
+      @expires_at = next_expires_at
+
+      if granted && !hold_ok
+        # Drop local grant and rotate process_id so the server exclusive lease is not
+        # renewed. Another process that can sample can win after the server TTL expires.
         @granted = false
         @job_queues = []
+        @process_id = SecureRandom.uuid
         Log.safe(HireFire.configuration.logger, :info,
           "[HireFire] Lease grant dropped: this process cannot sample the plan " \
           "(no local job-queue samplers and no executable plan adapter).")
       else
+        was_granted = @granted
         @granted = granted
+        @job_queues = parsed_queues
+        # Re-arm sampling immediately on false→true so a long sample_frequency window from a
+        # prior grant does not delay the first sample under the new hold.
+        @next_sample_at = Clock.monotonic if granted && !was_granted
       end
     end
 
@@ -104,10 +152,18 @@ module HireFire
       end
 
       payload = JSON.parse(body)
-      return [] unless payload.is_a?(Hash)
+      unless payload.is_a?(Hash)
+        Log.safe(HireFire.configuration.logger, :error,
+          "[HireFire] Lease grant body was not a JSON object. Plan ignored.")
+        return []
+      end
 
       entries = payload["job_queues"]
-      return [] unless entries.is_a?(Array)
+      unless entries.is_a?(Array)
+        Log.safe(HireFire.configuration.logger, :error,
+          "[HireFire] Lease grant body job_queues was not an array. Plan ignored.")
+        return []
+      end
 
       accepted = []
       skipped = 0
@@ -121,19 +177,25 @@ module HireFire
           next
         end
 
-        name = entry["name"].to_s
-        strategy = entry["strategy"].to_s
+        name = entry["name"].to_s.strip
+        strategy = entry["strategy"].to_s.strip
+        adapter = entry.key?("adapter") ? entry["adapter"].to_s.strip : nil
         if name.empty? || strategy.empty? || name.bytesize > MAX_NAME_BYTES
           skipped += 1
           next
         end
 
-        accepted << entry
+        normalized = entry.merge("name" => name, "strategy" => strategy)
+        if entry.key?("adapter")
+          normalized["adapter"] = adapter
+        end
+        accepted << normalized
       end
 
       if entries.size > MAX_JOB_QUEUES
         Log.safe(HireFire.configuration.logger, :error,
-          "[HireFire] Lease plan truncated to #{MAX_JOB_QUEUES} job queue entries.")
+          "[HireFire] Lease plan truncated to #{MAX_JOB_QUEUES} job queue entries" \
+          "#{(skipped.positive?) ? " (#{skipped} invalid also skipped)" : ""}.")
       elsif skipped.positive?
         label = (skipped == 1) ? "entry" : "entries"
         Log.safe(HireFire.configuration.logger, :error,
@@ -148,6 +210,7 @@ module HireFire
     end
 
     def reset_after_fork
+      @epoch += 1
       @process_id = SecureRandom.uuid
       @granted = false
       @job_queues = []

@@ -22,6 +22,20 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
     assert_equal 18, data["mailer"]["jqs"].values.first
   end
 
+  def test_sample_job_queue_rejects_unknown_strategy
+    log = StringIO.new
+    HireFire.configure do |config|
+      config.dyno(:worker) { 42 }
+    end
+    HireFire.configuration.logger = Logger.new(log)
+    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
+
+    HireFire.configuration.job_queues.sample_job_queue(job_queue, "rpm")
+
+    assert_empty buffer.flush
+    assert_includes log.string, "Unknown job-queue strategy"
+  end
+
   def test_find_by_name_returns_nil_for_missing
     HireFire.configure { |config| config.dyno(:worker) { 1 } }
     assert_nil HireFire.configuration.job_queues.find_by_name("missing")

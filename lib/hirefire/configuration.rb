@@ -33,9 +33,8 @@ module HireFire
     # case-insensitively), or a second http process is declared in the same app process.
     class DuplicateDynoError < StandardError; end
 
-    attr_reader :http, :job_queues, :log_queue_metrics
+    attr_reader :http, :job_queues, :log_queue_metrics, :logger
     attr_writer :token, :log_queue_metrics
-    attr_accessor :logger
 
     def initialize
       @http = nil
@@ -43,12 +42,29 @@ module HireFire
       @sources_by_name = {}
       @dispatcher = nil
       @logger = Logger.new($stdout)
+      @default_logger = true
       @token = nil
       @log_queue_metrics = false
       @mutex = Mutex.new
       @always_on_cpu = nil
       @always_on_http = nil
       @http_active = false
+    end
+
+    # Assign a logger. +nil+ silences diagnostics (same as a logger missing log methods).
+    #
+    # @param value [#error, #warn, #info, nil]
+    # @return [void]
+    def logger=(value)
+      @logger = value
+      @default_logger = false
+    end
+
+    # True until {#logger=} has been called (railtie may replace the stdout default).
+    #
+    # @return [Boolean]
+    def using_default_logger?
+      @default_logger
     end
 
     # The HireFire API token. Returns the value assigned in code when it is not +nil+, else the
@@ -175,7 +191,10 @@ module HireFire
       return @http if @http
 
       name = http_name
-      return nil if name.nil?
+      if name.nil?
+        warn_rqt_unresolved_once if token && (@http_active || HireFire::Identity.platform_http_role?)
+        return nil
+      end
 
       if @always_on_http.nil? || !@always_on_http.name.casecmp?(name)
         @always_on_http = Source::HTTP.new(name)
@@ -227,14 +246,32 @@ module HireFire
       @always_on_http = nil
     end
 
+    # Whether this process participates in prefork web master → worker handoff on +Process._fork+.
+    #
+    # True when RQT is armed (platform web role, explicit http dyno, or prior traffic). Job-only
+    # processes stay false so Resque-style fork-per-job parents keep reporting and children do not
+    # start a short-lived dispatcher.
+    #
+    # @return [Boolean]
+    def prefork_web_handoff?
+      rqt_enabled?
+    end
+
     private
 
+    MAX_NAME_BYTES = 128
+
     def coerce_name!(name)
-      name = name.to_s
+      name = name.to_s.strip
 
       if name.empty?
         raise ArgumentError,
           "config.dyno requires a dyno name as its first argument (got #{name.inspect})."
+      end
+
+      if name.bytesize > MAX_NAME_BYTES
+        raise ArgumentError,
+          "config.dyno name exceeds #{MAX_NAME_BYTES} bytes (got #{name.bytesize})."
       end
 
       name
@@ -275,7 +312,29 @@ module HireFire
 
     def soft_identity
       warn_heroku_conflict_once
-      HireFire::Identity.resolve
+      name = HireFire::Identity.resolve
+      return if name.nil?
+      return name if name.bytesize <= MAX_NAME_BYTES
+
+      warn_identity_name_too_long_once(name)
+      nil
+    end
+
+    def warn_identity_name_too_long_once(name)
+      return if defined?(@identity_name_too_long_warned)
+
+      @identity_name_too_long_warned = true
+      Log.safe(logger, :error, "[HireFire] Process identity exceeds #{MAX_NAME_BYTES} bytes " \
+        "(#{name.bytesize}). Metrics under this identity are disabled until the name is shortened.")
+    end
+
+    def warn_rqt_unresolved_once
+      return if defined?(@rqt_unresolved_warned)
+
+      @rqt_unresolved_warned = true
+      Log.safe(logger, :warn, "[HireFire] Request queue time samples dropped: process identity " \
+        "is unresolved. Set HIREFIRE_SERVICE_NAME, or rely on DYNO / RENDER_SERVICE_NAME where " \
+        "available (or declare config.dyno(:web)).")
     end
 
     def warn_heroku_conflict_once

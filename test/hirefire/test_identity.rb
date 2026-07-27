@@ -108,6 +108,14 @@ class HireFire::IdentityTest < Minitest::Test
     assert_equal "worker-abc123", HireFire::Identity.resolve
   end
 
+  def test_dyno_that_strips_to_empty_is_unresolved
+    ENV["DYNO"] = ".1"
+    assert_nil HireFire::Identity.resolve
+
+    ENV["DYNO"] = "-ab-cd"
+    assert_nil HireFire::Identity.resolve
+  end
+
   def test_platform_http_role_heroku_cedar_web
     ENV["DYNO"] = "web.1"
     assert HireFire::Identity.heroku_web_process?

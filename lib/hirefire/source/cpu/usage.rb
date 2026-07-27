@@ -45,12 +45,13 @@ module HireFire
 
           parts = line.split
           usec = number(parts[1]) if parts.length > 1
-          usec / 1_000_000.0 if usec
+          # Real zero usage is valid; only nil/malformed falls through the ladder.
+          usec / 1_000_000.0 unless usec.nil?
         end
 
         def cgroup_v1_seconds
           usage = number(read(CGROUP_V1_USAGE))
-          usage / 1_000_000_000.0 if usage
+          usage / 1_000_000_000.0 unless usage.nil?
         end
 
         def proc_namespace_seconds
@@ -66,7 +67,7 @@ module HireFire
             counted = true
           end
 
-          ticks.to_f / clock_ticks if counted
+          ticks.to_f / positive_clock_ticks if counted
         end
 
         def stat_ticks(content)
@@ -89,8 +90,15 @@ module HireFire
           100
         end
 
+        def positive_clock_ticks
+          ticks = clock_ticks.to_i
+          ticks.positive? ? ticks : 100
+        end
+
         def process_seconds
           Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID)
+        rescue StandardError, NotImplementedError
+          nil
         end
 
         def available_cpus

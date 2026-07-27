@@ -120,20 +120,45 @@ class HireFireTest < Minitest::Test
 
   def test_after_fork_in_child_starts_when_token_present
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["DYNO"] = "web.1"
     HireFire::Dispatcher.any_instance.expects(:start).once
     HireFire::Dispatcher.any_instance.expects(:ensure_job_queue_loop).once
 
     HireFire.after_fork_in_child
   end
 
-  def test_after_fork_in_child_is_noop_without_token
+  def test_after_fork_in_child_web_without_token_does_not_start_or_abandon
+    ENV.delete("HIREFIRE_TOKEN")
+    ENV["DYNO"] = "web.1"
+    HireFire.reset
+    assert HireFire.configuration.prefork_web_handoff?
     HireFire::Dispatcher.any_instance.expects(:start).never
+    HireFire::Dispatcher.any_instance.expects(:abandon_inherited_state!).never
 
     HireFire.after_fork_in_child
+  ensure
+    HireFire.reset
+  end
+
+  def test_after_fork_in_child_job_only_abandons_inherited_state
+    ENV.delete("HIREFIRE_SERVICE_NAME")
+    ENV.delete("RENDER_SERVICE_TYPE")
+    ENV.delete("RENDER_SERVICE_NAME")
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["DYNO"] = "worker.1"
+    HireFire.reset
+    refute HireFire.configuration.prefork_web_handoff?
+    HireFire::Dispatcher.any_instance.expects(:start).never
+    HireFire::Dispatcher.any_instance.expects(:abandon_inherited_state!).once
+
+    HireFire.after_fork_in_child
+  ensure
+    HireFire.reset
   end
 
   def test_after_fork_in_child_logs_start_failure
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["DYNO"] = "web.1"
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
     HireFire::Dispatcher.any_instance.stubs(:start).raises(RuntimeError, "spawn failed")
@@ -145,6 +170,7 @@ class HireFireTest < Minitest::Test
   end
 
   def test_after_fork_in_parent_stops_without_flush
+    ENV["DYNO"] = "web.1"
     flush_args = []
     config = HireFire.configuration
     config.define_singleton_method(:stop_dispatcher) do |flush: true|
@@ -158,7 +184,27 @@ class HireFireTest < Minitest::Test
     HireFire.instance_variable_set(:@configuration, nil)
   end
 
+  def test_after_fork_in_parent_is_noop_for_job_only_process
+    ENV.delete("HIREFIRE_SERVICE_NAME")
+    ENV.delete("RENDER_SERVICE_TYPE")
+    ENV.delete("RENDER_SERVICE_NAME")
+    ENV["DYNO"] = "worker.1"
+    HireFire.reset
+    refute HireFire.configuration.prefork_web_handoff?
+
+    called = false
+    HireFire.configuration.define_singleton_method(:stop_dispatcher) do |**_|
+      called = true
+    end
+
+    HireFire.after_fork_in_parent
+    refute called, "job-only parent must not stop_dispatcher on fork"
+  ensure
+    HireFire.reset
+  end
+
   def test_after_fork_in_parent_logs_stop_failure
+    ENV["DYNO"] = "web.1"
     log = StringIO.new
     config = HireFire.configuration
     config.logger = Logger.new(log)
@@ -185,6 +231,7 @@ class HireFireTest < Minitest::Test
     skip "Process._fork unavailable" unless Process.respond_to?(:_fork)
 
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["DYNO"] = "web.1"
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "false"})
@@ -210,6 +257,47 @@ class HireFireTest < Minitest::Test
     assert_equal "running", status
     refute HireFire.configuration.dispatcher.running?,
       "prefork parent must stop after fork so it does not claim empty web liveness"
+  ensure
+    HireFire.reset
+  end
+
+  def test_real_fork_keeps_job_only_parent_running
+    skip "Process.fork unavailable" unless Process.respond_to?(:fork)
+    skip "Process._fork unavailable" unless Process.respond_to?(:_fork)
+
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["DYNO"] = "worker.1"
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "false"})
+
+    HireFire.boot
+    assert HireFire.configuration.dispatcher.running?
+    HireFire.configuration.buffer.sample("worker", "jql", 9)
+
+    read_io, write_io = IO.pipe
+    pid = Process.fork do
+      read_io.close
+      begin
+        dispatcher = HireFire.configuration.dispatcher
+        # Job-only child must abandon inherited state (not auto-start).
+        running = dispatcher.running?
+        buffer_empty = HireFire.configuration.buffer.flush.empty?
+        # at_exit-equivalent: stop must not POST abandoned parent samples.
+        dispatcher.stop
+        write_io.write([running ? "running" : "stopped", buffer_empty ? "empty" : "full"].join(","))
+      ensure
+        write_io.close
+        exit!(0)
+      end
+    end
+    write_io.close
+    status = read_io.read
+    Process.wait(pid)
+
+    assert_equal "stopped,empty", status
+    assert HireFire.configuration.dispatcher.running?,
+      "fork-per-job parent must keep reporting after Process._fork"
   ensure
     HireFire.reset
   end

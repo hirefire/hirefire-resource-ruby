@@ -70,9 +70,9 @@ module HireFire
     end
 
     def execute(entry)
-      adapter = entry["adapter"].to_s
-      strategy = entry["strategy"].to_s
-      name = entry["name"].to_s
+      adapter = entry["adapter"].to_s.strip
+      strategy = entry["strategy"].to_s.strip
+      name = entry["name"].to_s.strip
       method_name = STRATEGIES[strategy]
 
       unless method_name
@@ -94,14 +94,16 @@ module HireFire
         return
       end
 
-      queues = normalize_queues(entry["queues"])
+      queues = normalize_queues(entry["queues"], name: name)
+      return if queues.nil?
+
       options = macro.plan_options(strategy, entry["options"])
         .merge(macro.plan_connection_options)
       value = macro.public_send(method_name, *queues, **options)
 
       unless valid_sample?(value)
         Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} returned " \
-          "#{value.inspect}, expected a non-negative number. Sample dropped.")
+          "#{format_sample_value(value)}, expected a non-negative number. Sample dropped.")
         return
       end
 
@@ -113,20 +115,38 @@ module HireFire
 
     private
 
-    def normalize_queues(queues)
-      list = Array(queues)
+    # Returns an Array of queue names, or +nil+ when the entry must be skipped.
+    # Missing / null +queues+ → [] (macro may sample all queues when allow_empty).
+    # Non-array, or a non-empty list that filters to empty → skip (do not widen to all).
+    def normalize_queues(queues, name:)
+      return [] if queues.nil?
+
+      unless queues.is_a?(Array)
+        Log.safe(logger, :error,
+          "[HireFire] Plan queues for #{name.inspect} must be an array. Entry skipped.")
+        return nil
+      end
+
+      list = queues.filter_map do |queue|
+        qname = queue.to_s.strip
+        next if qname.empty? || qname.bytesize > MAX_QUEUE_NAME_BYTES
+
+        qname
+      end
+
+      if list.empty? && !queues.empty?
+        Log.safe(logger, :error,
+          "[HireFire] Plan queue list for #{name.inspect} had no valid names. Entry skipped.")
+        return nil
+      end
+
       if list.size > MAX_QUEUES
         Log.safe(logger, :error,
           "[HireFire] Plan queue list truncated to #{MAX_QUEUES} names.")
         list = list.first(MAX_QUEUES)
       end
 
-      list.filter_map do |queue|
-        name = queue.to_s.strip
-        next if name.empty? || name.bytesize > MAX_QUEUE_NAME_BYTES
-
-        name
-      end
+      list
     end
 
     def valid_sample?(value)
@@ -135,6 +155,15 @@ module HireFire
 
     def coerce_sample(value)
       (value.is_a?(Integer) || value.is_a?(Float)) ? value : value.to_f
+    end
+
+    def format_sample_value(value)
+      text = value.class.name
+      preview = value.to_s
+      preview = "#{preview.byteslice(0, 64)}…" if preview.bytesize > 64
+      "#{text}(#{preview.inspect})"
+    rescue
+      value.class.name
     end
 
     def logger

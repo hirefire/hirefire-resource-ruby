@@ -53,6 +53,8 @@ class HireFire::Plan::HooksTest < Minitest::Test
     assert_equal 10, @helper.coerce_plan_value(:non_negative_integer, "10")
     assert_nil @helper.coerce_plan_value(:non_negative_integer, -1)
     assert_nil @helper.coerce_plan_value(:non_negative_integer, "x")
+    assert_nil @helper.coerce_plan_value(:non_negative_integer, 50.9)
+    assert_nil @helper.coerce_plan_value(:non_negative_integer, 10.0)
     assert_nil @helper.coerce_plan_value(:unknown, 1)
   end
 

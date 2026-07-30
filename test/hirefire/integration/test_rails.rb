@@ -33,6 +33,16 @@ module HireFire
         assert_equal HireFire::Middleware, app.middleware.first.klass
       end
 
+      # Initializer blocks run on the railtie *instance*. Helpers must be instance
+      # methods (not class methods) or every Rails boot raises NoMethodError
+      # (worker dynos load config/environment and hit the same path).
+      def test_middleware_already_queued_is_callable_from_railtie_instance
+        railtie = HireFire::Railtie.instance
+        assert railtie.respond_to?(:middleware_already_queued?, true)
+        refute HireFire::Railtie.respond_to?(:middleware_already_queued?)
+        assert_equal true, railtie.send(:middleware_already_queued?, app)
+      end
+
       def test_railtie_is_loaded_for_boot_on_token
         assert defined?(HireFire::Railtie)
         assert HireFire::Railtie < ::Rails::Railtie

@@ -11,6 +11,10 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   LATENCY_DELTA = 2
 
   def setup
+    flush_sidekiq_redis
+  end
+
+  def flush_sidekiq_redis
     Sidekiq.redis do |connection|
       case identify_redis_client(connection)
       when :redis
@@ -104,6 +108,17 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_in_delta 90, hirefire, LATENCY_DELTA
   end
 
+  def test_job_queue_latency_falls_back_to_integer_millisecond_created_at
+    plant_queue_job("default", enqueued_at: nil, created_at: ((Time.now.to_f - 90) * 1000).round)
+
+    payload = oldest_queue_payload("default")
+    assert_nil payload["enqueued_at"]
+    assert_kind_of Integer, payload["created_at"]
+
+    hirefire = enqueued_only_latency(:default)
+    assert_in_delta 90, hirefire, LATENCY_DELTA
+  end
+
   def test_job_queue_latency_with_retry_jobs
     Timecop.freeze(Time.now + 150) { enqueue_retry }
     Timecop.freeze(Time.now - 450) { enqueue_retry }
@@ -134,6 +149,129 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     Timecop.freeze(Time.now - 150) { enqueue }
     assert_in_delta 150, HireFire::Macro::Sidekiq.job_queue_latency(skip_scheduled: true), LATENCY_DELTA
     assert_in_delta 150, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true), LATENCY_DELTA
+  end
+
+  def test_job_queue_latency_excludes_working_jobs
+    # Realistic WorkSet entry: nested payload with old enqueued_at/created_at so a
+    # regression that folds WorkSet payload ages into JQL reports ~900, not 0.
+    enqueue_working(
+      run_at: Time.now.to_i - 600,
+      enqueued_at: Time.now.to_f - 900,
+      created_at: Time.now.to_f - 900
+    )
+
+    assert_in_delta 0, HireFire::Macro::Sidekiq.job_queue_latency, LATENCY_DELTA
+    assert_in_delta 0, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
+  end
+
+  def test_job_queue_latency_ignores_working_when_waiting_exists
+    Timecop.freeze(Time.now - 100) { enqueue }
+    enqueue_working(
+      run_at: Time.now.to_i - 999,
+      enqueued_at: Time.now.to_f - 900,
+      created_at: Time.now.to_f - 900
+    )
+
+    assert_in_delta 100, HireFire::Macro::Sidekiq.job_queue_latency, LATENCY_DELTA
+    assert_in_delta 100, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
+  end
+
+  def test_job_queue_latency_due_scheduled_only_no_live
+    enqueue_scheduled(at: Time.now.to_i - 180)
+
+    assert_in_delta 180, HireFire::Macro::Sidekiq.job_queue_latency, LATENCY_DELTA
+    assert_in_delta 180, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
+  end
+
+  def test_job_queue_latency_due_retry_only_no_live
+    enqueue_retry(at: Time.now.to_i - 210)
+
+    assert_in_delta 210, HireFire::Macro::Sidekiq.job_queue_latency, LATENCY_DELTA
+    assert_in_delta 210, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
+  end
+
+  def test_job_queue_latency_due_age_uses_score_not_body_timestamps
+    score_age = 120
+    score = Time.now.to_i - score_age
+    fresh = Time.now.to_f
+
+    plant_sorted_set_job(
+      "schedule",
+      score: score,
+      enqueued_at: fresh,
+      created_at: fresh
+    )
+    assert_in_delta score_age, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true), LATENCY_DELTA
+    assert_in_delta score_age, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true), LATENCY_DELTA
+
+    flush_sidekiq_redis
+    plant_sorted_set_job(
+      "retry",
+      score: score,
+      enqueued_at: fresh,
+      created_at: fresh
+    )
+    assert_in_delta score_age, HireFire::Macro::Sidekiq.job_queue_latency(skip_scheduled: true), LATENCY_DELTA
+    assert_in_delta score_age, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true), LATENCY_DELTA
+  end
+
+  # Inverse of due_age_uses_score_not_body_timestamps: score is only slightly past due
+  # while body enqueued_at/created_at are much older. Due JQL is eligibility lateness
+  # (now - score), not original create/enqueue age.
+  def test_job_queue_latency_due_age_ignores_older_body_timestamps
+    score_age = 30
+    score = Time.now.to_i - score_age
+    old_body = Time.now.to_f - 900
+
+    plant_sorted_set_job(
+      "schedule",
+      score: score,
+      enqueued_at: old_body,
+      created_at: old_body
+    )
+    assert_in_delta score_age, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true), LATENCY_DELTA
+    assert_in_delta score_age, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true), LATENCY_DELTA
+
+    flush_sidekiq_redis
+    plant_sorted_set_job(
+      "retry",
+      score: score,
+      enqueued_at: old_body,
+      created_at: old_body
+    )
+    assert_in_delta score_age, HireFire::Macro::Sidekiq.job_queue_latency(skip_scheduled: true), LATENCY_DELTA
+    assert_in_delta score_age, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true), LATENCY_DELTA
+  end
+
+  def test_job_queue_latency_live_older_than_due_takes_max
+    Timecop.freeze(Time.now - 500) { enqueue }
+    enqueue_scheduled(at: Time.now.to_i - 100)
+
+    assert_in_delta 500, HireFire::Macro::Sidekiq.job_queue_latency, LATENCY_DELTA
+    assert_in_delta 500, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
+  end
+
+  # score == now: eligibility age is 0 whether the job is included or excluded, so
+  # latency≈0 alone does not prove the inclusive bound. JQS size==1 is the real
+  # residual lock; latency is only a smoke check (Float, no raise, age 0).
+  def test_job_queue_latency_includes_due_when_score_equals_now
+    frozen = Time.at(1_700_000_000)
+    Timecop.freeze(frozen) do
+      plant_sorted_set_job("schedule", score: frozen.to_i, enqueued_at: frozen.to_f, created_at: frozen.to_f)
+
+      schedule_size_options = {skip_retries: true, skip_working: true}
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, **schedule_size_options)
+      latency = HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
+      assert_kind_of Float, latency
+      assert_in_delta 0, latency, LATENCY_DELTA
+
+      plant_sorted_set_job("retry", score: frozen.to_i, enqueued_at: frozen.to_f, created_at: frozen.to_f)
+      retry_size_options = {skip_scheduled: true, skip_working: true}
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, **retry_size_options)
+      retry_latency = HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true)
+      assert_kind_of Float, retry_latency
+      assert_in_delta 0, retry_latency, LATENCY_DELTA
+    end
   end
 
   def test_deprecated_latency_method
@@ -203,6 +341,57 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_working: true)
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_working: false)
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_working: false)
+  end
+
+  def test_job_queue_size_due_scheduled_only_no_live
+    enqueue_scheduled(at: Time.now.to_i - 90)
+
+    options = {skip_retries: true, skip_working: true}
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(**options)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, **options)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, **options)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, **options)
+  end
+
+  def test_job_queue_size_due_retry_only_no_live
+    enqueue_retry(at: Time.now.to_i - 90)
+
+    options = {skip_scheduled: true, skip_working: true}
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(**options)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, **options)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, **options)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, **options)
+  end
+
+  def test_job_queue_size_future_only_is_zero
+    enqueue_scheduled_future
+    enqueue_retry_future
+
+    options = {skip_working: true}
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(**options)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, **options)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(server: true, **options)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, **options)
+  end
+
+  def test_job_queue_size_includes_due_when_score_equals_now
+    frozen = Time.at(1_700_000_000)
+    Timecop.freeze(frozen) do
+      plant_sorted_set_job("schedule", score: frozen.to_i, enqueued_at: frozen.to_f, created_at: frozen.to_f)
+
+      schedule_options = {skip_retries: true, skip_working: true}
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, **schedule_options)
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, **schedule_options)
+
+      plant_sorted_set_job("retry", score: frozen.to_i, enqueued_at: frozen.to_f, created_at: frozen.to_f)
+
+      retry_options = {skip_scheduled: true, skip_working: true}
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, **retry_options)
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, **retry_options)
+
+      assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: true)
+      assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, skip_working: true)
+    end
   end
 
   def test_server_lookup_does_not_double_count_numeric_queue_names
@@ -504,6 +693,28 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     end
   end
 
+  # Plant a schedule/retry member with an explicit ZSET score and body timestamps.
+  # Use past score + fresh body times to residual-test eligibility age (score), not payload age.
+  def plant_sorted_set_job(set_name, queue: "default", score:, enqueued_at:, created_at: nil)
+    payload = {
+      "queue" => queue,
+      "class" => "SampleWorker",
+      "args" => [],
+      "jid" => SecureRandom.hex(12),
+      "enqueued_at" => enqueued_at
+    }
+    payload["created_at"] = created_at unless created_at.nil?
+
+    Sidekiq.redis do |connection|
+      case identify_redis_client(connection)
+      when :redis
+        connection.zadd(set_name, score, Sidekiq.dump_json(payload))
+      when :redis_client
+        connection.call("zadd", set_name, score, Sidekiq.dump_json(payload))
+      end
+    end
+  end
+
   def enqueue_scheduled(queue: "default", at: Time.now.to_i)
     Sidekiq::Client.push(
       "queue" => queue,
@@ -548,21 +759,43 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue_retry(queue: queue, at: Time.now.to_i + 60)
   end
 
-  def enqueue_working(queue: "default", run_at: Time.now.to_i - 60)
+  # Plant a Sidekiq WorkSet entry matching processes:*:work as Sidekiq::Workers yields it:
+  # { "queue" => name, "run_at" => epoch_i, "payload" => job_hash_or_json }.
+  # Real Sidekiq stores payload as a JSON string of the job (processor jobstr). Nested
+  # enqueued_at/created_at are aged so JQL residuals fail if WorkSet payload ages are maxed in.
+  def enqueue_working(
+    queue: "default",
+    run_at: Time.now.to_i - 60,
+    enqueued_at: Time.now.to_f - 900,
+    created_at: Time.now.to_f - 900
+  )
     Sidekiq.redis do |connection|
       process_key = "process:mock"
       worker_key = "#{process_key}:work"
-      worker_data = {"queue" => queue, "run_at" => run_at}
+      job_payload = {
+        "queue" => queue,
+        "class" => "SampleWorker",
+        "args" => [],
+        "jid" => SecureRandom.hex(12),
+        "enqueued_at" => enqueued_at,
+        "created_at" => created_at
+      }
+      # payload as JSON string matches Sidekiq processor WORK_STATE (jobstr).
+      worker_data = {
+        "queue" => queue,
+        "run_at" => run_at,
+        "payload" => Sidekiq.dump_json(job_payload)
+      }
 
       case identify_redis_client(connection)
       when :redis
         connection.sadd?("processes", process_key)
         connection.hset(process_key, "busy", "1")
-        connection.hset(worker_key, "jid", worker_data.to_json)
+        connection.hset(worker_key, "jid", Sidekiq.dump_json(worker_data))
       when :redis_client
         connection.call("sadd", "processes", process_key)
         connection.call("hset", process_key, "busy", "1")
-        connection.call("hset", worker_key, "jid", worker_data.to_json)
+        connection.call("hset", worker_key, "jid", Sidekiq.dump_json(worker_data))
       end
     end
   end

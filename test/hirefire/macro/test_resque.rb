@@ -39,9 +39,24 @@ class HireFire::Macro::ResqueTest < Minitest::Test
 
   def test_job_queue_size_with_working
     enqueue_to_working_with_queue :default, BasicJob
-    assert_equal 1, HireFire::Macro::Resque.job_queue_size
-    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default)
     assert_equal 0, HireFire::Macro::Resque.job_queue_size(:mailer)
+  end
+
+  def test_job_queue_size_counts_live_and_due_only_with_working_present
+    Resque.enqueue_to(:default, BasicJob)
+    Resque.enqueue_to(:mailer, BasicJob)
+    Resque.enqueue_in_with_queue(:default, -60, BasicJob)
+    Resque.enqueue_in_with_queue(:mailer, 300, BasicJob)
+    enqueue_to_working_with_queue :default, BasicJob
+    enqueue_to_working_with_queue :other, BasicJob
+
+    assert_equal 3, HireFire::Macro::Resque.job_queue_size
+    assert_equal 2, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:mailer)
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:other)
+    assert_equal 3, HireFire::Macro::Resque.job_queue_size(:default, :mailer)
   end
 
   def test_job_queue_size_with_scheduled_jobs
@@ -112,6 +127,12 @@ class HireFire::Macro::ResqueTest < Minitest::Test
   def test_deprecated_queue_method
     Resque.enqueue_to(:default, BasicJob)
     assert_equal 1, HireFire::Macro::Resque.queue(:default)
+  end
+
+  def test_deprecated_queue_still_includes_working
+    enqueue_to_working_with_queue :default, BasicJob
+    assert_equal 1, HireFire::Macro::Resque.queue(:default)
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default)
   end
 
   def self.next_id

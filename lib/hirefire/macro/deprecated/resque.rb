@@ -8,8 +8,10 @@ module HireFire
       module Resque
         # Retrieves the total number of jobs in the specified Resque queue(s).
         #
-        # This method counts the number of jobs in either specific queues or all queues if none are
-        # specified. It includes both queued and in-progress jobs.
+        # Legacy behavior: live list lengths plus in-progress worker payloads for the
+        # given queues. Does **not** count delayed/scheduled jobs. Prefer
+        # {HireFire::Macro::Resque.job_queue_size}, which is waiting-only (live + due
+        # delayed, no working).
         #
         # @param queues [Array<String, Symbol>] Queue names to count jobs in.
         #   Pass an empty array or no arguments to count jobs in all queues.

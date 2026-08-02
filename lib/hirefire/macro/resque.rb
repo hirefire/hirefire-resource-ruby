@@ -15,16 +15,19 @@ module HireFire
 
       SIZE_METHODS = [
         :enqueued_size,
-        :working_size,
         :scheduled_size
       ].freeze
 
       # Calculates the total job queue size using Resque. If no queues are specified, it
       # measures size across all available queues.
       #
+      # Waiting set only: live enqueued lists plus due delayed payloads (score ≤ now,
+      # including resque-retry delayed once due). Working (worker payloads) is excluded.
+      # Future delayed jobs are not counted. Latency is unsupported (no enqueue timestamps).
+      #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
       #   If not provided, size is measured across all queues.
-      # @return [Integer] Total job queue size.
+      # @return [Integer] Total job queue size (waiting set: live + due delayed).
       # @example Calculate size across all queues
       #   HireFire::Macro::Resque.job_queue_size
       # @example Calculate size for the "default" queue
@@ -49,24 +52,6 @@ module HireFire
             pipeline.llen("queue:#{queue}")
           end
         end.sum
-      end
-
-      def working_size(queues)
-        ids = ::Resque.redis.smembers(:workers).compact
-
-        workers = ::Resque.redis.pipelined do |pipeline|
-          ids.each do |id|
-            pipeline.get("worker:#{id}")
-          end
-        end.compact
-
-        if queues.empty?
-          workers.count
-        else
-          workers.count do |worker|
-            queues.include?(::Resque.decode(worker)["queue"])
-          end
-        end
       end
 
       def scheduled_size(queues)

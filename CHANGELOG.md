@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `HireFire::Macro::Resque.job_queue_size` is waiting-only: live enqueued lists + due delayed (score ≤ now, including resque-retry once due). Working worker payloads are no longer counted. JQL stays unsupported. No `skip_working` flag (unlike Sidekiq). Deprecated `.queue` is unchanged (still live + in-progress, no delayed).
 - `HireFire::Macro::SolidQueue` JQL and JQS are waiting-only: ready + due scheduled only. Claimed (working) and blocked (concurrency throttle, including expired) are no longer counted in size or latency. No `skip_working` flag (unlike Sidekiq).
 - `HireFire::Macro::Sidekiq.job_queue_size` (and deprecated `.queue`) default `skip_working` is now **true**: JQS counts only the waiting set (live + due scheduled + due retry) and no longer includes in-flight jobs. Pass `skip_working: false` to restore the old include-working behavior (flag kept through 2.0).
 - Required Ruby is **3.1+** (`required_ruby_version`). Floor matches `Process._fork` (full prefork parent/child hooks without a polyfill). CI matrix is 3.1 / 3.2 / 3.3 / 3.4 / 4.0 (Rails 8 / Sidekiq 8 appraisals excluded on 3.1). Further floor raises can ship on a **minor** (gemspec + Bundler filter old Rubies); see knowledge-base `hirefire-resource/ruby.md`.

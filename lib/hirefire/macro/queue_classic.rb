@@ -14,6 +14,9 @@ module HireFire
       # Calculates the maximum job queue latency using Queue Classic. If no queues are specified, it
       # measures latency across all available queues.
       #
+      # Waiting set only: due jobs (`scheduled_at` ≤ now) that are unlocked (`locked_at` null).
+      # Locked (working) jobs are excluded. Future `scheduled_at` is not measured.
+      #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
       #   measurement. If not provided, latency is measured across all queues.
       # @return [Float] Maximum job queue latency in seconds.
@@ -30,6 +33,7 @@ module HireFire
           SELECT EXTRACT(EPOCH FROM (now() - scheduled_at)) AS latency
           FROM #{::QC.table_name}
           WHERE scheduled_at <= now()
+            AND locked_at IS NULL
           #{filter_by_queues_if_any(queues)}
           ORDER BY scheduled_at ASC
           LIMIT 1
@@ -49,9 +53,12 @@ module HireFire
       # Calculates the total job queue size using Queue Classic. If no queues are specified, it
       # measures size across all available queues.
       #
+      # Waiting set only: due jobs (`scheduled_at` ≤ now) that are unlocked (`locked_at` null).
+      # Locked (working) jobs are excluded. Future `scheduled_at` is not counted.
+      #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
       #   If not provided, size is measured across all queues.
-      # @return [Integer] Total job queue size.
+      # @return [Integer] Total job queue size (waiting set: due + unlocked).
       # @example Calculate size across all queues
       #   HireFire::Macro::QC.job_queue_size
       # @example Calculate size for the "default" queue
@@ -64,6 +71,7 @@ module HireFire
         query = <<~SQL
           SELECT COUNT(*) FROM #{::QC.table_name}
           WHERE scheduled_at <= now()
+            AND locked_at IS NULL
           #{filter_by_queues_if_any(queues)}
         SQL
 

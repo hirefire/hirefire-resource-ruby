@@ -9,6 +9,9 @@ module HireFire
         module Job
           # Retrieves the total number of jobs in the specified queue(s).
           #
+          # Waiting set only: due unlocked jobs (`failed_at` and `locked_at` null, `run_at` ≤ now).
+          # Prefer {HireFire::Macro::Delayed::Job#job_queue_size} for new code.
+          #
           # This method supports querying jobs across different ORMs (Object-Relational Mappings)
           # such as ActiveRecord and Mongoid. It allows specifying queue names and priority limits.
           #
@@ -34,18 +37,20 @@ module HireFire
 
             case options[:mapper]
             when :active_record
-              query = ::Delayed::Job.where(failed_at: nil).where("run_at <= ?", Time.now.utc)
+              query = ::Delayed::Job.where(failed_at: nil, locked_at: nil).where("run_at <= ?", Time.now.utc)
               query = query.where("priority >= ?", options[:min_priority]) if options.key?(:min_priority)
               query = query.where("priority <= ?", options[:max_priority]) if options.key?(:max_priority)
               query = query.where(queue: queues) unless queues.empty?
               query.count
             when :active_record_2
-              query = ::Delayed::Job.scoped(conditions: ["run_at <= ? AND failed_at is NULL", Time.now.utc])
+              query = ::Delayed::Job.scoped(
+                conditions: ["run_at <= ? AND failed_at is NULL AND locked_at is NULL", Time.now.utc]
+              )
               query = query.scoped(conditions: ["priority >= ?", options[:min_priority]]) if options.key?(:min_priority)
               query = query.scoped(conditions: ["priority <= ?", options[:max_priority]]) if options.key?(:max_priority)
               query.count
             when :mongoid
-              query = ::Delayed::Job.where(:failed_at => nil, :run_at.lte => Time.now.utc)
+              query = ::Delayed::Job.where(:failed_at => nil, :locked_at => nil, :run_at.lte => Time.now.utc)
               query = query.where(:priority.gte => options[:min_priority]) if options.key?(:min_priority)
               query = query.where(:priority.lte => options[:max_priority]) if options.key?(:max_priority)
               query = query.where(:queue.in => queues) unless queues.empty?

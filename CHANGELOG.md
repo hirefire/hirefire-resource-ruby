@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `HireFire::Macro::Delayed::Job` JQL and JQS are waiting-only: due jobs (`failed_at` null, `run_at` ≤ now) that are unlocked (`locked_at` null). Locked (working) jobs are no longer counted in size or latency. No `skip_working` flag (unlike Sidekiq). Deprecated `.queue` is aligned the same way. Expired-lock reclaim via `max_run_time` is not applied in v1.
 - `HireFire::Macro::Resque.job_queue_size` is waiting-only: live enqueued lists + due delayed (score ≤ now, including resque-retry once due). Working worker payloads are no longer counted. JQL stays unsupported. No `skip_working` flag (unlike Sidekiq). Deprecated `.queue` is unchanged (still live + in-progress, no delayed).
 - `HireFire::Macro::SolidQueue` JQL and JQS are waiting-only: ready + due scheduled only. Claimed (working) and blocked (concurrency throttle, including expired) are no longer counted in size or latency. No `skip_working` flag (unlike Sidekiq).
 - `HireFire::Macro::Sidekiq.job_queue_size` (and deprecated `.queue`) default `skip_working` is now **true**: JQS counts only the waiting set (live + due scheduled + due retry) and no longer includes in-flight jobs. Pass `skip_working: false` to restore the old include-working behavior (flag kept through 2.0).

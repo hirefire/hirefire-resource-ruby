@@ -22,6 +22,9 @@ module HireFire
         # it measures latency across all available queues. This method supports both ActiveRecord
         # and Mongoid mappers.
         #
+        # Waiting set only: due jobs (`failed_at` null, `run_at` ≤ now) that are unlocked
+        # (`locked_at` null). Locked (working) jobs are excluded. Future `run_at` is not measured.
+        #
         # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
         #   measurement. If not provided, latency is measured across all queues.
         # @return [Float] Maximum job queue latency in seconds.
@@ -36,7 +39,7 @@ module HireFire
         def job_queue_latency(*queues)
           with_connection do
             queues = normalize_queues(queues, allow_empty: true)
-            query = ::Delayed::Job.where(failed_at: nil).order(run_at: :asc)
+            query = waiting_scope.order(run_at: :asc)
 
             case mapper
             when :active_record
@@ -59,9 +62,12 @@ module HireFire
         # measures size across all available queues. This method supports both ActiveRecord and
         # Mongoid mappers.
         #
+        # Waiting set only: due jobs (`failed_at` null, `run_at` ≤ now) that are unlocked
+        # (`locked_at` null). Locked (working) jobs are excluded. Future `run_at` is not counted.
+        #
         # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
         #   If not provided, size is measured across all queues.
-        # @return [Integer] Total job queue size.
+        # @return [Integer] Total job queue size (waiting set: due + unlocked).
         # @raise [HireFire::Macro::Delayed::Job::MapperNotDetectedError] if neither an ActiveRecord
         #   nor a Mongoid mapper can be detected.
         # @example Calculate size across all queues
@@ -73,7 +79,7 @@ module HireFire
         def job_queue_size(*queues)
           with_connection do
             queues = normalize_queues(queues, allow_empty: true)
-            query = ::Delayed::Job.where(failed_at: nil)
+            query = waiting_scope
 
             case mapper
             when :active_record
@@ -89,6 +95,10 @@ module HireFire
         end
 
         private
+
+        def waiting_scope
+          ::Delayed::Job.where(failed_at: nil, locked_at: nil)
+        end
 
         def mapper
           return :active_record if defined?(::ActiveRecord::Base) &&

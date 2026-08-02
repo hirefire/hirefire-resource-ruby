@@ -67,9 +67,10 @@ module HireFire
       # @option options [Boolean] :server (false) If true, counts jobs server-side using Lua scripting.
       # @option options [Boolean] :skip_retries (false) If true, skips counting jobs in retry queues.
       # @option options [Boolean] :skip_scheduled (false) If true, skips counting jobs in scheduled queues.
-      # @option options [Boolean] :skip_working (false) If true, skips counting running jobs.
+      # @option options [Boolean] :skip_working (true) If true (default), skips counting running jobs.
+      #   Pass +false+ to include in-flight work (kept through 2.0).
       # @option options [Integer, nil] :max_scheduled (nil) Max number of scheduled jobs to consider. nil for no limit.
-      # @return [Integer] Total job queue size.
+      # @return [Integer] Total job queue size (waiting set: live + due scheduled + due retry by default).
       # @example Calculate size across all queues
       #   HireFire::Macro::Sidekiq.job_queue_size
       # @example Calculate size for the "default" queue
@@ -80,8 +81,8 @@ module HireFire
       #   HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true)
       # @example Calculate size for the "default" queue, excluding retries
       #   HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true)
-      # @example Calculate size for the "default" queue, excluding running jobs
-      #   HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: true)
+      # @example Calculate size for the "default" queue, including running jobs
+      #   HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: false)
       # @example Calculate size for the "default" queue using server-side aggregation
       #   HireFire::Macro::Sidekiq.job_queue_size(:default, server: true)
       # @example Calculate size for the "default" queue, limiting counting of scheduled jobs to 100_000
@@ -318,7 +319,7 @@ module HireFire
 
         private
 
-        def client_lookup(queues, skip_retries: false, skip_scheduled: false, skip_working: false, max_scheduled: nil)
+        def client_lookup(queues, skip_retries: false, skip_scheduled: false, skip_working: true, max_scheduled: nil)
           size = enqueued_size(queues)
           size += scheduled_size(queues, max_scheduled) unless skip_scheduled
           size += retry_size(queues) unless skip_retries
@@ -378,7 +379,7 @@ module HireFire
           end
         end
 
-        def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: false, max_scheduled: nil)
+        def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: true, max_scheduled: nil)
           max_scheduled = max_scheduled.nil? ? -1 : [max_scheduled.to_i, 0].max
           ::Sidekiq.redis do |connection|
             now = Time.now.to_i

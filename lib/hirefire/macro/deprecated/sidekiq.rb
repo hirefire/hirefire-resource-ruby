@@ -22,18 +22,20 @@ module HireFire
           ::Sidekiq::Queue.new(queue.to_s).latency
         end
 
-        # Counts the number of jobs in the specified Sidekiq queue(s).
+        # Counts jobs in the specified Sidekiq queue(s).
         #
-        # The method supports various options to include or exclude jobs from
-        # specific sets like scheduled, retries, or in-progress jobs.
+        # By default counts the waiting set (live + due scheduled + due retry),
+        # matching {HireFire::Macro::Sidekiq.job_queue_size}. Pass
+        # +skip_working: false+ to include in-flight work.
         #
         # @param args [Array<String, Symbol, Hash>] Queue names to count jobs in and an optional hash of options.
         #   Pass an empty array or no arguments to count jobs in all queues.
         #   The last argument can be a Hash of options to modify the count behavior.
-        #   Possible keys are :skip_scheduled, :skip_retries, :skip_working (booleans, default
-        #   false), and :max_scheduled (Integer, caps how many scheduled jobs are counted, applied
+        #   Possible keys are :skip_scheduled, :skip_retries (booleans, default false),
+        #   :skip_working (boolean, default true: exclude in-progress; pass false to include),
+        #   and :max_scheduled (Integer, caps how many scheduled jobs are counted, applied
         #   only when specific queue names are given).
-        # @return [Integer] Total number of jobs in the specified queues.
+        # @return [Integer] Waiting-set size by default. With +skip_working: false+, also includes in-progress.
         # @example Counting jobs in all queues
         #   HireFire::Macro::Sidekiq.queue
         # @example Counting jobs in the "default" and "critical" queues
@@ -42,8 +44,8 @@ module HireFire
         #   HireFire::Macro::Sidekiq.queue("default", skip_scheduled: true)
         # @example Counting jobs in the "default" queue, excluding retryable jobs
         #   HireFire::Macro::Sidekiq.queue("default", skip_retries: true)
-        # @example Counting jobs in the "default" queue, excluding in-progress jobs
-        #   HireFire::Macro::Sidekiq.queue("default", skip_working: true)
+        # @example Counting jobs in the "default" queue, including in-progress jobs
+        #   HireFire::Macro::Sidekiq.queue("default", skip_working: false)
         def queue(*args)
           require "sidekiq/api"
 
@@ -80,7 +82,7 @@ module HireFire
             in_retry = ::Sidekiq.redis { |c| c.zcount("retry", "-inf", Time.now.to_f) }
           end
 
-          if !options[:skip_working]
+          if !options.fetch(:skip_working, true)
             in_progress = stats.workers_size
           end
 
@@ -116,7 +118,7 @@ module HireFire
           now = Time.now
           now_as_i = now.to_i
 
-          if !options[:skip_working]
+          if !options.fetch(:skip_working, true)
             in_progress = ::Sidekiq::Workers.new.count do |key, tid, job|
               if job.is_a?(Hash)
                 queues.include?(job["queue"]) && job["run_at"] <= now_as_i

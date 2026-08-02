@@ -8,66 +8,18 @@ module HireFire
       module Que
         # Retrieves the total number of jobs in the specified queue(s) using Que.
         #
-        # This method queries the PostgreSQL database through Que. It can count jobs
-        # in specified queues or all queues if no specific queue is provided.
-        # The method determines the base query depending on the Que version detected.
+        # Waiting set only: due jobs that are not session advisory-locked (same set as
+        # {HireFire::Macro::Que#job_queue_size}). Prefer that method for new code.
         #
         # @param queues [Array<String, Symbol>] The names of the queues to count.
         #   Pass an empty array or no arguments to count jobs in all queues.
-        # @return [Integer] Total number of jobs in the specified queues.
+        # @return [Integer] Total number of waiting jobs in the specified queues.
         # @example Counting jobs in all queues
         #   HireFire::Macro::Que.queue
         # @example Counting jobs in the "default" queue
         #   HireFire::Macro::Que.queue("default")
         def queue(*queues)
-          results =
-            if queues.empty?
-              ::Que.execute(Private.base_query).first
-            else
-              placeholders = queues.each_index.map { |i| "$#{i + 1}" }.join(", ")
-              query = "#{Private.base_query} AND queue IN (#{placeholders})"
-              ::Que.execute(query, queues.map(&:to_s)).first
-            end
-
-          (results[:total] || results["total"]).to_i
-        end
-
-        # @!visibility private
-        module Private
-          extend self
-
-          # Determines the base query to use for counting jobs, depending on the Que version.
-          #
-          # @return [String] The base SQL query string.
-          def base_query
-            return QUE_V0_QUERY if defined?(::Que::Version)
-            return QUE_V1_QUERY if defined?(::Que::VERSION)
-            raise "Couldn't find Que version"
-          end
-
-          # Formats and freezes a SQL query string for use.
-          #
-          # @param query [String] The raw SQL query string.
-          # @return [String] The formatted and frozen SQL query string.
-          def query_const(query)
-            query.gsub(/\s+/, " ").strip.freeze
-          end
-
-          # SQL query string for Que version 0.
-          QUE_V0_QUERY = query_const(<<-QUERY)
-            SELECT COUNT(*) AS total
-            FROM que_jobs
-            WHERE run_at < NOW()
-          QUERY
-
-          # SQL query string for Que version 1.
-          QUE_V1_QUERY = query_const(<<-QUERY)
-            SELECT COUNT(*) AS total
-            FROM que_jobs
-            WHERE finished_at IS NULL
-            AND expired_at IS NULL
-            AND run_at <= NOW()
-          QUERY
+          job_queue_size(*queues)
         end
       end
     end

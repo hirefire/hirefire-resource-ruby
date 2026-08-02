@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "que"
+require "pg"
 
 class HireFire::Macro::QueTest < Minitest::Test
   VERSION_QUE = Gem::Version.new(defined?(Que::Version) ? Que::Version : Que::VERSION)
@@ -49,6 +50,25 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Que.job_queue_latency
   end
 
+  def test_job_queue_latency_excludes_advisory_locked_jobs
+    job = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 60})
+    with_advisory_lock(job.que_attrs[:id]) do
+      assert_equal 0, HireFire::Macro::Que.job_queue_latency
+      assert_equal 0, HireFire::Macro::Que.job_queue_latency(:default)
+    end
+  end
+
+  def test_job_queue_latency_ignores_locked_when_unlocked_due_exists
+    locked = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 180})
+    enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 60})
+
+    with_advisory_lock(locked.que_attrs[:id]) do
+      assert_in_delta 60, HireFire::Macro::Que.job_queue_latency, LATENCY_DELTA
+      assert_equal 0, HireFire::Macro::Que.job_queue_latency(:default)
+      assert_in_delta 60, HireFire::Macro::Que.job_queue_latency(:mailer), LATENCY_DELTA
+    end
+  end
+
   def test_job_queue_size_without_jobs
     assert_equal 0, HireFire::Macro::Que.job_queue_size
   end
@@ -91,8 +111,49 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Que.job_queue_size
   end
 
+  def test_job_queue_size_excludes_advisory_locked_jobs
+    job = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    with_advisory_lock(job.que_attrs[:id]) do
+      assert_equal 0, HireFire::Macro::Que.job_queue_size
+      assert_equal 0, HireFire::Macro::Que.job_queue_size(:default)
+    end
+  end
+
+  def test_job_queue_size_counts_due_unlocked_only_with_locked_and_future_present
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now + 100})
+    locked = enqueue(job_options: {job_class: "BasicJob", queue: "other", run_at: Time.now - 1})
+
+    with_advisory_lock(locked.que_attrs[:id]) do
+      assert_equal 2, HireFire::Macro::Que.job_queue_size
+      assert_equal 1, HireFire::Macro::Que.job_queue_size(:default)
+      assert_equal 1, HireFire::Macro::Que.job_queue_size(:mailer)
+      assert_equal 0, HireFire::Macro::Que.job_queue_size(:other)
+      assert_equal 2, HireFire::Macro::Que.job_queue_size(:default, :mailer)
+    end
+  end
+
+  def test_job_queue_size_counts_due_jobs_with_error_count
+    job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
+    Que.execute("UPDATE que_jobs SET error_count = 3 WHERE id = #{job.que_attrs[:id]};")
+
+    # Do not copy Que AR `ready` (drops error_count > 0). Due retries still wait.
+    assert_equal 1, HireFire::Macro::Que.job_queue_size
+  end
+
+  def test_job_queue_latency_includes_due_jobs_with_error_count
+    job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 60})
+    Que.execute("UPDATE que_jobs SET error_count = 3 WHERE id = #{job.que_attrs[:id]};")
+
+    # Same waiting set as size: do not drop error_count > 0 (Que AR `ready` would).
+    assert_in_delta 60, HireFire::Macro::Que.job_queue_latency, LATENCY_DELTA
+  end
+
   def test_v0_size_path_counts_due_jobs_without_finished_filter
     HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
+    # Test DB is Que 1+/2 schema (`id`, not `job_id`). Pin lock column so v0 SQL runs.
+    HireFire::Macro::Que.stubs(:advisory_lock_id_column).returns("id")
 
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
     enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 1})
@@ -104,6 +165,7 @@ class HireFire::Macro::QueTest < Minitest::Test
 
   def test_v0_size_path_includes_finished_jobs
     HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
+    HireFire::Macro::Que.stubs(:advisory_lock_id_column).returns("id")
 
     job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
     Que.execute("UPDATE que_jobs SET finished_at = NOW() WHERE id = #{job.que_attrs[:id]};")
@@ -114,11 +176,32 @@ class HireFire::Macro::QueTest < Minitest::Test
 
   def test_v0_latency_path_reports_oldest_due_job
     HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
+    HireFire::Macro::Que.stubs(:advisory_lock_id_column).returns("id")
 
     enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 60})
     enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 10})
 
     assert_in_delta 60, HireFire::Macro::Que.job_queue_latency, LATENCY_DELTA
+  end
+
+  def test_v0_size_path_excludes_advisory_locked_jobs
+    HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
+    HireFire::Macro::Que.stubs(:advisory_lock_id_column).returns("id")
+
+    job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
+    with_advisory_lock(job.que_attrs[:id]) do
+      assert_equal 0, HireFire::Macro::Que.job_queue_size
+    end
+  end
+
+  def test_v0_latency_path_excludes_advisory_locked_jobs
+    HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
+    HireFire::Macro::Que.stubs(:advisory_lock_id_column).returns("id")
+
+    job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 60})
+    with_advisory_lock(job.que_attrs[:id]) do
+      assert_equal 0, HireFire::Macro::Que.job_queue_latency
+    end
   end
 
   def test_deprecated_queue_method
@@ -137,11 +220,64 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Que.queue(:"o'brien")
   end
 
+  def test_deprecated_queue_method_excludes_advisory_locked_and_future
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now + 100})
+    locked = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+
+    with_advisory_lock(locked.que_attrs[:id]) do
+      assert_equal 1, HireFire::Macro::Que.queue(:default)
+    end
+  end
+
   private
 
   def enqueue(*args, job_options: {}, **options)
     options = options.merge(job_options: job_options)
     Que.enqueue(*args, **options)
+  end
+
+  # Hold a Que-style session advisory lock on a dedicated connection so the macro's
+  # `pg_locks` anti-join sees working jobs. Residual lock count proves the lock is
+  # present so size/latency zeros are not false-green from a failed lock acquire.
+  def with_advisory_lock(job_id)
+    conn = open_pg_connection
+    locked = conn.exec_params("SELECT pg_try_advisory_lock($1)", [job_id]).getvalue(0, 0)
+    refute_equal "f", locked, "expected pg_try_advisory_lock(#{job_id}) to succeed"
+
+    lock_count = advisory_lock_count(job_id)
+    refute_equal 0, lock_count, "expected pg_locks to show advisory lock for job #{job_id}"
+
+    yield
+  ensure
+    if conn
+      begin
+        conn.exec("SELECT pg_advisory_unlock_all()")
+      ensure
+        conn.close
+      end
+    end
+  end
+
+  def advisory_lock_count(job_id)
+    result = Que.execute(<<~SQL, [job_id]).first
+      SELECT COUNT(*) AS n
+      FROM pg_locks
+      WHERE locktype = 'advisory'
+        AND (classid::bigint << 32) + objid::bigint = $1
+    SQL
+    (result[:n] || result["n"]).to_i
+  end
+
+  def open_pg_connection
+    config = ActiveRecord::Base.connection_db_config.configuration_hash
+    PG.connect(
+      host: config[:host],
+      port: config[:port],
+      dbname: config[:database],
+      user: config[:username],
+      password: config[:password]
+    )
   end
 
   def prepare_database

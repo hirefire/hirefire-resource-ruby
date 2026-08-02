@@ -13,16 +13,15 @@ module HireFire
 
       LATENCY_METHODS = [
         :ready_latency,
-        :scheduled_latency,
-        :blocked_latency
+        :scheduled_latency
       ].freeze
 
       # Calculates the maximum job queue latency using SolidQueue. If no queues are specified, it
       # measures latency across all available queues.
       #
-      # This function measures the job queue latency across the Ready, Scheduled, and Blocked
-      # queues, based on the enqueue, schedule, and expiration times of their executions. Executions
-      # in the Claimed queue, as well as in paused queues, are excluded from the calculation.
+      # Waiting set only: Ready executions and due Scheduled executions (includes Active Job
+      # delayed retries once due). Claimed (working) and Blocked (concurrency throttle) executions
+      # are excluded, as are paused queues.
       #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
       #   measurement. If not provided, latency is measured across all queues.
@@ -47,21 +46,19 @@ module HireFire
 
       SIZE_METHODS = [
         :ready_size,
-        :scheduled_size,
-        :claimed_size,
-        :blocked_size
+        :scheduled_size
       ].freeze
 
       # Calculates the total job queue size using SolidQueue. If no queues are specified, it
       # measures size across all available queues.
       #
-      # This function measures the job queue size across the Ready, Scheduled, Blocked, and
-      # Claimed queues, based on the schedule and expiration times of their executions. Executions
-      # in paused queues are excluded from the calculation.
+      # Waiting set only: Ready executions and due Scheduled executions (includes Active Job
+      # delayed retries once due). Claimed (working) and Blocked (concurrency throttle) executions
+      # are excluded, as are paused queues.
       #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
       #   If not provided, size is measured across all queues.
-      # @return [Integer] Total job queue size.
+      # @return [Integer] Total job queue size (waiting set: ready + due scheduled).
       # @example Calculate size across all queues
       #   HireFire::Macro::SolidQueue.job_queue_size
       # @example Calculate size for the "default" queue
@@ -144,29 +141,6 @@ module HireFire
       def scheduled_size(queues)
         ::SolidQueue::ScheduledExecution
           .due
-          .where(queue_name: queues)
-          .count
-      end
-
-      def blocked_latency(queues, now:)
-        now - (
-          ::SolidQueue::BlockedExecution
-            .expired
-            .where(queue_name: queues)
-            .minimum(:expires_at) || now
-        )
-      end
-
-      def blocked_size(queues)
-        ::SolidQueue::BlockedExecution
-          .expired
-          .where(queue_name: queues)
-          .count
-      end
-
-      def claimed_size(queues)
-        ::SolidQueue::Job
-          .joins(:claimed_execution)
           .where(queue_name: queues)
           .count
       end

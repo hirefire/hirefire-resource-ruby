@@ -3,6 +3,7 @@
 require "digest/sha1"
 require_relative "../plan/hooks"
 require_relative "deprecated/sidekiq"
+require_relative "sidekiq/due_cache"
 
 module HireFire
   module Macro
@@ -35,8 +36,39 @@ module HireFire
         extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
       end
 
+      # Open DueCache for one Dispatcher sample wave (all plan + dyno Sidekiq macros).
+      # No-op when the Sidekiq gem is not loaded.
+      #
+      # @return [Integer, nil] wave token for {#after_sample_job_queues}
+      def before_sample_job_queues
+        return nil unless defined?(::Sidekiq)
+
+        DueCache.begin_sample!
+      end
+
+      # Close DueCache for the wave token from {#before_sample_job_queues}.
+      #
+      # @param token [Integer, nil]
+      # @return [void]
+      def after_sample_job_queues(token = nil)
+        return unless defined?(::Sidekiq)
+
+        DueCache.end_sample!(token)
+      end
+
+      # Reset DueCache after fork / abandoned inherited state.
+      #
+      # @return [void]
+      def reinit_after_fork
+        DueCache.reinit_after_fork!
+      end
+
       # Calculates the maximum job queue latency using Sidekiq. If no queues are specified, it
       # measures latency across all available queues.
+      #
+      # Client schedule/retry due walks share a process-local rank cache scoped to one
+      # Dispatcher sample wave so many named samplers amortize one ascending walk per set.
+      # Outside a sample wave (console or one-off), each call walks cold.
       #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
       #   measurement. If not provided, latency is measured across all queues.
@@ -60,6 +92,11 @@ module HireFire
 
       # Calculates the total job queue size using Sidekiq. If no queues are specified, it measures
       # size across all available queues.
+      #
+      # Client schedule/retry due walks share a process-local rank cache scoped to one Dispatcher
+      # sample wave. Outside a sample wave (console or one-off), each call walks cold. Due counts
+      # are served only after the due region is complete for that fill (except a call-local
+      # +max_scheduled+ cap). +server: true+ uses Lua and does not read or write the cache.
       #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
       #   If not provided, size is measured across all queues.
@@ -94,29 +131,6 @@ module HireFire
       # @!visibility private
       module Common
         private
-
-        def find_each_in_set(set)
-          cursor = 0
-          batch = 1000
-
-          loop do
-            entries = ::Sidekiq.redis do |connection|
-              if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("7.0.0")
-                connection.zrange set.name, cursor, cursor + batch - 1, "WITHSCORES"
-              else
-                connection.zrange set.name, cursor, cursor + batch - 1, withscores: true
-              end
-            end
-
-            break if entries.empty?
-
-            entries.each do |entry, score|
-              yield ::Sidekiq::SortedEntry.new(self, score, entry)
-            end
-
-            cursor += batch
-          end
-        end
 
         def registered_queues
           ::Sidekiq::Queue.all.map(&:name).to_set
@@ -173,19 +187,7 @@ module HireFire
         end
 
         def set_latency(set, queues)
-          max_latency = 0.0
-          now = Time.now
-
-          find_each_in_set(set) do |job|
-            if job.at > now
-              break
-            elsif queues.empty? || queues.include?(job.queue)
-              max_latency = now - job.at
-              break
-            end
-          end
-
-          max_latency
+          DueCache.latency(set.name, queues)
         end
       end
 
@@ -338,32 +340,11 @@ module HireFire
         end
 
         def scheduled_size(queues, max = nil)
-          size, now = 0, Time.now
-
-          find_each_in_set(::Sidekiq::ScheduledSet.new) do |job|
-            if job.at > now || max && size >= max
-              break
-            elsif queues.empty? || queues.include?(job["queue"])
-              size += 1
-            end
-          end
-
-          size
+          DueCache.size("schedule", queues, max_scheduled: max)
         end
 
         def retry_size(queues)
-          size = 0
-          now = Time.now
-
-          find_each_in_set(::Sidekiq::RetrySet.new) do |job|
-            if job.at > now
-              break
-            elsif queues.empty? || queues.include?(job["queue"])
-              size += 1
-            end
-          end
-
-          size
+          DueCache.size("retry", queues)
         end
 
         def working_size(queues)

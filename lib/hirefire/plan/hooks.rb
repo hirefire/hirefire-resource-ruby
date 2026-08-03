@@ -34,6 +34,34 @@ module HireFire
         HireFire::Plan.known_strategy?(strategy)
       end
 
+      # Open process-local state for one {HireFire::Dispatcher#sample_job_queues} wave.
+      # Default is a no-op. Adapters with sample-scoped caches (e.g. Sidekiq DueCache)
+      # override and may return an opaque token for {#after_sample_job_queues}.
+      #
+      # Called for every allowlisted macro on each job-queue sample wave, whether or
+      # not that adapter appears in the current lease plan (legacy dyno blocks may
+      # still invoke the macro).
+      #
+      # @return [Object, nil] opaque token passed to +after_sample_job_queues+
+      def before_sample_job_queues
+        nil
+      end
+
+      # Close process-local sample-wave state opened by {#before_sample_job_queues}.
+      # Default is a no-op. Called from +ensure+ even when a sampler raises.
+      #
+      # @param token [Object, nil] value returned by +before_sample_job_queues+
+      # @return [void]
+      def after_sample_job_queues(token = nil)
+      end
+
+      # Reset process-local macro state after fork (or abandoned inherited state).
+      # Default is a no-op. Called next to buffer reinit on the same dispatcher sites.
+      #
+      # @return [void]
+      def reinit_after_fork
+      end
+
       # Slice and coerce lease +options+ using a strategy-keyed schema.
       #
       # +schema+ maps strategy string → field name string → type symbol

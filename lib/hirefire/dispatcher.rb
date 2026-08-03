@@ -62,6 +62,7 @@ module HireFire
         after_fork = @pid && @pid != Process.pid
         if after_fork
           buffer.reinit_after_fork
+          Plan.reinit_macros_after_fork!
           reset_dispatch_state_after_fork
         end
 
@@ -198,6 +199,7 @@ module HireFire
         @generation += 1
       end
       buffer.reinit_after_fork
+      Plan.reinit_macros_after_fork!
       @lease.demote!
       @client.close
       @lease.close
@@ -293,13 +295,15 @@ module HireFire
     end
 
     def sample_job_queues
-      local_job_queues = configuration.job_queues
+      Plan.around_job_queue_sample do
+        local_job_queues = configuration.job_queues
 
-      @lease.job_queues.each do |entry|
-        if adapter_present?(entry)
-          sample_plan_adapter(entry, local_job_queues)
-        else
-          sample_strategy_only(entry, local_job_queues)
+        @lease.job_queues.each do |entry|
+          if adapter_present?(entry)
+            sample_plan_adapter(entry, local_job_queues)
+          else
+            sample_strategy_only(entry, local_job_queues)
+          end
         end
       end
     end

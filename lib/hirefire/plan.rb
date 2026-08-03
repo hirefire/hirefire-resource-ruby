@@ -69,6 +69,47 @@ module HireFire
       macro.supports_plan_strategy?(strategy)
     end
 
+    # Run +block+ as one job-queue sample wave. Every allowlisted macro receives
+    # {HireFire::Plan::Hooks#before_sample_job_queues} / +after_sample_job_queues+
+    # (defaults no-op). Dispatcher must not know adapter cache details.
+    #
+    # @yield
+    # @return [Object] the block's return value
+    def around_job_queue_sample
+      tokens = {}
+      ADAPTERS.each do |name, macro|
+        tokens[name] = macro.before_sample_job_queues
+      rescue => e
+        Log.safe(logger, :error,
+          "[HireFire] before_sample_job_queues for #{name.inspect} raised " \
+          "#{e.class}: #{e.message}")
+      end
+
+      yield
+    ensure
+      tokens.each do |name, token|
+        ADAPTERS[name].after_sample_job_queues(token)
+      rescue => e
+        Log.safe(logger, :error,
+          "[HireFire] after_sample_job_queues for #{name.inspect} raised " \
+          "#{e.class}: #{e.message}")
+      end
+    end
+
+    # Notify every allowlisted macro after fork / abandoned inherited state.
+    # Mirrors buffer reinit sites on the dispatcher.
+    #
+    # @return [void]
+    def reinit_macros_after_fork!
+      ADAPTERS.each do |name, macro|
+        macro.reinit_after_fork
+      rescue => e
+        Log.safe(logger, :error,
+          "[HireFire] reinit_after_fork for #{name.inspect} raised " \
+          "#{e.class}: #{e.message}")
+      end
+    end
+
     def execute(entry)
       adapter = entry["adapter"].to_s.strip
       strategy = entry["strategy"].to_s.strip

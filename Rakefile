@@ -37,7 +37,8 @@ FAMILY_TEST_FILES = {
     "macro/test_resque.rb"
   ],
   "sidekiq" => [
-    "macro/test_sidekiq.rb"
+    "macro/test_sidekiq.rb",
+    "macro/test_sidekiq_due_cache.rb"
   ],
   "sinatra" => [
     "integration/test_sinatra.rb"

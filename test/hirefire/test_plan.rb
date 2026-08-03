@@ -393,6 +393,116 @@ class HireFire::PlanTest < Minitest::Test
     assert_equal [], HireFire::Plan.send(:normalize_queues, nil, name: "worker")
   end
 
+  def test_around_job_queue_sample_calls_before_and_after_on_every_adapter
+    original = HireFire::Plan::ADAPTERS
+    events = []
+    a = stub_macro do |m|
+      m.define_singleton_method(:before_sample_job_queues) {
+        events << [:before, :a]
+        :token_a
+      }
+      m.define_singleton_method(:after_sample_job_queues) { |token|
+        events << [:after, :a, token]
+      }
+    end
+    b = stub_macro do |m|
+      m.define_singleton_method(:before_sample_job_queues) {
+        events << [:before, :b]
+        :token_b
+      }
+      m.define_singleton_method(:after_sample_job_queues) { |token|
+        events << [:after, :b, token]
+      }
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, {"a" => a, "b" => b})
+
+    result = HireFire::Plan.around_job_queue_sample {
+      events << :body
+      :ok
+    }
+
+    assert_equal :ok, result
+    assert_equal [
+      [:before, :a],
+      [:before, :b],
+      :body,
+      [:after, :a, :token_a],
+      [:after, :b, :token_b]
+    ], events
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+  end
+
+  def test_around_job_queue_sample_runs_after_when_body_raises
+    original = HireFire::Plan::ADAPTERS
+    after_tokens = []
+    mod = stub_macro do |m|
+      m.define_singleton_method(:before_sample_job_queues) { :wave }
+      m.define_singleton_method(:after_sample_job_queues) { |token|
+        after_tokens << token
+      }
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, {"x" => mod})
+
+    assert_raises(RuntimeError) {
+      HireFire::Plan.around_job_queue_sample { raise "boom" }
+    }
+    assert_equal [:wave], after_tokens
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+  end
+
+  def test_hooks_default_sample_wave_methods_are_noops
+    mod = Module.new
+    mod.extend(HireFire::Plan::Hooks)
+    assert_nil mod.before_sample_job_queues
+    assert_nil mod.after_sample_job_queues(:anything)
+    assert_nil mod.reinit_after_fork
+  end
+
+  def test_reinit_macros_after_fork_notifies_every_adapter
+    original = HireFire::Plan::ADAPTERS
+    called = []
+    a = stub_macro do |m|
+      m.define_singleton_method(:reinit_after_fork) { called << :a }
+    end
+    b = stub_macro do |m|
+      m.define_singleton_method(:reinit_after_fork) { called << :b }
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, {"a" => a, "b" => b})
+
+    HireFire::Plan.reinit_macros_after_fork!
+    assert_equal [:a, :b], called
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+  end
+
+  def test_sidekiq_sample_wave_hooks_drive_due_cache
+    skip "Sidekiq not loaded" unless defined?(::Sidekiq)
+
+    cache = HireFire::Macro::Sidekiq::DueCache
+    cache.clear_all
+    refute cache.sample_active?
+
+    token = HireFire::Macro::Sidekiq.before_sample_job_queues
+    assert cache.sample_active?
+    refute_nil token
+
+    HireFire::Macro::Sidekiq.after_sample_job_queues(token)
+    refute cache.sample_active?
+  ensure
+    HireFire::Macro::Sidekiq::DueCache.clear_all if defined?(HireFire::Macro::Sidekiq::DueCache)
+  end
+
   private
 
   def stub_macro

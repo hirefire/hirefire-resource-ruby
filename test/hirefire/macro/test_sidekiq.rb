@@ -466,14 +466,16 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size
   end
 
-  def test_server_lookup_caps_scheduled_exactly_like_client
+  def test_server_lookup_caps_scheduled_exactly_like_named_client
     10.times { enqueue_scheduled }
 
-    assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
-    assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_retries: true, skip_working: true)
+    assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+    assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, skip_retries: true, skip_working: true)
 
-    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 3, skip_retries: true, skip_working: true)
-    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: 3, skip_retries: true, skip_working: true)
+    # Walk budget: named client and server still cap. Client all-queues ZCOUNT does not.
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, max_scheduled: 3, skip_retries: true, skip_working: true)
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, max_scheduled: 3, skip_retries: true, skip_working: true)
+    assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 3, skip_retries: true, skip_working: true)
   end
 
   def test_max_scheduled_matching_only_skips_foreign_client_and_server
@@ -489,12 +491,14 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, skip_retries: true, skip_working: true)
   end
 
-  def test_server_lookup_max_scheduled_zero_counts_no_scheduled_like_client
+  def test_server_lookup_max_scheduled_zero_counts_no_scheduled_like_named_client
     5.times { enqueue_scheduled }
     enqueue
 
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 0, skip_retries: true, skip_working: true)
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: 0, skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, max_scheduled: 0, skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, max_scheduled: 0, skip_retries: true, skip_working: true)
+    # Client all-queues ZCOUNT ignores the walk budget.
+    assert_equal 6, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 0, skip_retries: true, skip_working: true)
   end
 
   def test_server_lookup_pages_and_caps_across_the_zrange_boundary
@@ -513,30 +517,33 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     options = {skip_retries: true, skip_working: true}
     assert_equal total, HireFire::Macro::Sidekiq.job_queue_size(server: true, **options)
     assert_equal total, HireFire::Macro::Sidekiq.job_queue_size(**options)
-    assert_equal 1_500, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: 1_500, **options)
-    assert_equal 1_500, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 1_500, **options)
+    assert_equal 1_500, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, max_scheduled: 1_500, **options)
+    assert_equal 1_500, HireFire::Macro::Sidekiq.job_queue_size(:default, max_scheduled: 1_500, **options)
+    # Client all-queues still returns the full due set under max_scheduled.
+    assert_equal total, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 1_500, **options)
   end
 
-  def test_server_lookup_negative_max_scheduled_counts_none_like_client
+  def test_server_lookup_negative_max_scheduled_counts_none_like_named_client
     5.times { enqueue_scheduled }
     enqueue
 
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: -5, skip_retries: true, skip_working: true)
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, max_scheduled: -5, skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, max_scheduled: -5, skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, max_scheduled: -5, skip_retries: true, skip_working: true)
+    assert_equal 6, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: -5, skip_retries: true, skip_working: true)
   end
 
-  # max_scheduled is schedule-only; retries still full. Client + server.
-  def test_max_scheduled_zero_caps_schedule_only_retries_still_full_client_and_server
+  # max_scheduled is schedule-only walk budget on named/server; retries still full.
+  def test_max_scheduled_zero_caps_schedule_only_retries_still_full_named_and_server
     3.times { enqueue_scheduled }
     2.times { enqueue_retry }
 
     zero_cap = {max_scheduled: 0, skip_working: true}
-    assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(**zero_cap)
-    assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(server: true, **zero_cap)
+    assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, **zero_cap)
+    assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, **zero_cap)
 
     positive_cap = {max_scheduled: 1, skip_working: true}
-    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(**positive_cap)
-    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(server: true, **positive_cap)
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, **positive_cap)
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, **positive_cap)
   end
 
   def test_server_lookup_reraises_non_noscript_script_errors

@@ -10,6 +10,12 @@ module HireFire
       # Latency ages are recomputed at read time against the live clock. Live lists and the
       # Lua (+server: true+) path never use this cache.
       #
+      # All-queues (empty queue list) due JQL/JQS never walk or decode ZSET members: JQS uses
+      # +ZCOUNT+ (score ≤ now), JQL uses the first member's score via +ZRANGE 0 0+. Those paths
+      # do not write the rank cache, so they never mark +complete+ or poison named free-hits.
+      # +max_scheduled+ is a named-walk budget only (ignored for all-queues +ZCOUNT+).
+      # Named-queue calls still use the rank-cursor walk below.
+      #
       # Lifetime is one sample wave: +begin_sample!+ opens a clean epoch, +end_sample!+ clears
       # maps. Within a wave, free-hits reuse the registry. Outside a wave (console / one-off),
       # each +cache_for+ installs a fresh object so ad-hoc calls never share leftover state.
@@ -121,14 +127,12 @@ module HireFire
           # @return [Float]
           def latency(set_name, queues)
             needed = needed_from(queues)
+            return all_queues_latency(set_name) if needed == :all
+
             cache = ensure_walk(set_name, mode: :jql, needed: needed)
             return 0.0 unless cache
 
-            score = if needed == :all
-              cache.global_oldest_at
-            else
-              needed.filter_map { |q| cache.oldest_at[q] }.min
-            end
+            score = needed.filter_map { |q| cache.oldest_at[q] }.min
             return 0.0 unless score
 
             Time.now.to_f - score
@@ -138,11 +142,14 @@ module HireFire
           #
           # @param set_name [String] +"schedule"+ or +"retry"+
           # @param queues [Set] empty means all queues
-          # @param max_scheduled [Integer, nil] schedule only: cap matching dues (policy A)
+          # @param max_scheduled [Integer, nil] named schedule walk budget only (ignored for
+          #   all-queues +ZCOUNT+)
           # @return [Integer]
           def size(set_name, queues, max_scheduled: nil)
             set_name = set_name.to_s
             needed = needed_from(queues)
+            return all_queues_size(set_name) if needed == :all
+
             cache = ensure_walk(set_name, mode: :jqs, needed: needed, max_scheduled: max_scheduled)
             return 0 unless cache
 
@@ -239,20 +246,52 @@ module HireFire
             (queues.nil? || queues.empty?) ? :all : queues
           end
 
-          def matching_count(cache, needed)
-            if needed == :all
-              cache.total_due
-            else
-              needed.sum { |q| cache.size[q] }
+          # All-queues due JQL: eligibility score of the oldest ZSET member when due.
+          # One +ZRANGE 0 0 WITHSCORES+; never decodes the job body or walks ranks.
+          def all_queues_latency(set_name)
+            first = zrange_first_with_score(set_name.to_s)
+            return 0.0 if first.nil?
+
+            score = first[1].to_f
+            now = now_f
+            return 0.0 if score > now
+
+            now - score
+          end
+
+          # All-queues due JQS: count members with score ≤ now via +ZCOUNT+. No walk budget
+          # (+max_scheduled+ is for named/server walks only). Never decodes job bodies.
+          def all_queues_size(set_name)
+            zcount_due(set_name.to_s)
+          end
+
+          def zcount_due(set_name, now = now_f)
+            ::Sidekiq.redis do |connection|
+              connection.zcount(set_name, "-inf", now)
+            end.to_i
+          end
+
+          # @return [Array(String, Float), nil] first member and score, or nil when empty
+          def zrange_first_with_score(set_name)
+            batch = ::Sidekiq.redis do |connection|
+              if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("7.0.0")
+                connection.zrange(set_name, 0, 0, "WITHSCORES")
+              else
+                connection.zrange(set_name, 0, 0, withscores: true)
+              end
             end
+            return nil if batch.nil? || batch.empty?
+
+            member, score = batch.first
+            [member, score.to_f]
+          end
+
+          def matching_count(cache, needed)
+            needed.sum { |q| cache.size[q] }
           end
 
           def jql_call_satisfied?(cache, needed)
-            if needed == :all
-              !cache.global_oldest_at.nil? || cache.complete
-            else
-              needed.any? { |q| cache.oldest_at.key?(q) } || cache.complete
-            end
+            needed.any? { |q| cache.oldest_at.key?(q) } || cache.complete
           end
 
           def walk_satisfied?(cache, mode, needed, max_scheduled)
@@ -351,7 +390,7 @@ module HireFire
                 queue = parse_queue(member)
                 if queue
                   cache.record_due(queue, score)
-                  if !max_scheduled.nil? && (needed == :all || needed.include?(queue))
+                  if !max_scheduled.nil? && needed.include?(queue)
                     matched_for_cap += 1
                   end
                 end

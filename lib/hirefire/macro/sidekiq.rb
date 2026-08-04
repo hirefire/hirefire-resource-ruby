@@ -68,7 +68,8 @@ module HireFire
       #
       # Client schedule/retry due walks share a process-local rank cache scoped to one
       # Dispatcher sample wave so many named samplers amortize one ascending walk per set.
-      # Outside a sample wave (console or one-off), each call walks cold.
+      # Outside a sample wave (console or one-off), each call walks cold. Empty queue list
+      # (all queues) uses a cheap first-score due read and never walks/decodes due members.
       #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
       #   measurement. If not provided, latency is measured across all queues.
@@ -96,7 +97,9 @@ module HireFire
       # Client schedule/retry due walks share a process-local rank cache scoped to one Dispatcher
       # sample wave. Outside a sample wave (console or one-off), each call walks cold. Due counts
       # are served only after the due region is complete for that fill (except a call-local
-      # +max_scheduled+ cap). +server: true+ uses Lua and does not read or write the cache.
+      # +max_scheduled+ walk budget on named queues). Empty queue list (all queues) uses +ZCOUNT+
+      # for due size and never walks/decodes due members (+max_scheduled+ is ignored there).
+      # +server: true+ uses Lua and does not read or write the cache.
       #
       # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
       #   If not provided, size is measured across all queues.
@@ -106,7 +109,8 @@ module HireFire
       # @option options [Boolean] :skip_scheduled (false) If true, skips counting jobs in scheduled queues.
       # @option options [Boolean] :skip_working (true) If true (default), skips counting running jobs.
       #   Pass +false+ to include in-flight work (kept through 2.0).
-      # @option options [Integer, nil] :max_scheduled (nil) Max number of scheduled jobs to consider. nil for no limit.
+      # @option options [Integer, nil] :max_scheduled (nil) Walk budget for schedule dues on named-queue
+      #   client walks and on +server: true+. Ignored for client all-queues (+ZCOUNT+). nil means no limit.
       # @return [Integer] Total job queue size (waiting set: live + due scheduled + due retry by default).
       # @example Calculate size across all queues
       #   HireFire::Macro::Sidekiq.job_queue_size
@@ -122,7 +126,7 @@ module HireFire
       #   HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: false)
       # @example Calculate size for the "default" queue using server-side aggregation
       #   HireFire::Macro::Sidekiq.job_queue_size(:default, server: true)
-      # @example Calculate size for the "default" queue, limiting counting of scheduled jobs to 100_000
+      # @example Cap named schedule walk at 100_000 dues
       #   HireFire::Macro::Sidekiq.job_queue_size(:default, max_scheduled: 100_000)
       def job_queue_size(*queues, **options)
         JobQueueSize.call(*queues, **options)

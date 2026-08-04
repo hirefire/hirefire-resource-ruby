@@ -83,7 +83,8 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
     Cache.trace = true
     Cache.clear_trace!
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    # Named path uses the rank walk (all-queues is O(1) and does not populate the cache).
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_includes schedule_start_ranks, 0
 
     cache = Cache.peek("schedule")
@@ -108,7 +109,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal 1, wiped.generation, "new wave resets generation_seq to a fresh epoch"
 
     Cache.clear_trace!
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     starts = schedule_start_ranks
     assert_includes starts, 0, "after new begin_sample!, walk must restart at rank 0"
     fresh = Cache.peek("schedule")
@@ -123,7 +124,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
     Cache.trace = true
     Cache.clear_trace!
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert Cache.peek("schedule").complete
 
     Cache.end_sample!
@@ -131,12 +132,12 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_nil Cache.peek("schedule")
 
     Cache.clear_trace!
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     starts = schedule_start_ranks
     assert_includes starts, 0, "out-of-band call must cold-walk, not free-hit prior wave"
 
     Cache.clear_trace!
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_includes schedule_start_ranks, 0, "second out-of-band call must cold-walk again"
   end
 
@@ -168,16 +169,20 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
     Cache.trace = true
     Cache.clear_trace!
-    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
-    assert_includes schedule_start_ranks, 0, "first fill must start at rank 0"
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+    assert_includes schedule_start_ranks, 0, "first named fill must start at rank 0"
 
     Cache.clear_trace!
-    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
-    assert_empty schedule_start_ranks, "complete cache must not rewalk within sample wave"
+    assert_empty schedule_start_ranks, "complete named cache must not rewalk within sample wave"
+
+    # All-queues is a separate O(1) path and must not issue a rank walk either.
+    Cache.clear_trace!
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_empty schedule_start_ranks, "all-queues JQS must not rank-walk due ZSET"
   end
 
-  def test_jql_early_stop_then_jqs_extends_to_full_oracle
+  def test_jql_early_stop_then_named_jqs_extends_to_full_oracle
     Timecop.freeze(Time.now - 400) { enqueue_scheduled(queue: "foreign") }
     Timecop.freeze(Time.now - 300) { enqueue_scheduled(queue: "foreign") }
     Timecop.freeze(Time.now - 100) { enqueue_scheduled(queue: "default") }
@@ -197,13 +202,20 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal 3, prior_cursor, "foreign, foreign, default then early-stop"
 
     Cache.clear_trace!
-    size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
-    assert_equal 4, size
+    # All-queues uses ZCOUNT (no rank walk) and must not mutate the partial named cache.
+    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_empty schedule_start_ranks, "all-queues JQS must not rank-walk"
+    assert_equal prior_cursor, Cache.peek("schedule").cursor_rank
+    refute Cache.peek("schedule").complete
+
+    Cache.clear_trace!
+    size = HireFire::Macro::Sidekiq.job_queue_size(:mailer, skip_retries: true, skip_working: true)
+    assert_equal 1, size
     cache = Cache.peek("schedule")
     assert cache.complete
     assert_equal 4, cache.total_due
     starts = schedule_start_ranks
-    assert_equal prior_cursor, starts.min, "JQS must resume at exact prior cursor, got #{starts.inspect}"
+    assert_equal prior_cursor, starts.min, "named JQS must resume at exact prior cursor, got #{starts.inspect}"
   end
 
   def test_partial_jqs_never_returned_after_foreign_prefix_jql
@@ -266,7 +278,8 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_in_delta 400, foreign_age, LATENCY_DELTA
     assert_empty schedule_start_ranks, "satisfied opportunistic hit must issue zero ZRANGE"
 
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    # Named JQS finishes the due region (all-queues ZCOUNT does not populate complete).
+    HireFire::Macro::Sidekiq.job_queue_size(:foreign, skip_retries: true, skip_working: true)
     assert Cache.peek("schedule").complete
     Cache.clear_trace!
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:foreign, skip_retries: true, skip_working: true)
@@ -316,24 +329,85 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal [0], schedule_start_ranks
   end
 
-  def test_all_queues_jql_uses_first_due_any_queue
+  def test_all_queues_jql_uses_first_due_score_without_rank_walk
     Timecop.freeze(Time.now - 250) { enqueue_scheduled(queue: "mailer") }
     Timecop.freeze(Time.now - 80) { enqueue_scheduled(queue: "default") }
 
     Cache.trace = true
     Cache.clear_trace!
     assert_in_delta 250, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true), LATENCY_DELTA
-
-    cache = Cache.peek("schedule")
-    refute cache.complete, "all-queues JQL early-stops at first due"
-    assert_in_delta cache.global_oldest_at, cache.oldest_at["mailer"], 1e-3
-    refute cache.oldest_at.key?("default"), "must not walk past first due for all-queues JQL"
-    assert_equal 1, cache.cursor_rank
-    assert_equal [0], schedule_start_ranks
+    assert_empty schedule_start_ranks, "all-queues JQL must not rank-walk / decode due members"
+    assert_nil Cache.peek("schedule"), "all-queues path must not write DueCache"
 
     Cache.clear_trace!
     assert_in_delta 250, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true), LATENCY_DELTA
-    assert_empty schedule_start_ranks, "second all-queues JQL free-hits global_oldest_at"
+    assert_empty schedule_start_ranks
+  end
+
+  def test_all_queues_jqs_uses_zcount_without_rank_walk
+    3.times { |i| plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 30 - i, enqueued_at: Time.now.to_f) }
+    2.times { |i| plant_sorted_set_job("schedule", queue: "mailer", score: Time.now.to_f - 10 - i, enqueued_at: Time.now.to_f) }
+    plant_sorted_set_job("schedule", queue: "future", score: Time.now.to_f + 60, enqueued_at: Time.now.to_f)
+
+    Cache.trace = true
+    Cache.clear_trace!
+    assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_empty schedule_start_ranks, "all-queues JQS must not rank-walk due ZSET"
+    assert_nil Cache.peek("schedule"), "all-queues path must not write DueCache"
+
+    Cache.clear_trace!
+    assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_empty schedule_start_ranks
+  end
+
+  def test_all_queues_jqs_and_jql_empty_and_future_only
+    Cache.trace = true
+    Cache.clear_trace!
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true)
+    assert_empty schedule_start_ranks
+    assert_nil Cache.peek("schedule")
+
+    enqueue_scheduled_future
+    Cache.clear_trace!
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true)
+    assert_empty schedule_start_ranks
+  end
+
+  def test_all_queues_jqs_ignores_max_scheduled_walk_budget
+    5.times { |i| plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10 - i, enqueued_at: Time.now.to_f) }
+
+    Cache.trace = true
+    Cache.clear_trace!
+    assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(
+      max_scheduled: 3,
+      skip_retries: true,
+      skip_working: true
+    )
+    assert_empty schedule_start_ranks
+    assert_nil Cache.peek("schedule")
+
+    Cache.clear_trace!
+    assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(
+      max_scheduled: 0,
+      skip_retries: true,
+      skip_working: true
+    )
+    assert_empty schedule_start_ranks
+  end
+
+  def test_all_queues_retry_jqs_and_jql_without_rank_walk
+    Timecop.freeze(Time.now - 120) { enqueue_retry(queue: "default") }
+    Timecop.freeze(Time.now - 40) { enqueue_retry(queue: "mailer") }
+    enqueue_retry_future
+
+    Cache.trace = true
+    Cache.clear_trace!
+    assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(skip_scheduled: true, skip_working: true)
+    assert_in_delta 120, HireFire::Macro::Sidekiq.job_queue_latency(skip_scheduled: true), LATENCY_DELTA
+    assert_empty retry_start_ranks
+    assert_nil Cache.peek("retry")
   end
 
   def test_skip_scheduled_and_skip_retries_do_not_walk_skipped_set
@@ -406,26 +480,32 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert Cache.peek("schedule").complete
   end
 
-  def test_max_scheduled_zero_pre_loop_no_zrange
+  def test_max_scheduled_zero_named_pre_loop_no_zrange
     3.times { plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f) }
     enqueue
 
     Cache.trace = true
     Cache.clear_trace!
-    size = HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 0, skip_retries: true, skip_working: true)
-    assert_equal 1, size
-    assert_empty schedule_start_ranks, "max_scheduled: 0 must short-circuit without ZRANGE"
+    size = HireFire::Macro::Sidekiq.job_queue_size(
+      :default,
+      max_scheduled: 0,
+      skip_retries: true,
+      skip_working: true
+    )
+    assert_equal 1, size, "named max_scheduled: 0 counts live only"
+    assert_empty schedule_start_ranks, "named max_scheduled: 0 must short-circuit without ZRANGE"
   end
 
   def test_max_scheduled_after_complete_min_without_zrange
     5.times { plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f) }
 
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert Cache.peek("schedule").complete
 
     Cache.trace = true
     Cache.clear_trace!
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(
+      :default,
       max_scheduled: 3,
       skip_retries: true,
       skip_working: true
@@ -433,7 +513,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_empty schedule_start_ranks
   end
 
-  def test_max_scheduled_seed_all_from_total_due
+  def test_all_queues_zcount_ignores_max_scheduled_and_does_not_extend_named_cache
     3.times { |i| plant_sorted_set_job("schedule", queue: "a", score: Time.now.to_f - 30 - i, enqueued_at: Time.now.to_f) }
     2.times { |i| plant_sorted_set_job("schedule", queue: "b", score: Time.now.to_f - 5 - i, enqueued_at: Time.now.to_f) }
 
@@ -444,17 +524,18 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     refute cache.complete
     assert_equal 1, cache.total_due
     assert_includes schedule_start_ranks, 0, "seed setup must open at rank 0"
+    prior_cursor = cache.cursor_rank
 
     Cache.clear_trace!
-    # Cap equals already-counted total_due: short-circuit without ZRANGE.
-    seed = cache.total_due
+    # All-queues ZCOUNT is full due size; max_scheduled is not a walk budget here.
     size = HireFire::Macro::Sidekiq.job_queue_size(
-      max_scheduled: seed,
+      max_scheduled: 2,
       skip_retries: true,
       skip_working: true
     )
-    assert_equal seed, size
-    assert_empty schedule_start_ranks, "seed >= max_scheduled must not walk"
+    assert_equal 5, size
+    assert_empty schedule_start_ranks, "all-queues must not rank-walk"
+    assert_equal prior_cursor, Cache.peek("schedule").cursor_rank
     refute Cache.peek("schedule").complete
   end
 
@@ -506,57 +587,57 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert ranks.any? { |e| e[:set_name] == "retry" }
   end
 
-  def test_empty_and_only_future_complete_with_zeros
+  def test_named_empty_and_only_future_complete_with_zeros
     Cache.trace = true
     Cache.clear_trace!
-    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
-    assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+    assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
     cache = Cache.peek("schedule")
     assert cache.complete
     assert_equal 0, cache.total_due
-    assert_includes schedule_start_ranks, 0, "empty set must still walk once (empty ZRANGE)"
+    assert_includes schedule_start_ranks, 0, "empty named walk must still open once (empty ZRANGE)"
 
     Cache.clear_trace!
-    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
-    assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+    assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
     assert_empty schedule_start_ranks, "complete empty cache must not rewalk"
 
     reset_wave!
     enqueue_scheduled_future
     Cache.trace = true
-    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
-    assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+    assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
     assert Cache.peek("schedule").complete
     assert_includes schedule_start_ranks, 0
 
     Cache.clear_trace!
-    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_empty schedule_start_ranks, "only-future complete must not rewalk"
   end
 
-  def test_retry_empty_and_only_future_complete_with_zeros
+  def test_named_retry_empty_and_only_future_complete_with_zeros
     Cache.trace = true
     Cache.clear_trace!
-    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_scheduled: true, skip_working: true)
-    assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(skip_scheduled: true)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true, skip_working: true)
+    assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true)
     cache = Cache.peek("retry")
     assert cache.complete
     assert_equal 0, cache.total_due
     assert_includes retry_start_ranks, 0
 
     Cache.clear_trace!
-    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_scheduled: true, skip_working: true)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true, skip_working: true)
     assert_empty retry_start_ranks, "complete empty retry must not rewalk"
 
     reset_wave!
     enqueue_retry_future
     Cache.trace = true
-    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_scheduled: true, skip_working: true)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true, skip_working: true)
     assert Cache.peek("retry").complete
     assert_includes retry_start_ranks, 0
 
     Cache.clear_trace!
-    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_scheduled: true, skip_working: true)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true, skip_working: true)
     assert_empty retry_start_ranks, "only-future retry complete must not rewalk"
   end
 
@@ -589,17 +670,18 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   def test_live_bump_with_warm_due_cache_issues_no_zrange
     Timecop.freeze(Time.now - 100) { enqueue_scheduled(queue: "default") }
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert Cache.peek("schedule").complete
     due_total = Cache.peek("schedule").total_due
 
     Cache.trace = true
     Cache.clear_trace!
     Timecop.freeze(Time.now - 500) { enqueue }
-    assert_equal due_total + 1, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal due_total + 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_empty schedule_start_ranks, "live LLEN must not rewalk warm complete due cache"
     assert_equal due_total, Cache.peek("schedule").total_due
-    assert_in_delta 500, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true), LATENCY_DELTA
+    # Named latency free-hits due cache; live list supplies the larger age.
+    assert_in_delta 500, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true), LATENCY_DELTA
     assert_empty schedule_start_ranks
   end
 
@@ -619,7 +701,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   def test_server_true_does_not_consult_or_poison_warm_cache
     plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
     enqueue
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     warm = Cache.peek("schedule")
     refute_nil warm
     total = warm.total_due
@@ -639,7 +721,8 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     plant_corrupt_sorted_set_members("schedule")
     plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 50, enqueued_at: Time.now.to_f)
 
-    size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    # Named walk skips corrupt; all-queues ZCOUNT would count every due score.
+    size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_equal 1, size
     cache = Cache.peek("schedule")
     assert cache.complete
@@ -651,7 +734,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     plant_corrupt_sorted_set_members("retry")
     plant_sorted_set_job("retry", queue: "default", score: Time.now.to_f - 50, enqueued_at: Time.now.to_f)
 
-    size = HireFire::Macro::Sidekiq.job_queue_size(skip_scheduled: true, skip_working: true)
+    size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true, skip_working: true)
     assert_equal 1, size
     cache = Cache.peek("retry")
     assert cache.complete
@@ -672,7 +755,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     ))
     plant_sorted_set_job("schedule", queue: "default", score: now - 50, enqueued_at: now)
 
-    size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_equal 1, size
     cache = Cache.peek("schedule")
     assert cache.complete
@@ -701,9 +784,9 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal [cursor_after_a], b_starts, "exact start_rank must continue at prior cursor"
 
     Cache.clear_trace!
-    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:c, skip_retries: true, skip_working: true)
     jqs_starts = schedule_start_ranks
-    assert jqs_starts.min > 0, "JQS must continue from cursor, got #{jqs_starts.inspect}"
+    assert jqs_starts.min > 0, "named JQS must continue from cursor, got #{jqs_starts.inspect}"
 
     cache = Cache.peek("schedule")
     assert_equal 1, cache.size["a"]
@@ -714,7 +797,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   def test_reinit_after_fork_replaces_mutex_and_empties_registry
     plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_equal 1, Cache.peek("schedule").total_due
 
     old_mutex = Cache.send(:mutex)
@@ -725,7 +808,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_nil Cache.peek("schedule")
     assert_equal 1, Cache.begin_sample!, "reinit resets wave_seq so first token is 1"
 
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     peek = Cache.peek("schedule")
     assert peek.complete
     assert_equal 1, peek.total_due
@@ -733,7 +816,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   def test_reinit_after_fork_with_stuck_inherited_mutex
     plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
 
     old_mutex = Cache.send(:mutex)
     release_holder = Queue.new
@@ -757,7 +840,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_nil Cache.peek("schedule")
 
     reset_wave!
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert Cache.peek("schedule").complete
   ensure
     release_holder << true if defined?(release_holder) && release_holder
@@ -766,7 +849,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   def test_abandon_inherited_state_reinits_due_cache
     plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     refute_nil Cache.peek("schedule")
     old_mutex = Cache.send(:mutex)
 
@@ -774,7 +857,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
     assert_nil Cache.peek("schedule"), "abandon must empty due-cache registry"
     refute_same old_mutex, Cache.send(:mutex)
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     refute_nil Cache.peek("schedule")
   end
 
@@ -783,7 +866,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
 
     plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     refute_nil Cache.peek("schedule")
     old_mutex = Cache.send(:mutex)
 
@@ -795,13 +878,13 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
     assert_nil Cache.peek("schedule"), "start-after-fork must reinit and empty registry"
     refute_same old_mutex, Cache.send(:mutex)
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     refute_nil Cache.peek("schedule")
   ensure
     dispatcher&.stop
   end
 
-  def test_all_queues_jqs_total_due_matches_oracle_excluding_corrupt
+  def test_all_queues_zcount_includes_corrupt_named_walk_excludes
     Sidekiq.redis do |connection|
       case identify_redis_client(connection)
       when :redis
@@ -817,25 +900,32 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     plant_sorted_set_job("schedule", queue: "a", score: Time.now.to_f - 20, enqueued_at: Time.now.to_f)
     plant_sorted_set_job("schedule", queue: "b", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
 
+    Cache.trace = true
+    Cache.clear_trace!
+    # Pure ZCOUNT counts every due score (including corrupt). Stock Sidekiq payloads are JSON.
     size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
-    assert_equal 2, size, "corrupt members must not inflate all-queues size"
+    assert_equal 5, size, "all-queues ZCOUNT counts due scores without JSON filter"
+    assert_empty schedule_start_ranks
+    assert_nil Cache.peek("schedule")
+
+    named = HireFire::Macro::Sidekiq.job_queue_size(:a, :b, skip_retries: true, skip_working: true)
+    assert_equal 2, named, "named walk still skips corrupt members"
     cache = Cache.peek("schedule")
     assert cache.complete
-    assert_equal 2, cache.total_due, "total_due counts only valid parseable dues"
-    assert_equal 2, cache.size.values.sum
+    assert_equal 2, cache.total_due
     assert_equal 1, cache.size["a"]
     assert_equal 1, cache.size["b"]
   end
 
-  def test_matching_count_all_uses_total_due_not_size_sum
-    # needed == :all must use total_due, not size.values.sum.
+  def test_matching_count_named_sums_size_keys
     cache = Cache.new("schedule", now_f: Time.now.to_f, generation: 1)
     cache.record_due("a", Time.now.to_f - 20)
     cache.record_due("b", Time.now.to_f - 10)
     cache.instance_variable_set(:@total_due, 99)
 
-    assert_equal 99, Cache.send(:matching_count, cache, :all)
     assert_equal 2, Cache.send(:matching_count, cache, %w[a b])
+    assert_equal 1, Cache.send(:matching_count, cache, %w[a])
+    assert_equal 0, Cache.send(:matching_count, cache, %w[missing])
   end
 
   def test_now_fill_freeze_excludes_members_due_only_after_fill
@@ -850,7 +940,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       assert_in_delta t0.to_f, cache.now_fill, 0.01
 
       Timecop.freeze(t0 + 3) do
-        size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+        size = HireFire::Macro::Sidekiq.job_queue_size(:a, :b, skip_retries: true, skip_working: true)
         assert_equal 1, size, "member due only after now_fill must stay excluded within same wave"
         filled = Cache.peek("schedule")
         assert filled.complete
@@ -858,7 +948,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
         refute filled.size.key?("b")
 
         reset_wave!
-        size_next = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+        size_next = HireFire::Macro::Sidekiq.job_queue_size(:a, :b, skip_retries: true, skip_working: true)
         assert_equal 2, size_next, "new wave must include member that became due after prior now_fill"
         next_cache = Cache.peek("schedule")
         assert next_cache.complete
@@ -936,7 +1026,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       }
     end
 
-    size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_equal 1, size, "stuck fill must be stealable so a new filler can walk"
     published = Cache.peek("schedule")
     assert published.complete
@@ -963,7 +1053,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   def test_successful_walk_releases_fill_entry
     plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     Cache.send(:mutex).synchronize do
       refute Cache.send(:filling).key?("schedule"), "ensure release after walk"
     end
@@ -1003,7 +1093,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     }) do
       t1 = Thread.new {
         begin
-          sizes[0] = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+          sizes[0] = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
         rescue => e
           errors << e
         end
@@ -1012,7 +1102,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
       t2 = Thread.new {
         begin
-          sizes[1] = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+          sizes[1] = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
         rescue => e
           errors << e
         end
@@ -1077,7 +1167,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     }) do
       filler = Thread.new {
         begin
-          filler_size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+          filler_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
         rescue => e
           errors << e
         end
@@ -1086,7 +1176,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
       waiter = Thread.new {
         begin
-          waiter_size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+          waiter_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
         rescue => e
           errors << e
         end
@@ -1150,7 +1240,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     }) do
       filler = Thread.new {
         begin
-          filler_size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+          filler_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
         rescue => e
           errors << e
         end
@@ -1160,7 +1250,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       started = Time.now
       waiter = Thread.new {
         begin
-          waiter_size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+          waiter_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
         rescue => e
           errors << e
         end
@@ -1247,7 +1337,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     }) do
       filler = Thread.new {
         begin
-          filler_size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+          filler_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
         rescue => e
           errors << e
         end
@@ -1263,7 +1353,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
       stealer = Thread.new {
         begin
-          stealer_size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+          stealer_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
         rescue => e
           errors << e
         end
@@ -1341,7 +1431,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
       waiter = Thread.new {
         begin
-          jqs_size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+          jqs_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
         rescue => e
           errors << e
         end
@@ -1356,10 +1446,10 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       }
       assert_empty errors
       assert_in_delta 100, jql_age, LATENCY_DELTA
-      assert_equal 2, jqs_size, "JQS waiter must observe full oracle after JQL early-stop extends"
+      assert_equal 1, jqs_size, "named JQS returns default dues only after extend completes"
       cache = Cache.peek("schedule")
       assert cache.complete
-      assert_equal 2, cache.total_due
+      assert_equal 2, cache.total_due, "extend must still visit foreign + default"
       assert_equal 2, zrange_count,
         "mixed-mode: one JQL batch then JQS empty-complete extend, got #{zrange_count}"
     end
@@ -1381,7 +1471,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       result
     end
 
-    size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_equal 1, size, "must return filled draft; re-peek of fresh registry would yield 0"
     fresh = Cache.peek("schedule")
     assert_equal 0, fresh.total_due
@@ -1404,7 +1494,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
     with_zrange_batch_hook(->(*) { raise "zrange boom" }) do
       error = assert_raises(RuntimeError) {
-        HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+        HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
       }
       assert_match(/zrange boom/, error.message)
     end
@@ -1413,13 +1503,13 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       refute Cache.send(:filling).key?("schedule"), "ensure must release filling after walk! raise"
     end
 
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert Cache.peek("schedule").complete
   end
 
   def test_begin_sample_sets_active_and_clears_registry
     plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     refute_nil Cache.peek("schedule")
 
     Cache.begin_sample!
@@ -1565,14 +1655,14 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
 
     wave1 = Cache.begin_sample!
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert Cache.peek("schedule").complete
 
     # Stale wave1 ensure must not clear wave2.
     wave2 = Cache.begin_sample!
     refute_equal wave1, wave2
     assert_nil Cache.peek("schedule")
-    HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     live = Cache.peek("schedule")
     refute_nil live
     assert live.complete
@@ -1614,7 +1704,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     }) do
       filler = Thread.new {
         begin
-          size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+          size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
         rescue => e
           errors << e
         end
@@ -1660,7 +1750,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     }) do
       filler = Thread.new {
         begin
-          first_size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+          first_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
         rescue => e
           errors << e
         end
@@ -1680,7 +1770,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
       Cache.clear_trace!
       Cache.trace = true
-      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
       assert_includes schedule_start_ranks, 0
       assert Cache.peek("schedule").complete
     end
@@ -1820,7 +1910,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     t0 = Time.at(1_700_000_000)
     Timecop.freeze(t0) do
       plant_sorted_set_job("schedule", queue: "default", score: t0.to_f, enqueued_at: t0.to_f)
-      size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+      size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
       assert_equal 1, size, "score == now_fill must be included (cut is score > now_fill)"
       assert_equal 1, Cache.peek("schedule").total_due
     end

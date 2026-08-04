@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Sidekiq **working** count via `HireFire::Macro::Sidekiq.job_queue_working` (WorkSet / process work, same queue filter and `run_at` ≤ now rules as `skip_working: false` size). Plan path samples nested strategy **`wrk`** unconditionally next to each Sidekiq `jql`/`jqs` entry (same queues). Not folded into waiting JQL/JQS. Buffer accepts `wrk` as a bare latest-wins series like other non-RQT metrics.
 - Zero-config bootstrap: `HireFire.boot` (empty `configure`), Rails railtie starts the dispatcher when a token is present, always-on request queue time on the HTTP middleware path, and always-on CPU when process identity resolves. Local `config.dyno` job-queue blocks remain the escape hatch for custom probes and legacy root.
 - Lease collection plans: grant body `{ version, job_queues }` is parsed and executed via allowlisted queue macros (`sidekiq`, `solid_queue`, `good_job`, `que`, `queue_classic`, `delayed_job`, `resque`, `bunny`). Per-name precedence: adapter set runs plan macros (local ignored), adapter null runs the local sampler under the lease strategy, unknown adapter/strategy skips that name without local fallback.
 - Always-lease race entry when local job-queue samplers exist or any allowlisted job-queue library is loaded. Empty/unexecutable grants are not held (dropped at TTL) while the request loop stays alive so a later UI plan is discovered.

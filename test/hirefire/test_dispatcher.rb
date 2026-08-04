@@ -123,6 +123,29 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_requested request
   end
 
+  def test_dispatches_jqs_and_wrk_as_sibling_bare_numbers
+    stub_lease
+    bodies = capture_ingest_bodies
+    dispatcher = configure_workers_only
+
+    Timecop.freeze Time.at(2500) do
+      HireFire.configuration.buffer.sample("worker", "jqs", 12)
+      HireFire.configuration.buffer.sample("worker", "wrk", 3)
+      dispatcher.send(:dispatch)
+    end
+
+    assert bodies.any?, "expected an ingest POST"
+    entry = bodies.last.find { |e| e["name"] == "worker" }
+    refute_nil entry
+    jqs_leaf = entry.dig("metrics", "jqs", "2500")
+    wrk_leaf = entry.dig("metrics", "wrk", "2500")
+    assert_equal 12, jqs_leaf
+    assert_equal 3, wrk_leaf
+    assert_kind_of Numeric, jqs_leaf
+    assert_kind_of Numeric, wrk_leaf
+    refute_kind_of Array, wrk_leaf, "wrk must be bare number like jqs, not rqt [v,n]"
+  end
+
   def test_logs_the_payload_when_verbose_is_set
     ENV["HIREFIRE_VERBOSE"] = "1"
     stub_lease

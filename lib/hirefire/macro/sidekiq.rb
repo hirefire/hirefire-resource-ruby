@@ -132,12 +132,55 @@ module HireFire
         JobQueueSize.call(*queues, **options)
       end
 
+      # Counts in-flight (working) jobs for the requested queues. Empty queue list
+      # means all queues. Uses Sidekiq WorkSet / process work hashes (same filter as
+      # +job_queue_size(..., skip_working: false)+ working contribution). Never folded
+      # into JQL/JQS waiting samples. Plan path records this under nested strategy +wrk+.
+      #
+      # @param queues [Array<String, Symbol>] (optional) Queue names. Empty = all.
+      # @return [Integer] In-flight job count (run_at ≤ now).
+      # @example All queues
+      #   HireFire::Macro::Sidekiq.job_queue_working
+      # @example Named queues only
+      #   HireFire::Macro::Sidekiq.job_queue_working(:default, :mailer)
+      def job_queue_working(*queues)
+        JobQueueWorking.call(*queues)
+      end
+
       # @!visibility private
       module Common
         private
 
         def registered_queues
           ::Sidekiq::Queue.all.map(&:name).to_set
+        end
+
+        # WorkSet / process work hashes. +queues+ is a Set (possibly empty = all).
+        def working_size(queues)
+          now = Time.now
+          now_as_i = now.to_i
+
+          ::Sidekiq::Workers.new.count do |key, tid, job|
+            if job.is_a?(Hash)
+              (queues.empty? || queues.include?(job["queue"])) && job["run_at"] <= now_as_i
+            else
+              (queues.empty? || queues.include?(job.queue)) && job.run_at <= now
+            end
+          end
+        end
+      end
+
+      # @!visibility private
+      module JobQueueWorking
+        extend Common
+        extend HireFire::Utility
+        extend self
+
+        def call(*queues)
+          require "sidekiq/api"
+
+          queues = normalize_queues(queues, allow_empty: true)
+          working_size(queues)
         end
       end
 
@@ -349,19 +392,6 @@ module HireFire
 
         def retry_size(queues)
           DueCache.size("retry", queues)
-        end
-
-        def working_size(queues)
-          now = Time.now
-          now_as_i = now.to_i
-
-          ::Sidekiq::Workers.new.count do |key, tid, job|
-            if job.is_a?(Hash)
-              (queues.empty? || queues.include?(job["queue"])) && job["run_at"] <= now_as_i
-            else
-              (queues.empty? || queues.include?(job.queue)) && job.run_at <= now
-            end
-          end
         end
 
         def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: true, max_scheduled: nil)

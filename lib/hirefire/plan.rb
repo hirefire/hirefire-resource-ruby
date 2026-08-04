@@ -140,21 +140,50 @@ module HireFire
 
       options = macro.plan_options(strategy, entry["options"])
         .merge(macro.plan_connection_options)
-      value = macro.public_send(method_name, *queues, **options)
+      return unless sample_job_strategy(macro, name, strategy, method_name, queues, options)
 
-      unless valid_sample?(value)
-        Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} returned " \
-          "#{format_sample_value(value)}, expected a non-negative number. Sample dropped.")
-        return
-      end
-
-      HireFire.configuration.buffer.sample(name, strategy, coerce_sample(value))
+      sample_working(macro, name, queues) if macro.respond_to?(:job_queue_working)
     rescue => e
       Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " \
         "#{e.class}: #{e.message}")
     end
 
     private
+
+    # Primary jql/jqs (or other plan strategy) sample. Returns true when a value
+    # was buffered so companions like +wrk+ may run.
+    def sample_job_strategy(macro, name, strategy, method_name, queues, options)
+      value = macro.public_send(method_name, *queues, **options)
+      unless valid_sample?(value)
+        Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} returned " \
+          "#{format_sample_value(value)}, expected a non-negative number. Sample dropped.")
+        return false
+      end
+
+      record_sample(name, strategy, value)
+      true
+    end
+
+    # Companion in-flight series for adapters that implement +job_queue_working+
+    # (e.g. Sidekiq). Same queues as the jql/jqs sample. Unconditional (not gated
+    # on hold). Failures are logged and do not drop the job strategy sample.
+    def sample_working(macro, name, queues)
+      wrk = macro.job_queue_working(*queues)
+      unless valid_sample?(wrk)
+        Log.safe(logger, :error, "[HireFire] Plan working sampler for #{name.inspect} returned " \
+          "#{format_sample_value(wrk)}, expected a non-negative number. wrk sample dropped.")
+        return
+      end
+
+      record_sample(name, "wrk", wrk)
+    rescue => e
+      Log.safe(logger, :error, "[HireFire] Plan working sampler for #{name.inspect} raised " \
+        "#{e.class}: #{e.message}")
+    end
+
+    def record_sample(name, strategy, value)
+      HireFire.configuration.buffer.sample(name, strategy, coerce_sample(value))
+    end
 
     # Returns an Array of queue names, or +nil+ when the entry must be skipped.
     # Missing / null +queues+ → [] (macro may sample all queues when allow_empty).

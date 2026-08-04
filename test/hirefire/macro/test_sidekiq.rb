@@ -407,6 +407,113 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     end
   end
 
+  def test_job_queue_working_idle_is_zero
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_working
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_working(:default)
+  end
+
+  def test_job_queue_working_counts_in_flight_and_filters_queues
+    enqueue_working(queue: "default", run_at: Time.now.to_i - 60)
+    enqueue_working(queue: "mailer", run_at: Time.now.to_i - 90)
+
+    assert_equal 2, HireFire::Macro::Sidekiq.job_queue_working
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_working(:default)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_working(:mailer)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_working(:critical)
+    assert_equal 2, HireFire::Macro::Sidekiq.job_queue_working(:default, :mailer)
+  end
+
+  def test_job_queue_working_excludes_future_run_at
+    enqueue_working(run_at: Time.now.to_i + 120)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_working
+  end
+
+  def test_job_queue_working_matches_skip_working_false_contribution
+    enqueue
+    enqueue_working(queue: "default", run_at: Time.now.to_i - 30)
+
+    waiting = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: true)
+    with_working = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: false)
+    wrk = HireFire::Macro::Sidekiq.job_queue_working(:default)
+
+    assert_equal waiting, HireFire::Macro::Sidekiq.job_queue_size(:default)
+    assert_equal waiting + wrk, with_working
+    assert_operator wrk, :>, 0
+  end
+
+  def test_plan_execute_sidekiq_jqs_also_samples_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    enqueue_working(queue: "default", run_at: Time.now.to_i - 45)
+    enqueue
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "sidekiq",
+      "strategy" => "jqs",
+      "queues" => ["default"],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert flushed["worker"], "plan must buffer under process name"
+    assert flushed["worker"]["jqs"], "plan must sample jqs"
+    assert flushed["worker"]["wrk"], "plan must sample wrk companion"
+
+    jqs_value = flushed["worker"]["jqs"].values.last
+    wrk_value = flushed["worker"]["wrk"].values.last
+    assert_kind_of Numeric, jqs_value
+    assert_kind_of Numeric, wrk_value
+    assert_equal HireFire::Macro::Sidekiq.job_queue_working(:default), wrk_value
+    assert_equal HireFire::Macro::Sidekiq.job_queue_size(:default), jqs_value
+    assert_operator wrk_value, :>, 0
+    # Waiting-only jqs must not include working.
+    assert_equal jqs_value, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: true)
+  end
+
+  def test_plan_execute_sidekiq_jql_also_samples_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    enqueue_working(queue: "default", run_at: Time.now.to_i - 20)
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "sidekiq",
+      "strategy" => "jql",
+      "queues" => ["default"],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert flushed.dig("worker", "jql")
+    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
+  end
+
+  def test_plan_execute_sidekiq_empty_queues_samples_all_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    enqueue_working(queue: "default", run_at: Time.now.to_i - 30)
+    enqueue_working(queue: "mailer", run_at: Time.now.to_i - 40)
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "sidekiq",
+      "strategy" => "jqs",
+      "queues" => [],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert_equal 2, flushed.dig("worker", "wrk")&.values&.last
+    assert_equal HireFire::Macro::Sidekiq.job_queue_working, flushed.dig("worker", "wrk")&.values&.last
+  end
+
   def test_job_queue_size_due_scheduled_only_no_live
     enqueue_scheduled(at: Time.now.to_i - 90)
 

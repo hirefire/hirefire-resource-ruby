@@ -53,7 +53,7 @@ GEM
     psych (5.4.0)
       date
       stringio
-    public_suffix (7.0.5)
+    public_suffix (6.0.2)
     racc (1.8.1)
     rack (3.2.6)
     rainbow (3.1.1)
@@ -135,6 +135,7 @@ DEPENDENCIES
   hirefire-resource!
   minitest
   mocha
+  public_suffix (< 7)
   rack
   rake
   simplecov

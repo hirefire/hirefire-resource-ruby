@@ -18,3 +18,7 @@ gem "rack"
 gem "simplecov", require: false
 
 gem "base64"
+
+# addressable (via webmock) allows public_suffix < 8, but public_suffix 7+ needs
+# Ruby >= 3.2. Pin for the Ruby 3.1 CI matrix cells.
+gem "public_suffix", "< 7"

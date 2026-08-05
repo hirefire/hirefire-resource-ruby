@@ -13,6 +13,7 @@ gem "yard"
 gem "rack"
 gem "simplecov", require: false
 gem "base64"
+gem "public_suffix", "< 7"
 gem "bunny", "~> 3"
 
 gemspec path: "../"

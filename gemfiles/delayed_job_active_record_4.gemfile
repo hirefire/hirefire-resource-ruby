@@ -13,6 +13,7 @@ gem "yard"
 gem "rack"
 gem "simplecov", require: false
 gem "base64"
+gem "public_suffix", "< 7"
 gem "pg"
 gem "rails", "~> 8"
 gem "delayed_job_active_record", "~> 4"

@@ -151,6 +151,106 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     end
   end
 
+  def test_job_queue_working_idle_is_zero
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_working
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_working(:default)
+  end
+
+  def test_job_queue_working_counts_in_flight_and_filters_queues
+    BasicJob.delay(queue: :default).perform.update(locked_at: Time.now, locked_by: "worker-1")
+    BasicJob.delay(queue: :mailer).perform.update(locked_at: Time.now, locked_by: "worker-2")
+
+    assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_working
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_working(:default)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_working(:mailer)
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_working(:critical)
+    assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_working(:default, :mailer)
+  end
+
+  def test_job_queue_working_excludes_unlocked_and_failed
+    BasicJob.delay(queue: :default).perform
+    BasicJob.delay(queue: :mailer).perform.update(failed_at: Time.now, locked_at: Time.now, locked_by: "worker-1")
+    BasicJob.delay(queue: :other).perform.update(locked_at: Time.now, locked_by: "worker-2")
+
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_working
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_working(:default)
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_working(:mailer)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_working(:other)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:default)
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size(:other)
+  end
+
+  def test_plan_execute_delayed_job_jqs_also_samples_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    BasicJob.delay(queue: :default).perform.update(locked_at: Time.now, locked_by: "worker-1")
+    BasicJob.delay(queue: :default).perform
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "delayed_job",
+      "strategy" => "jqs",
+      "queues" => ["default"],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert flushed["worker"], "plan must buffer under process name"
+    assert flushed["worker"]["jqs"], "plan must sample jqs"
+    assert flushed["worker"]["wrk"], "plan must sample wrk companion"
+
+    jqs_value = flushed["worker"]["jqs"].values.last
+    wrk_value = flushed["worker"]["wrk"].values.last
+    assert_kind_of Numeric, jqs_value
+    assert_kind_of Numeric, wrk_value
+    assert_equal HireFire::Macro::Delayed::Job.job_queue_working(:default), wrk_value
+    assert_equal HireFire::Macro::Delayed::Job.job_queue_size(:default), jqs_value
+    assert_operator wrk_value, :>, 0
+  end
+
+  def test_plan_execute_delayed_job_jql_also_samples_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    BasicJob.delay(queue: :default).perform.update(locked_at: Time.now, locked_by: "worker-1")
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "delayed_job",
+      "strategy" => "jql",
+      "queues" => ["default"],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert flushed.dig("worker", "jql")
+    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
+  end
+
+  def test_plan_execute_delayed_job_empty_queues_samples_all_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    BasicJob.delay(queue: :default).perform.update(locked_at: Time.now, locked_by: "worker-1")
+    BasicJob.delay(queue: :mailer).perform.update(locked_at: Time.now, locked_by: "worker-2")
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "delayed_job",
+      "strategy" => "jqs",
+      "queues" => [],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert_equal 2, flushed.dig("worker", "wrk")&.values&.last
+    assert_equal HireFire::Macro::Delayed::Job.job_queue_working, flushed.dig("worker", "wrk")&.values&.last
+  end
+
   private
 
   def prepare_active_record_database

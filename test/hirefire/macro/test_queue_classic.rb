@@ -129,6 +129,118 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_equal 1, HireFire::Macro::QC.queue
   end
 
+  def test_job_queue_working_idle_is_zero
+    assert_equal 0, HireFire::Macro::QC.job_queue_working
+    assert_equal 0, HireFire::Macro::QC.job_queue_working(:default)
+  end
+
+  def test_job_queue_working_counts_in_flight_and_filters_queues
+    default = QC::Queue.new("default")
+    mailer = QC::Queue.new("mailer")
+    default.enqueue("BasicJob.perform")
+    mailer.enqueue("BasicJob.perform")
+    refute_nil default.lock
+    refute_nil mailer.lock
+
+    assert_equal 2, HireFire::Macro::QC.job_queue_working
+    assert_equal 1, HireFire::Macro::QC.job_queue_working(:default)
+    assert_equal 1, HireFire::Macro::QC.job_queue_working(:mailer)
+    assert_equal 0, HireFire::Macro::QC.job_queue_working(:critical)
+    assert_equal 2, HireFire::Macro::QC.job_queue_working(:default, :mailer)
+  end
+
+  def test_job_queue_working_excludes_unlocked
+    QC::Queue.new("default").enqueue("BasicJob.perform")
+    other = QC::Queue.new("other")
+    other.enqueue("BasicJob.perform")
+    refute_nil other.lock
+
+    assert_equal 1, HireFire::Macro::QC.job_queue_working
+    assert_equal 0, HireFire::Macro::QC.job_queue_working(:default)
+    assert_equal 1, HireFire::Macro::QC.job_queue_working(:other)
+    assert_equal 1, HireFire::Macro::QC.job_queue_size(:default)
+    assert_equal 0, HireFire::Macro::QC.job_queue_size(:other)
+  end
+
+  def test_plan_execute_queue_classic_jqs_also_samples_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    queue = QC::Queue.new("default")
+    queue.enqueue("BasicJob.perform")
+    refute_nil queue.lock
+    queue.enqueue("BasicJob.perform")
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "queue_classic",
+      "strategy" => "jqs",
+      "queues" => ["default"],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert flushed["worker"], "plan must buffer under process name"
+    assert flushed["worker"]["jqs"], "plan must sample jqs"
+    assert flushed["worker"]["wrk"], "plan must sample wrk companion"
+
+    jqs_value = flushed["worker"]["jqs"].values.last
+    wrk_value = flushed["worker"]["wrk"].values.last
+    assert_kind_of Numeric, jqs_value
+    assert_kind_of Numeric, wrk_value
+    assert_equal HireFire::Macro::QC.job_queue_working(:default), wrk_value
+    assert_equal HireFire::Macro::QC.job_queue_size(:default), jqs_value
+    assert_operator wrk_value, :>, 0
+  end
+
+  def test_plan_execute_queue_classic_jql_also_samples_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    queue = QC::Queue.new("default")
+    queue.enqueue("BasicJob.perform")
+    refute_nil queue.lock
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "queue_classic",
+      "strategy" => "jql",
+      "queues" => ["default"],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert flushed.dig("worker", "jql")
+    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
+  end
+
+  def test_plan_execute_queue_classic_empty_queues_samples_all_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    default = QC::Queue.new("default")
+    mailer = QC::Queue.new("mailer")
+    default.enqueue("BasicJob.perform")
+    mailer.enqueue("BasicJob.perform")
+    refute_nil default.lock
+    refute_nil mailer.lock
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "queue_classic",
+      "strategy" => "jqs",
+      "queues" => [],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert_equal 2, flushed.dig("worker", "wrk")&.values&.last
+    assert_equal HireFire::Macro::QC.job_queue_working, flushed.dig("worker", "wrk")&.values&.last
+  end
+
   private
 
   def prepare_database

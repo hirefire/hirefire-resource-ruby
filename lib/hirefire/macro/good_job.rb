@@ -65,6 +65,21 @@ module HireFire
         end
       end
 
+      # Counts in-flight (working) jobs: +performed_at+ set and +finished_at+ null.
+      # Never folded into JQL/JQS. Plan records under +wrk+.
+      #
+      # @param queues [Array<String, Symbol>] (optional) Queue names. Empty = all.
+      # @return [Integer] In-flight running job count.
+      # @example All queues
+      #   HireFire::Macro::GoodJob.job_queue_working
+      # @example Named queues
+      #   HireFire::Macro::GoodJob.job_queue_working(:default, :mailer)
+      def job_queue_working(*queues)
+        with_connection do
+          working_jobs(*queues).count
+        end
+      end
+
       private
 
       # Ready queue relation aligned with GoodJob's +queued+ notion (unfinished and not started),
@@ -76,6 +91,13 @@ module HireFire
         query = query.where(finished_at: nil, performed_at: nil)
         query = query.where.not(error_event: discarded_enum).or(query.where(error_event: nil)) if error_event_supported?
         query.where("scheduled_at <= ?", Time.now).or(query.where(scheduled_at: nil))
+      end
+
+      def working_jobs(*queues)
+        queues = normalize_queues(queues, allow_empty: true)
+        query = good_job_class
+        query = query.where(queue_name: queues) if queues.any?
+        query.where(finished_at: nil).where.not(performed_at: nil)
       end
     end
   end

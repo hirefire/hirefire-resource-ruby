@@ -86,6 +86,35 @@ module HireFire
         result["count"].to_i
       end
 
+      # Counts in-flight (working) jobs: +locked_at+ set. Never folded into JQL/JQS.
+      # Plan records under +wrk+.
+      #
+      # @param queues [Array<String, Symbol>] (optional) Queue names. Empty = all.
+      # @return [Integer] In-flight locked job count.
+      # @example All queues
+      #   HireFire::Macro::QC.job_queue_working
+      # @example Named queues
+      #   HireFire::Macro::QC.job_queue_working(:default, :mailer)
+      def job_queue_working(*queues)
+        queues = normalize_queues(queues, allow_empty: true)
+
+        query = <<~SQL
+          SELECT COUNT(*) FROM #{::QC.table_name}
+          WHERE locked_at IS NOT NULL
+          #{filter_by_queues_if_any(queues)}
+        SQL
+
+        connection = ::QC.default_conn_adapter
+
+        result = if queues.any?
+          connection.execute(query, *queues.to_a)
+        else
+          connection.execute(query)
+        end
+
+        result["count"].to_i
+      end
+
       private
 
       def filter_by_queues_if_any(queues)

@@ -63,6 +63,24 @@ module HireFire
         end
       end
 
+      # Counts in-flight (working) jobs: unfinished/unexpired (v1+) rows that hold a
+      # session advisory lock on the job id (same +pg_locks+ predicate used to
+      # exclude working from waiting). Never folded into JQL/JQS. Plan records under +wrk+.
+      #
+      # @param queues [Array<String, Symbol>] (optional) Queue names. Empty = all.
+      # @return [Integer] In-flight advisory-locked job count.
+      # @example All queues
+      #   HireFire::Macro::Que.job_queue_working
+      # @example Named queues
+      #   HireFire::Macro::Que.job_queue_working(:default, :mailer)
+      def job_queue_working(*queues)
+        if version < VERSION_1_0_0
+          job_queue_working_v0(*queues)
+        else
+          job_queue_working_v1_v2(*queues)
+        end
+      end
+
       private
 
       def job_queue_latency_v0(*queues)
@@ -125,11 +143,49 @@ module HireFire
         query_job_queue_size(query, queues)
       end
 
+      def job_queue_working_v0(*queues)
+        queues = normalize_queues(queues, allow_empty: true)
+        query = <<~SQL
+          SELECT COUNT(*) AS job_queue_working
+          FROM que_jobs
+          WHERE TRUE
+          #{advisory_locked_sql}
+          #{filter_by_queues_if_any(queues)}
+        SQL
+
+        query_job_queue_working(query, queues)
+      end
+
+      def job_queue_working_v1_v2(*queues)
+        queues = normalize_queues(queues, allow_empty: true)
+        query = <<~SQL
+          SELECT COUNT(*) AS job_queue_working
+          FROM que_jobs
+          WHERE finished_at IS NULL
+          AND expired_at IS NULL
+          #{advisory_locked_sql}
+          #{filter_by_queues_if_any(queues)}
+        SQL
+
+        query_job_queue_working(query, queues)
+      end
+
       # Matches Que `job_stats` / locker: session advisory lock key is the job row id
       # (`job_id` on Que 0, `id` on Que 1+). `pg_locks` only (no `que_lockers` join).
       def not_advisory_locked_sql
         <<~SQL.chomp
           AND NOT EXISTS (
+            SELECT 1
+            FROM pg_locks
+            WHERE locktype = 'advisory'
+              AND (classid::bigint << 32) + objid::bigint = que_jobs.#{advisory_lock_id_column}
+          )
+        SQL
+      end
+
+      def advisory_locked_sql
+        <<~SQL.chomp
+          AND EXISTS (
             SELECT 1
             FROM pg_locks
             WHERE locktype = 'advisory'
@@ -149,6 +205,10 @@ module HireFire
 
       def query_job_queue_size(query, queues)
         ::Que.execute(query, queues.to_a).first.fetch(:job_queue_size).to_i
+      end
+
+      def query_job_queue_working(query, queues)
+        ::Que.execute(query, queues.to_a).first.fetch(:job_queue_working).to_i
       end
 
       def filter_by_queues_if_any(queues)

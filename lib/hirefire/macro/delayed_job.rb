@@ -94,6 +94,35 @@ module HireFire
           end
         end
 
+        # Counts in-flight (working) jobs: +failed_at+ null and +locked_at+ set.
+        # Expired locks still count until cleared (no max_run_time reclaim). Never
+        # folded into JQL/JQS. Plan records under +wrk+.
+        #
+        # @param queues [Array<String, Symbol>] (optional) Queue names. Empty = all.
+        # @return [Integer] In-flight locked job count.
+        # @raise [HireFire::Macro::Delayed::Job::MapperNotDetectedError] if neither an
+        #   ActiveRecord nor a Mongoid mapper can be detected.
+        # @example All queues
+        #   HireFire::Macro::Delayed::Job.job_queue_working
+        # @example Named queues
+        #   HireFire::Macro::Delayed::Job.job_queue_working(:default, :mailer)
+        def job_queue_working(*queues)
+          with_connection do
+            queues = normalize_queues(queues, allow_empty: true)
+
+            case mapper
+            when :active_record
+              query = ::Delayed::Job.where(failed_at: nil).where.not(locked_at: nil)
+              query = query.where(queue: queues) if queues.any?
+            when :mongoid
+              query = ::Delayed::Job.where(failed_at: nil, :locked_at.ne => nil)
+              query = query.in(queue: queues.to_a) if queues.any?
+            end
+
+            query.count
+          end
+        end
+
         private
 
         def waiting_scope

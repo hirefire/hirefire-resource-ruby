@@ -77,6 +77,23 @@ module HireFire
         end
       end
 
+      # Counts in-flight (working) jobs: +ClaimedExecution+ rows for the requested
+      # queues (same queue resolution as waiting samples, including wildcards and
+      # paused exclusion). Never folded into JQL/JQS. Plan records under +wrk+.
+      #
+      # @param queues [Array<String, Symbol>] (optional) Queue names. Empty = all.
+      # @return [Integer] In-flight claimed execution count.
+      # @example All queues
+      #   HireFire::Macro::SolidQueue.job_queue_working
+      # @example Named queues
+      #   HireFire::Macro::SolidQueue.job_queue_working(:default, :mailer)
+      def job_queue_working(*queues)
+        with_connection do
+          queues = determine_queues(queues)
+          claimed_size(queues)
+        end
+      end
+
       private
 
       def determine_queues(queues)
@@ -142,6 +159,13 @@ module HireFire
         ::SolidQueue::ScheduledExecution
           .due
           .where(queue_name: queues)
+          .count
+      end
+
+      def claimed_size(queues)
+        ::SolidQueue::ClaimedExecution
+          .joins(:job)
+          .where(solid_queue_jobs: {queue_name: queues})
           .count
       end
     end

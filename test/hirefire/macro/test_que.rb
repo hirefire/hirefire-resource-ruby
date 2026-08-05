@@ -230,6 +230,119 @@ class HireFire::Macro::QueTest < Minitest::Test
     end
   end
 
+  def test_job_queue_working_idle_is_zero
+    assert_equal 0, HireFire::Macro::Que.job_queue_working
+    assert_equal 0, HireFire::Macro::Que.job_queue_working(:default)
+  end
+
+  def test_job_queue_working_counts_in_flight_and_filters_queues
+    default = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    mailer = enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "critical", run_at: Time.now - 1})
+
+    with_advisory_locks(default.que_attrs[:id], mailer.que_attrs[:id]) do
+      assert_equal 2, HireFire::Macro::Que.job_queue_working
+      assert_equal 1, HireFire::Macro::Que.job_queue_working(:default)
+      assert_equal 1, HireFire::Macro::Que.job_queue_working(:mailer)
+      assert_equal 0, HireFire::Macro::Que.job_queue_working(:critical)
+      assert_equal 2, HireFire::Macro::Que.job_queue_working(:default, :mailer)
+      assert_equal 1, HireFire::Macro::Que.job_queue_size(:critical)
+      assert_equal 0, HireFire::Macro::Que.job_queue_size(:default)
+    end
+  end
+
+  def test_job_queue_working_excludes_finished_and_expired
+    finished = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    expired = enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 1})
+    locked = enqueue(job_options: {job_class: "BasicJob", queue: "other", run_at: Time.now - 1})
+    Que.execute("UPDATE que_jobs SET finished_at = NOW() WHERE id = #{finished.que_attrs[:id]};")
+    Que.execute("UPDATE que_jobs SET expired_at = NOW() WHERE id = #{expired.que_attrs[:id]};")
+
+    with_advisory_locks(finished.que_attrs[:id], expired.que_attrs[:id], locked.que_attrs[:id]) do
+      assert_equal 1, HireFire::Macro::Que.job_queue_working
+      assert_equal 0, HireFire::Macro::Que.job_queue_working(:default)
+      assert_equal 0, HireFire::Macro::Que.job_queue_working(:mailer)
+      assert_equal 1, HireFire::Macro::Que.job_queue_working(:other)
+    end
+  end
+
+  def test_plan_execute_que_jqs_also_samples_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    locked = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+
+    with_advisory_lock(locked.que_attrs[:id]) do
+      HireFire::Plan.execute(
+        "name" => "worker",
+        "adapter" => "que",
+        "strategy" => "jqs",
+        "queues" => ["default"],
+        "options" => {}
+      )
+
+      flushed = buffer.flush
+      assert flushed["worker"], "plan must buffer under process name"
+      assert flushed["worker"]["jqs"], "plan must sample jqs"
+      assert flushed["worker"]["wrk"], "plan must sample wrk companion"
+
+      jqs_value = flushed["worker"]["jqs"].values.last
+      wrk_value = flushed["worker"]["wrk"].values.last
+      assert_kind_of Numeric, jqs_value
+      assert_kind_of Numeric, wrk_value
+      assert_equal HireFire::Macro::Que.job_queue_working(:default), wrk_value
+      assert_equal HireFire::Macro::Que.job_queue_size(:default), jqs_value
+      assert_operator wrk_value, :>, 0
+    end
+  end
+
+  def test_plan_execute_que_jql_also_samples_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    locked = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+
+    with_advisory_lock(locked.que_attrs[:id]) do
+      HireFire::Plan.execute(
+        "name" => "worker",
+        "adapter" => "que",
+        "strategy" => "jql",
+        "queues" => ["default"],
+        "options" => {}
+      )
+
+      flushed = buffer.flush
+      assert flushed.dig("worker", "jql")
+      assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
+    end
+  end
+
+  def test_plan_execute_que_empty_queues_samples_all_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    default = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    mailer = enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 1})
+
+    with_advisory_locks(default.que_attrs[:id], mailer.que_attrs[:id]) do
+      HireFire::Plan.execute(
+        "name" => "worker",
+        "adapter" => "que",
+        "strategy" => "jqs",
+        "queues" => [],
+        "options" => {}
+      )
+
+      flushed = buffer.flush
+      assert_equal 2, flushed.dig("worker", "wrk")&.values&.last
+      assert_equal HireFire::Macro::Que.job_queue_working, flushed.dig("worker", "wrk")&.values&.last
+    end
+  end
+
   private
 
   def enqueue(*args, job_options: {}, **options)
@@ -240,13 +353,19 @@ class HireFire::Macro::QueTest < Minitest::Test
   # Hold a Que-style session advisory lock on a dedicated connection so the macro's
   # `pg_locks` anti-join sees working jobs. Residual lock count proves the lock is
   # present so size/latency zeros are not false-green from a failed lock acquire.
-  def with_advisory_lock(job_id)
-    conn = open_pg_connection
-    locked = conn.exec_params("SELECT pg_try_advisory_lock($1)", [job_id]).getvalue(0, 0)
-    refute_equal "f", locked, "expected pg_try_advisory_lock(#{job_id}) to succeed"
+  def with_advisory_lock(job_id, &block)
+    with_advisory_locks(job_id, &block)
+  end
 
-    lock_count = advisory_lock_count(job_id)
-    refute_equal 0, lock_count, "expected pg_locks to show advisory lock for job #{job_id}"
+  def with_advisory_locks(*job_ids)
+    conn = open_pg_connection
+    job_ids.each do |job_id|
+      locked = conn.exec_params("SELECT pg_try_advisory_lock($1)", [job_id]).getvalue(0, 0)
+      refute_equal "f", locked, "expected pg_try_advisory_lock(#{job_id}) to succeed"
+
+      lock_count = advisory_lock_count(job_id)
+      refute_equal 0, lock_count, "expected pg_locks to show advisory lock for job #{job_id}"
+    end
 
     yield
   ensure

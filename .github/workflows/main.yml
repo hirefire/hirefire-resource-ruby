@@ -88,11 +88,13 @@ jobs:
           - 4.0
         appraisal: ${{ fromJson(needs.matrix.outputs.list) }}
         exclude:
-          # Rails 8 and Sidekiq 8 require Ruby >= 3.2
+          # Rails 8, Sidekiq 8, and resque-retry 1.9 (resque 3) require Ruby >= 3.2
           - ruby-version: 3.1
             appraisal: rails_8
           - ruby-version: 3.1
             appraisal: sidekiq_8
+          - ruby-version: 3.1
+            appraisal: resque_3
           - ruby-version: 3.1
             appraisal: solid_queue_1
           - ruby-version: 3.1

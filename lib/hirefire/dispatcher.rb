@@ -250,12 +250,13 @@ module HireFire
 
     # Spawned only when {#enter_race?} is true ({#start} / {#ensure_job_queue_loop}).
     def job_queue_tick(generation = nil)
-      return if generation && !loop_active?(generation)
+      live = loop_live_proc(generation)
+      return unless live.call
 
       guard { @lease.request_if_due(hold: method(:hold_lease?)) }
-      return if generation && !loop_active?(generation)
+      return unless live.call
 
-      guard { @lease.sample_if_due { sample_job_queues } }
+      guard { @lease.sample_if_due { sample_job_queues(live: live) } }
     end
 
     def reset_dispatch_state_after_fork
@@ -294,21 +295,25 @@ module HireFire
       end
     end
 
-    def sample_job_queues
+    def sample_job_queues(live: nil)
       Plan.around_job_queue_sample do
         local_job_queues = configuration.job_queues
 
         @lease.job_queues.each do |entry|
+          break if live && !live.call
+
           if adapter_present?(entry)
-            sample_plan_adapter(entry, local_job_queues)
+            sample_plan_adapter(entry, local_job_queues, live: live)
           else
-            sample_strategy_only(entry, local_job_queues)
+            sample_strategy_only(entry, local_job_queues, live: live)
           end
         end
       end
     end
 
-    def sample_plan_adapter(entry, local_job_queues)
+    def sample_plan_adapter(entry, local_job_queues, live: nil)
+      return if live && !live.call
+
       name = entry["name"].to_s
       adapter = entry["adapter"]
       strategy = entry["strategy"]
@@ -320,6 +325,8 @@ module HireFire
         end
 
         warn_plan_override_once(name) if local_job_queues.find_by_name(name)
+        return if live && !live.call
+
         Plan.execute(entry)
       elsif Plan.known_adapter?(adapter)
         warn_unloaded_adapter_once(name, adapter)
@@ -328,7 +335,9 @@ module HireFire
       end
     end
 
-    def sample_strategy_only(entry, local_job_queues)
+    def sample_strategy_only(entry, local_job_queues, live: nil)
+      return if live && !live.call
+
       name = entry["name"].to_s
       strategy = entry["strategy"].to_s
 
@@ -338,7 +347,17 @@ module HireFire
       end
 
       job_queue = local_job_queues.find_by_name(name)
-      local_job_queues.sample_job_queue(job_queue, strategy) if job_queue
+      local_job_queues.sample_job_queue(job_queue, strategy, live: live) if job_queue
+    end
+
+    # Direct/test calls omit +generation+ and are always live. Loop threads pass their
+    # generation so a hung sampler that returns after {#stop} does not buffer metrics.
+    def loop_live_proc(generation)
+      if generation
+        -> { loop_active?(generation) }
+      else
+        -> { true }
+      end
     end
 
     def warn_unloaded_adapter_once(name, adapter)

@@ -6,7 +6,11 @@ module HireFire
     class JobQueues
       include Enumerable
 
-      def initialize
+      # @param configuration [HireFire::Configuration, nil] owning configuration. When set,
+      #   samples and logs use that instance (not the process-global {HireFire.configuration}),
+      #   so an abandoned sampler thread cannot write into a later reset's buffer.
+      def initialize(configuration = nil)
+        @configuration = configuration
         @job_queues = []
       end
 
@@ -36,8 +40,10 @@ module HireFire
       #
       # @param job_queue [HireFire::Source::JobQueue]
       # @param strategy [String] +jql+ or +jqs+
+      # @param live [Proc, nil] optional gate called after the sampler returns. When it is
+      #   +false+, the value is dropped (abandoned dispatcher loop after {HireFire::Dispatcher#stop}).
       # @return [void]
-      def sample_job_queue(job_queue, strategy)
+      def sample_job_queue(job_queue, strategy, live: nil)
         return unless job_queue
 
         strategy = strategy.to_s
@@ -48,6 +54,7 @@ module HireFire
         end
 
         value = job_queue.sample
+        return if live && !live.call
 
         unless valid_sample?(value)
           Log.safe(logger, :error, "[HireFire] The sampler for #{job_queue.name.inspect} returned " \
@@ -55,7 +62,7 @@ module HireFire
           return
         end
 
-        HireFire.configuration.buffer.sample(job_queue.name, strategy, coerce_sample(value))
+        buffer.sample(job_queue.name, strategy, coerce_sample(value))
       rescue => e
         Log.safe(logger, :error, "[HireFire] The sampler for #{job_queue&.name.inspect} raised " \
           "#{e.class}: #{e.message}")
@@ -80,8 +87,16 @@ module HireFire
         value.class.name
       end
 
+      def buffer
+        configuration.buffer
+      end
+
       def logger
-        HireFire.configuration.logger
+        configuration.logger
+      end
+
+      def configuration
+        @configuration || HireFire.configuration
       end
     end
   end

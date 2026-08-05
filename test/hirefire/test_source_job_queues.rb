@@ -110,6 +110,33 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
     HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql")
   end
 
+  def test_samples_write_to_the_owning_configuration_not_the_global
+    ENV["HIREFIRE_TOKEN"] = "old-token"
+    old = HireFire::Configuration.new
+    old.dyno(:worker) { 7 }
+    job_queue = old.job_queues.find_by_name("worker")
+
+    HireFire.reset
+    ENV["HIREFIRE_TOKEN"] = "new-token"
+    HireFire.configuration.dyno(:web)
+
+    old.job_queues.sample_job_queue(job_queue, "jql")
+
+    refute HireFire.configuration.buffer.flush.key?("worker")
+    assert_equal 7, old.buffer.flush.dig("worker", "jql").values.first
+  end
+
+  def test_live_gate_drops_a_sample_that_returns_after_stop
+    HireFire.configure do |config|
+      config.dyno(:worker) { 9 }
+    end
+    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
+
+    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql", live: -> { false })
+
+    assert_empty HireFire.configuration.buffer.flush
+  end
+
   def test_enumerable
     job_queues = HireFire::Source::JobQueues.new
     job_queues << HireFire::Source::JobQueue.new(:worker) { 1 }

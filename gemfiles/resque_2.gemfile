@@ -16,7 +16,7 @@ gem "minitest", "< 6"
 gem "public_suffix", "< 7"
 gem "erb", "< 5"
 gem "resque", "~> 2"
-gem "resque-retry", "~> 1"
+gem "resque-retry", "~> 1.8.0"
 gem "resque-scheduler", "~> 4"
 
 gemspec path: "../"

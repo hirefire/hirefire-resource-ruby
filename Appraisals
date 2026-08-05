@@ -63,13 +63,15 @@ end
 
 appraise "resque_2" do
   gem "resque", "~> 2"
-  gem "resque-retry", "~> 1"
+  # 1.8.x supports resque < 3 and Ruby 3.1. 1.9+ needs Ruby >= 3.2 and resque < 4.
+  gem "resque-retry", "~> 1.8.0"
   gem "resque-scheduler", "~> 4"
 end
 
 appraise "resque_3" do
   gem "resque", "~> 3"
-  gem "resque-retry", "~> 1"
+  # 1.9+ is the first line that allows resque 3; it requires Ruby >= 3.2 (CI excludes 3.1).
+  gem "resque-retry", "~> 1.9"
   gem "resque-scheduler", "~> 5"
 end
 

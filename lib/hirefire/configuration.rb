@@ -38,7 +38,7 @@ module HireFire
 
     def initialize
       @http = nil
-      @job_queues = Source::JobQueues.new
+      @job_queues = Source::JobQueues.new(self)
       @sources_by_name = {}
       @dispatcher = nil
       @logger = Logger.new($stdout)

@@ -31,7 +31,7 @@ module HireFire
       return true if built_stack_includes_hirefire?(app)
 
       false
-    rescue StandardError
+    rescue
       false
     end
 
@@ -54,7 +54,7 @@ module HireFire
         op.respond_to?(:args) ? op.args : op
       end
       Array(args).flatten.any? { |item| hirefire_middleware_class?(item) }
-    rescue StandardError
+    rescue
       false
     end
 

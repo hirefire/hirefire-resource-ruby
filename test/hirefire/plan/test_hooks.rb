@@ -25,7 +25,7 @@ class HireFire::Plan::HooksTest < Minitest::Test
       "server" => false,
       "max_scheduled" => "50",
       "not_allowed" => true,
-      skip_working: true
+      :skip_working => true
     }, SCHEMA)
 
     assert_equal({skip_working: true, server: false, max_scheduled: 50}, opts)

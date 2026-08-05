@@ -209,7 +209,7 @@ class HireFireTest < Minitest::Test
     config = HireFire.configuration
     config.logger = Logger.new(log)
     config.define_singleton_method(:stop_dispatcher) do |flush: true|
-      raise RuntimeError, "stop failed"
+      raise "stop failed"
     end
 
     HireFire.after_fork_in_parent

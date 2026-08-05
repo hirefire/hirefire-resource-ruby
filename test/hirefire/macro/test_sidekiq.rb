@@ -913,7 +913,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
   # Plant a schedule/retry member with an explicit ZSET score and body timestamps.
   # Use past score + fresh body times to residual-test eligibility age (score), not payload age.
-  def plant_sorted_set_job(set_name, queue: "default", score:, enqueued_at:, created_at: nil)
+  def plant_sorted_set_job(set_name, score:, enqueued_at:, queue: "default", created_at: nil)
     payload = {
       "queue" => queue,
       "class" => "SampleWorker",

@@ -115,7 +115,7 @@ module HireFire
               query = ::Delayed::Job.where(failed_at: nil).where.not(locked_at: nil)
               query = query.where(queue: queues) if queues.any?
             when :mongoid
-              query = ::Delayed::Job.where(failed_at: nil, :locked_at.ne => nil)
+              query = ::Delayed::Job.where(:failed_at => nil, :locked_at.ne => nil)
               query = query.in(queue: queues.to_a) if queues.any?
             end
 

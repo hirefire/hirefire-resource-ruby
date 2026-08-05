@@ -195,7 +195,7 @@ module HireFire
       if entries.size > MAX_JOB_QUEUES
         Log.safe(HireFire.configuration.logger, :error,
           "[HireFire] Lease plan truncated to #{MAX_JOB_QUEUES} job queue entries" \
-          "#{(skipped.positive?) ? " (#{skipped} invalid also skipped)" : ""}.")
+          "#{" (#{skipped} invalid also skipped)" if skipped.positive?}.")
       elsif skipped.positive?
         label = (skipped == 1) ? "entry" : "entries"
         Log.safe(HireFire.configuration.logger, :error,

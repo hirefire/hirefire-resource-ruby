@@ -78,13 +78,13 @@ module HireFire
           next if count <= 0
 
           existing = series[timestamp]
-          if existing.is_a?(Hash)
-            series[timestamp] = clamp_rqt_bucket(
+          series[timestamp] = if existing.is_a?(Hash)
+            clamp_rqt_bucket(
               existing[:sum] + sum,
               existing[:count] + count
             )
           else
-            series[timestamp] = clamp_rqt_bucket(sum, count)
+            clamp_rqt_bucket(sum, count)
           end
         end
         prune(series, now)

@@ -1065,7 +1065,7 @@ class HireFire::DispatcherTest < Minitest::Test
     stop_done = Queue.new
     start_results = Queue.new
 
-    stop_thread = Thread.new do
+    Thread.new do
       dispatcher.stop
       stop_done << true
     end
@@ -1871,7 +1871,10 @@ class HireFire::DispatcherTest < Minitest::Test
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
     mod.extend(HireFire::Errors::JobQueueLatencyUnsupported)
-    mod.define_singleton_method(:job_queue_size) { |*_queues, **_options| size_calls += 1; 9 }
+    mod.define_singleton_method(:job_queue_size) { |*_queues, **_options|
+      size_calls += 1
+      9
+    }
     mod.define_singleton_method(:job_queue_latency) do |*_queues, **_options|
       latency_calls += 1
       raise "jql must not run"
@@ -1950,7 +1953,6 @@ class HireFire::DispatcherTest < Minitest::Test
 
   def test_413_advances_watermark_without_repopulate
     stub_lease
-    bodies = []
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .to_return(status: 413, body: '{"error":"payload too large"}')
 

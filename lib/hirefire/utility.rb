@@ -20,4 +20,3 @@ module HireFire
     end
   end
 end
-

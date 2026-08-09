@@ -28,16 +28,28 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert @configuration.job_queues.none?
   end
 
-  def test_dyno_web_configures_http
+  def test_dyno_bare_web_is_noop
     @configuration.dyno(:web)
-    assert_instance_of HireFire::Source::HTTP, @configuration.http
-    assert_equal "web", @configuration.http.name
+    assert_nil @configuration.http
+    refute @configuration.rqt_enabled?
+    assert @configuration.job_queues.none?
   end
 
-  def test_dyno_web_is_case_insensitive_for_http
+  def test_dyno_bare_web_is_case_insensitive_noop
     @configuration.dyno("Web")
-    assert_instance_of HireFire::Source::HTTP, @configuration.http
-    assert_equal "Web", @configuration.http.name
+    assert_nil @configuration.http
+    refute @configuration.rqt_enabled?
+  end
+
+  def test_dyno_bare_web_warns_once
+    log = StringIO.new
+    @configuration.logger = Logger.new(log)
+
+    @configuration.dyno(:web)
+    @configuration.dyno(:Web)
+
+    assert_equal 1, log.string.scan("config.dyno(:web) without a sampler is no longer").size
+    assert_includes log.string, "You can remove"
   end
 
   def test_dyno_with_a_block_configures_a_job_queue
@@ -88,32 +100,32 @@ class HireFire::ConfigurationTest < Minitest::Test
     refute configuration.using_default_logger?
   end
 
-  def test_duplicate_same_kind_raises
-    @configuration.dyno(:web)
+  def test_duplicate_job_queue_raises
+    @configuration.dyno(:worker) { 1 }
     assert_raises(HireFire::Configuration::DuplicateDynoError) do
-      @configuration.dyno(:web)
+      @configuration.dyno(:worker) { 2 }
     end
   end
 
   def test_duplicate_name_guard_is_case_insensitive
-    @configuration.dyno(:web)
+    @configuration.dyno(:worker) { 1 }
     error = assert_raises(HireFire::Configuration::DuplicateDynoError) do
-      @configuration.dyno(:Web)
+      @configuration.dyno(:Worker) { 2 }
     end
-    assert_includes error.message, "Web"
+    assert_includes error.message, "Worker"
   end
 
-  def test_same_name_may_declare_http_and_job_queue
+  def test_bare_web_then_job_queue_under_web
     @configuration.dyno(:web)
     @configuration.dyno(:web) { 1 }
 
-    assert_equal "web", @configuration.http.name
+    assert_nil @configuration.http
     assert_equal ["web"], @configuration.job_queues.map(&:name)
   end
 
-  def test_http_name_from_explicit_web
+  def test_http_name_not_forced_by_bare_web
     @configuration.dyno(:web)
-    assert_equal "web", @configuration.http_name
+    assert_nil @configuration.http_name
   end
 
   def test_http_name_nil_without_explicit_or_identity
@@ -177,25 +189,29 @@ class HireFire::ConfigurationTest < Minitest::Test
 
   def test_rqt_liveness_allowed_when_identity_matches
     ENV["DYNO"] = "web.1"
-    @configuration.dyno(:web)
     assert @configuration.rqt_liveness?
   end
 
   def test_rqt_liveness_denied_when_identity_unresolved
-    @configuration.dyno(:web)
+    @configuration.mark_http_active!
     refute @configuration.rqt_liveness?
   end
 
-  def test_rqt_liveness_denied_when_identity_differs
+  def test_rqt_liveness_denied_when_identity_differs_from_name
     ENV["DYNO"] = "worker.1"
-    @configuration.dyno(:web)
-    refute @configuration.rqt_liveness?
+    @configuration.mark_http_active!
+    # Identity and http_name both resolve to worker, so liveness matches when armed.
+    assert @configuration.rqt_liveness?
   end
 
   def test_rqt_liveness_matches_case_insensitively
     ENV["DYNO"] = "Web.1"
-    @configuration.dyno(:web)
     assert @configuration.rqt_liveness?
+  end
+
+  def test_bare_web_does_not_arm_rqt
+    @configuration.dyno(:web)
+    refute @configuration.rqt_enabled?
   end
 
   def test_always_on_cpu_matches_case_insensitively
@@ -312,8 +328,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     log = StringIO.new
     @configuration.logger = Logger.new(log)
 
-    @configuration.dyno(:web)
-
     @configuration.active_cpu_sources
     @configuration.rqt_liveness?
 
@@ -341,10 +355,7 @@ class HireFire::ConfigurationTest < Minitest::Test
   end
 
   def test_canonical_name_preserves_first_seen_casing
-    @configuration.dyno(:Web)
-    @configuration.dyno(:web) { 1 }
-
-    assert_equal "Web", @configuration.http.name
+    @configuration.dyno(:Web) { 1 }
     assert_equal "Web", @configuration.job_queues.find_by_name("Web").name
   end
 

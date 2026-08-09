@@ -511,13 +511,13 @@ class HireFire::DispatcherTest < Minitest::Test
     bodies = capture_ingest_bodies
 
     ENV["HIREFIRE_SERVICE_NAME"] = "web"
-    HireFire.configuration.dyno(:web)
     dispatcher = HireFire.configuration.dispatcher
 
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
     Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) }
 
-    entry = bodies[1].find { |e| e["name"] == "web" }
+    # First tick establishes the CPU baseline (no sample). Second tick dispatches cpu.
+    entry = bodies.flat_map { |b| b }.find { |e| e["name"] == "web" }
     assert entry
     assert entry.dig("metrics", "cpu")
   end
@@ -947,6 +947,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
     entry = bodies[0].find { |e| e["name"] == "worker" }
     assert_equal 7, entry.dig("metrics", "jqs").values.first
+    refute_includes log.string, "UI adapter is configured"
   end
 
   def test_unknown_plan_adapter_skips_without_local_fallback
@@ -1136,7 +1137,8 @@ class HireFire::DispatcherTest < Minitest::Test
 
     entry = bodies[0].find { |e| e["name"] == "worker" }
     assert_equal 4.2, entry.dig("metrics", "jql").values.first
-    refute_includes log.string, "overrides the local sampler"
+    refute_includes log.string, "local sampler is ignored"
+    refute_includes log.string, "UI adapter is configured"
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
@@ -1165,7 +1167,9 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher.send(:job_queue_tick)
     dispatcher.send(:job_queue_tick)
 
-    assert_equal 1, log.string.scan("overrides the local sampler").size
+    assert_equal 1, log.string.scan("UI adapter is configured").size
+    assert_includes log.string, "config.dyno"
+    assert_includes log.string, "You can remove"
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)

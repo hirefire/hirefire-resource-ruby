@@ -11,9 +11,9 @@ module HireFire
   # cover them fully.
   #
   # @!attribute [r] http
-  #   The explicit HTTP source once declared via {#dyno}(:"web"), otherwise +nil+. Always-on RQT
-  #   still reports under {#http_name} when no explicit HTTP source is set.
-  #   @return [HireFire::Source::HTTP, nil]
+  #   Always +nil+. Kept for readers that still check +configuration.http+. Request queue time
+  #   uses always-on sources under {#http_name} (process identity), not an explicit http dyno.
+  #   @return [nil]
   # @!attribute [r] job_queues
   #   Local job-queue sources declared via sampler blocks on {#dyno}.
   #   @return [HireFire::Source::JobQueues]
@@ -25,12 +25,12 @@ module HireFire
   #   When true, the HTTP middleware prints +[hirefire:router] queue=…ms+ for each sample.
   #   @return [Boolean]
   class Configuration
-    # Raised when {#dyno} cannot resolve a source because a non-+"web"+ name was given without a
-    # sampler block. Bare +dyno(:web)+ is valid: the +"web"+ name implies http without a block.
+    # Raised when {#dyno} cannot resolve a source because a name was given without a sampler
+    # block (except bare +"web"+, which is a no-op for backwards compatibility).
     class MissingSamplerError < StandardError; end
 
     # Raised when a dyno name was already declared for the same source kind (names are compared
-    # case-insensitively), or a second http process is declared in the same app process.
+    # case-insensitively).
     class DuplicateDynoError < StandardError; end
 
     attr_reader :http, :job_queues, :log_queue_metrics, :logger
@@ -84,44 +84,45 @@ module HireFire
       value unless value.empty?
     end
 
-    # Declares a process by dyno name (Heroku Procfile-shaped). No +tracking:+ keyword: CPU is
-    # always-on when identity resolves, and RQT is armed by platform web role, middleware traffic,
-    # or the +"web"+ name convention below.
+    # Declares a process by dyno name (Heroku Procfile-shaped).
     #
-    # Resolution: a sampler block tracks job-queue metrics (+jql+ / +jqs+). The name +"web"+
-    # (case-insensitive) tracks http on its own. Otherwise a sampler is required.
+    # A sampler block registers a local job-queue source (+jql+ / +jqs+ under the lease plan
+    # strategy). Prefer zero-config ({HireFire.boot} / railtie + token) for request queue time
+    # and CPU, and lease plan adapters in the HireFire UI for managed job queues. Use {#dyno}
+    # with a sampler for custom probes or strategy-only (custom configuration) plan entries.
     #
-    # Prefer zero-config ({HireFire.boot} / railtie + token) for request queue time, CPU, and
-    # lease-driven job-queue metrics. Use {#dyno} for local job-queue sampler blocks (custom probes, legacy
-    # root) and optional explicit +web+ http registration.
+    # Bare +dyno(:web)+ (no block, name +"web"+ case-insensitive) is accepted for 1.x
+    # backwards compatibility but does nothing: RQT is armed only by platform web role and
+    # middleware traffic. A once-per-process warning explains that the line can be removed.
+    # +dyno(:web) { … }+ still registers a job-queue sampler under the name +"web"+.
     #
     # @param name [String, Symbol] the process name. Must be non-empty.
     # @yield a sampler returning the current job-queue metric (a non-negative, finite number).
     # @return [void]
     # @raise [ArgumentError] the name is empty.
-    # @raise [MissingSamplerError] a non-"web" name given without a sampler.
-    # @raise [DuplicateDynoError] the name was already declared for the same source kind, or a
-    #   second http process was declared.
+    # @raise [MissingSamplerError] a name other than +"web"+ given without a sampler.
+    # @raise [DuplicateDynoError] the name was already declared for the same source kind.
     # @example
-    #   config.dyno(:web) # optional; "web" implies http (zero-config usually enough)
+    #   config.dyno(:web) # no-op BC; safe to remove
     #   config.dyno(:worker) { HireFire::Macro::Sidekiq.job_queue_size(:default) }
     def dyno(name, &sampler)
       name = coerce_name!(name)
 
-      source =
-        if sampler
-          :job_queue
-        elsif name.casecmp?("web")
-          :http
-        else
-          raise MissingSamplerError,
-            "config.dyno(:#{name}) could not be resolved: it needs a sampler block " \
-            "(job-queue metrics). Only the \"web\" name implies http on its own. " \
-            "RQT is always-on via platform web role or middleware traffic; " \
-            "CPU is always-on when process identity resolves."
-        end
+      if sampler
+        register(name, :job_queue, &sampler)
+        return
+      end
 
-      register(name, source, &sampler)
+      if name.casecmp?("web")
+        warn_bare_web_dyno_once
+        return
+      end
+
+      raise MissingSamplerError,
+        "config.dyno(#{name.inspect}) could not be resolved: it needs a sampler block " \
+        "(job-queue metrics). Request queue time is always-on via platform web role or " \
+        "middleware traffic; CPU is always-on when process identity resolves. " \
+        "Bare config.dyno(:web) is a no-op and can be removed."
     end
 
     # In-memory metric buffer that accumulates samples between dispatcher flushes.
@@ -148,14 +149,11 @@ module HireFire
 
     # Process name used for request-queue-time metrics.
     #
-    # Prefer an explicit HTTP source name when declared via {#dyno}. Otherwise the resolved
-    # process identity. No invented default (e.g. not +"web"+): without a real name there is
-    # nothing reliable to report under.
+    # Resolved process identity only. No invented default (e.g. not +"web"+): without a real
+    # name there is nothing reliable to report under.
     #
     # @return [String, nil]
     def http_name
-      return @http.name if @http
-
       soft_identity
     end
 
@@ -171,25 +169,21 @@ module HireFire
     #
     # Arming layers (any one is enough):
     # 1. **Traffic-first (universal):** middleware has sampled (+mark_http_active!+).
-    # 2. **Explicit:** HTTP source declared via {#dyno}(:"web").
-    # 3. **Platform role (optional pre-traffic):** Heroku process type +"web"+ (Cedar/Fir
+    # 2. **Platform role (optional pre-traffic):** Heroku process type +"web"+ (Cedar/Fir
     #    +DYNO+ strip) or Render +RENDER_SERVICE_TYPE=web+. See {HireFire::Identity.platform_http_role?}.
     #
-    # Other platforms without a role signal wait for traffic (or explicit +dyno(:web)+). That is
-    # intentional and only affects idle heartbeats before the first request.
+    # Other platforms without a role signal wait for traffic. That only affects idle heartbeats
+    # before the first request.
     #
     # @return [Boolean]
     def rqt_enabled?
-      @http || @http_active || HireFire::Identity.platform_http_role?
+      @http_active || HireFire::Identity.platform_http_role?
     end
 
-    # The HTTP source used for sampling, creating an always-on source when none was declared
-    # and a report name is known.
+    # The HTTP source used for sampling, creating an always-on source when a report name is known.
     #
     # @return [HireFire::Source::HTTP, nil]
     def http_source
-      return @http if @http
-
       name = http_name
       if name.nil?
         warn_rqt_unresolved_once if token && (@http_active || HireFire::Identity.platform_http_role?)
@@ -248,9 +242,9 @@ module HireFire
 
     # Whether this process participates in prefork web master → worker handoff on +Process._fork+.
     #
-    # True when RQT is armed (platform web role, explicit http dyno, or prior traffic). Job-only
-    # processes stay false so Resque-style fork-per-job parents keep reporting and children do not
-    # start a short-lived dispatcher.
+    # True when RQT is armed (platform web role or prior traffic). Job-only processes stay false
+    # so Resque-style fork-per-job parents keep reporting and children do not start a short-lived
+    # dispatcher.
     #
     # @return [Boolean]
     def prefork_web_handoff?
@@ -287,16 +281,7 @@ module HireFire
           "Each dyno name maps to at most one source of each kind."
       end
 
-      case source
-      when :http
-        if @http
-          raise DuplicateDynoError,
-            "#{name.inspect} conflicts with the earlier http declaration for " \
-            "#{@http.name.inspect}. Request metrics are collected from this process's own " \
-            "http traffic, so only one HTTP source can be declared, under any name."
-        end
-        @http = Source::HTTP.new(canonical_name(name))
-      when :job_queue
+      if source == :job_queue
         @job_queues << Source::JobQueue.new(canonical_name(name), &sampler)
       end
 
@@ -307,7 +292,7 @@ module HireFire
       existing = @sources_by_name.keys.find { |key| key.casecmp?(name) }
       return name unless existing
 
-      [@http&.name, *@job_queues.map(&:name)].compact.find { |n| n.casecmp?(name) } || name
+      @job_queues.map(&:name).find { |n| n.casecmp?(name) } || name
     end
 
     def soft_identity
@@ -328,13 +313,23 @@ module HireFire
         "(#{name.bytesize}). Metrics under this identity are disabled until the name is shortened.")
     end
 
+    def warn_bare_web_dyno_once
+      return if defined?(@bare_web_dyno_warned)
+
+      @bare_web_dyno_warned = true
+      Log.safe(logger, :warn, "[HireFire] config.dyno(:web) without a sampler is no longer " \
+        "necessary. Request queue time is armed by platform web identity (for example DYNO " \
+        "type web or RENDER_SERVICE_TYPE=web) and by HTTP middleware traffic. You can remove " \
+        "this line.")
+    end
+
     def warn_rqt_unresolved_once
       return if defined?(@rqt_unresolved_warned)
 
       @rqt_unresolved_warned = true
       Log.safe(logger, :warn, "[HireFire] Request queue time samples dropped: process identity " \
         "is unresolved. Set HIREFIRE_SERVICE_NAME, or rely on DYNO / RENDER_SERVICE_NAME where " \
-        "available (or declare config.dyno(:web)).")
+        "available.")
     end
 
     def warn_heroku_conflict_once

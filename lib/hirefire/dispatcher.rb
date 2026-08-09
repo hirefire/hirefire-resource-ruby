@@ -372,10 +372,10 @@ module HireFire
       return if @plan_override_warned[name]
 
       @plan_override_warned[name] = true
-      Log.safe(logger, :info, "[HireFire] Lease plan overrides the local sampler for " \
-        "#{name.inspect}. The local sampler is ignored for this name.")
+      Log.safe(logger, :warn, "[HireFire] A HireFire UI adapter is configured for " \
+        "#{name.inspect}, so config.dyno(#{name.inspect}) with a local sampler is ignored. " \
+        "You can remove that local configuration; the UI adapter is used instead.")
     end
-
     def warn_unknown_adapter_once(name, adapter)
       return if @unknown_adapter_warned[name]
 

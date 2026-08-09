@@ -34,6 +34,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_collects_web_sample
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
 
     HireFire.configure do |config|
@@ -56,6 +57,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_reads_x_queue_start_when_request_start_is_absent
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -73,6 +75,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_prefers_x_request_start_over_x_queue_start
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -92,6 +95,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_falls_back_to_x_queue_start_when_request_start_is_blank
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -111,6 +115,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_falls_back_to_x_queue_start_when_request_start_is_whitespace
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -199,6 +204,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_normalizes_every_precision_variant_to_the_same_queue_time
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -224,6 +230,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_clamps_a_future_microsecond_start_to_zero
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -241,6 +248,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_drops_an_over_the_limit_nanosecond_start
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -258,6 +266,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_ignores_unparseable_request_start
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -273,6 +282,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_ignores_implausible_request_start
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -288,6 +298,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_lower_guard_boundary_accepts_1e9_and_rejects_below
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -308,6 +319,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_clamps_a_future_request_start_to_zero
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -325,6 +337,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_cap_boundary_keeps_exactly_the_limit_and_drops_one_over
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -345,6 +358,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_no_request_start_header_is_a_noop
+    ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
     HireFire::Dispatcher.any_instance.stubs(:start)
     HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
@@ -386,6 +400,7 @@ class HireFire::MiddlewareTest < Minitest::Test
   end
 
   def test_does_not_sample_without_a_token
+    ENV["DYNO"] = "web.1"
     HireFire.configure do |config|
       config.dyno(:web)
     end

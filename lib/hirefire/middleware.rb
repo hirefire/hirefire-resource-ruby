@@ -7,8 +7,8 @@ module HireFire
   #
   # When a token is present, records a queue-time sample (milliseconds) under the process
   # {HireFire::Configuration#http_name} and starts the dispatcher. Explicit http registration is
-  # optional. When +log_queue_metrics+ is true, also prints +[hirefire:router] queue=…ms+.
-  # Failures in this path are logged and swallowed so the host app is unaffected.
+  # optional. +log_queue_metrics+ does not emit log lines (once-warn no-op on the configuration
+  # setter). Failures in this path are logged and swallowed so the host app is unaffected.
   class Middleware
     REQUEST_QUEUE_TIME_LIMIT = 60_000
 
@@ -45,15 +45,8 @@ module HireFire
         configuration.dispatcher.ensure_job_queue_loop
       end
 
-      if configuration.log_queue_metrics
-        log_request_queue_time(request_queue_time)
-      end
     rescue => e
       Log.safe(HireFire.configuration.logger, :error, "[HireFire] Middleware error: #{e.message}")
-    end
-
-    def log_request_queue_time(request_queue_time)
-      puts "[hirefire:router] queue=#{request_queue_time}ms"
     end
 
     def present_header(value)

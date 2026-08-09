@@ -22,7 +22,8 @@ module HireFire
   #   (or a logger missing the log methods) to silence diagnostics.
   #   @return [#error, #warn, #info, nil]
   # @!attribute [rw] log_queue_metrics
-  #   When true, the HTTP middleware prints +[hirefire:router] queue=…ms+ for each sample.
+  #   Legacy 1.x flag for +[hirefire:router]+ stdout lines. On 2.x this is a no-op: setting
+  #   true warns once that the setting is ignored and can be removed. Web RQT is push-only.
   #   @return [Boolean]
   class Configuration
     # Raised when {#dyno} cannot resolve a source because a name was given without a sampler
@@ -34,7 +35,7 @@ module HireFire
     class DuplicateDynoError < StandardError; end
 
     attr_reader :http, :job_queues, :log_queue_metrics, :logger
-    attr_writer :token, :log_queue_metrics
+    attr_writer :token
 
     def initialize
       @http = nil
@@ -65,6 +66,15 @@ module HireFire
     # @return [Boolean]
     def using_default_logger?
       @default_logger
+    end
+
+    # Legacy flag. Setting true is a once-warn no-op (no +[hirefire:router]+ emit).
+    #
+    # @param value [Object] truthy enables the no-op warn path
+    # @return [void]
+    def log_queue_metrics=(value)
+      @log_queue_metrics = !!value
+      warn_log_queue_metrics_once if @log_queue_metrics
     end
 
     # The HireFire API token. Returns the value assigned in code when it is not +nil+, else the
@@ -321,6 +331,15 @@ module HireFire
         "necessary. Request queue time is armed by platform web identity (for example DYNO " \
         "type web or RENDER_SERVICE_TYPE=web) and by HTTP middleware traffic. You can remove " \
         "this line.")
+    end
+
+    def warn_log_queue_metrics_once
+      return if defined?(@log_queue_metrics_warned)
+
+      @log_queue_metrics_warned = true
+      Log.safe(logger, :warn, "[HireFire] config.log_queue_metrics is ignored. Request queue " \
+        "time is pushed to data.hirefire.io when the HTTP middleware path is armed. The " \
+        "[hirefire:router] log line is no longer emitted. You can remove this setting.")
     end
 
     def warn_rqt_unresolved_once

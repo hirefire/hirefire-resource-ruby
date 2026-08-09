@@ -238,6 +238,26 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert @configuration.log_queue_metrics
   end
 
+  def test_log_queue_metrics_true_warns_once
+    log = StringIO.new
+    @configuration.logger = Logger.new(log)
+
+    @configuration.log_queue_metrics = true
+    @configuration.log_queue_metrics = true
+
+    assert_equal 1, log.string.scan("config.log_queue_metrics is ignored").size
+    assert_includes log.string, "You can remove"
+  end
+
+  def test_log_queue_metrics_false_is_silent
+    log = StringIO.new
+    @configuration.logger = Logger.new(log)
+
+    @configuration.log_queue_metrics = false
+
+    assert_empty log.string
+  end
+
   def test_token_defaults_to_env
     ENV["HIREFIRE_TOKEN"] = "from-env"
     assert_equal "from-env", @configuration.token

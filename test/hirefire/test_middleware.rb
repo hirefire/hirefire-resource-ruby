@@ -188,7 +188,7 @@ class HireFire::MiddlewareTest < Minitest::Test
     assert_empty output
   end
 
-  def test_pass_through_and_process_log_queue_metrics
+  def test_log_queue_metrics_does_not_emit_router_line
     HireFire.configure do |config|
       config.log_queue_metrics = true
     end
@@ -200,7 +200,7 @@ class HireFire::MiddlewareTest < Minitest::Test
       end
     end
 
-    assert_equal("[hirefire:router] queue=1000ms", output.strip)
+    refute_includes output, "[hirefire:router]"
   end
 
   def test_normalizes_every_precision_variant_to_the_same_queue_time

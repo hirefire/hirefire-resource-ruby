@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Package version is **2.0.0** on `next` (pre-public). `HireFire-Agent: Ruby-2.0.0` so app dual-read floors match.
 - `config.log_queue_metrics = true` no longer prints `[hirefire:router] queue=…ms`. The flag is a once-warn no-op: web request queue time is pushed to `data.hirefire.io` when the HTTP middleware path is armed. You can remove the setting.
 
 - Sidekiq **all-queues** due JQL/JQS (empty queue list) no longer walk or decode `schedule`/`retry` members. JQS uses full `ZCOUNT` (score ≤ now). JQL uses the first ZSET score when due. `max_scheduled` is a named/server walk budget only and is ignored on client all-queues. Named-queue calls still use the rank-cursor DueCache walk. Pure Redis all-queues counts include corrupt due scores; the named walk still skips them.

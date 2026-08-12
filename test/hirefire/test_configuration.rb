@@ -245,8 +245,11 @@ class HireFire::ConfigurationTest < Minitest::Test
     @configuration.log_queue_metrics = true
     @configuration.log_queue_metrics = true
 
-    assert_equal 1, log.string.scan("config.log_queue_metrics is ignored").size
-    assert_includes log.string, "You can remove"
+    assert_equal 1, log.string.scan("config.log_queue_metrics is deprecated").size
+    assert_includes log.string, "HireFire Request Queue Time"
+    assert_includes log.string, "HIREFIRE_TOKEN"
+    assert_includes log.string, "remove this log_queue_metrics = true line"
+    assert_includes log.string, "still emit"
   end
 
   def test_log_queue_metrics_false_is_silent

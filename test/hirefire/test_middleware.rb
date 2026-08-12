@@ -188,9 +188,28 @@ class HireFire::MiddlewareTest < Minitest::Test
     assert_empty output
   end
 
-  def test_log_queue_metrics_does_not_emit_router_line
+  def test_log_queue_metrics_emits_router_line_without_token
+    ENV.delete("HIREFIRE_TOKEN")
     HireFire.configure do |config|
+      config.token = nil
       config.log_queue_metrics = true
+    end
+
+    output = capture do
+      Timecop.freeze Time.at(1_700_000_001) do
+        request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+        @middleware.call(request)
+      end
+    end
+
+    assert_includes output, "[hirefire:router] queue=1000ms"
+  end
+
+  def test_log_queue_metrics_false_does_not_emit_router_line
+    ENV.delete("HIREFIRE_TOKEN")
+    HireFire.configure do |config|
+      config.token = nil
+      config.log_queue_metrics = false
     end
 
     output = capture do

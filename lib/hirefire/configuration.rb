@@ -22,8 +22,9 @@ module HireFire
   #   (or a logger missing the log methods) to silence diagnostics.
   #   @return [#error, #warn, #info, nil]
   # @!attribute [rw] log_queue_metrics
-  #   Legacy 1.x flag for +[hirefire:router]+ stdout lines. On 2.x this is a no-op: setting
-  #   true warns once that the setting is ignored and can be removed. Web RQT is push-only.
+  #   Legacy flag: when true, middleware still prints +[hirefire:router] queue=…ms+ to
+  #   stdout (Logplex QueueTime BC). Setting true once-warns to migrate to HireFire
+  #   Request Queue Time with +HIREFIRE_TOKEN+. Preferred web RQT is push to data.hirefire.io.
   #   @return [Boolean]
   class Configuration
     # Raised when {#dyno} cannot resolve a source because a name was given without a sampler
@@ -68,9 +69,11 @@ module HireFire
       @default_logger
     end
 
-    # Legacy flag. Setting true is a once-warn no-op (no +[hirefire:router]+ emit).
+    # Legacy flag. When true, middleware still prints +[hirefire:router] queue=…ms+
+    # to stdout for Logplex QueueTime (1.x BC). Setting true also once-warns to
+    # migrate to HireFire Request Queue Time.
     #
-    # @param value [Object] truthy enables the no-op warn path
+    # @param value [Object] truthy enables stdout emit on each measured request
     # @return [void]
     def log_queue_metrics=(value)
       @log_queue_metrics = !!value
@@ -337,9 +340,10 @@ module HireFire
       return if defined?(@log_queue_metrics_warned)
 
       @log_queue_metrics_warned = true
-      Log.safe(logger, :warn, "[HireFire] config.log_queue_metrics is ignored. Request queue " \
-        "time is pushed to data.hirefire.io when the HTTP middleware path is armed. The " \
-        "[hirefire:router] log line is no longer emitted. You can remove this setting.")
+      Log.safe(logger, :warn, "[HireFire] config.log_queue_metrics is deprecated. Prefer the " \
+        "HireFire Request Queue Time strategy, set HIREFIRE_TOKEN, then remove this " \
+        "log_queue_metrics = true line. Stdout [hirefire:router] lines still emit while this " \
+        "flag is set.")
     end
 
     def warn_rqt_unresolved_once

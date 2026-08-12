@@ -7,8 +7,9 @@ module HireFire
   #
   # When a token is present, records a queue-time sample (milliseconds) under the process
   # {HireFire::Configuration#http_name} and starts the dispatcher. Explicit http registration is
-  # optional. +log_queue_metrics+ does not emit log lines (once-warn no-op on the configuration
-  # setter). Failures in this path are logged and swallowed so the host app is unaffected.
+  # optional. When +log_queue_metrics+ is true, also prints a 1.x-compatible
+  # +[hirefire:router] queue=Nms+ line to stdout (no token required; Logplex QueueTime BC).
+  # Failures in this path are logged and swallowed so the host app is unaffected.
   class Middleware
     REQUEST_QUEUE_TIME_LIMIT = 60_000
 
@@ -38,6 +39,9 @@ module HireFire
 
       configuration = HireFire.configuration
 
+      # Legacy Logplex QueueTime path: no token required (1.x parity).
+      log_request_queue_time(request_queue_time) if configuration.log_queue_metrics
+
       if configuration.token
         configuration.mark_http_active!
         configuration.http_source&.sample(request_queue_time)
@@ -47,6 +51,11 @@ module HireFire
 
     rescue => e
       Log.safe(HireFire.configuration.logger, :error, "[HireFire] Middleware error: #{e.message}")
+    end
+
+    # Exact 1.x shape for logdrain app-router parser: +[hirefire:router] queue=Nms+.
+    def log_request_queue_time(request_queue_time)
+      puts "[hirefire:router] queue=#{request_queue_time}ms"
     end
 
     def present_header(value)

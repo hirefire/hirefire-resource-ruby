@@ -28,6 +28,7 @@ module HireFire
       @last_rqt_second = nil
       @dispatch_frequency = DEFAULT_DISPATCH_FREQUENCY
       @next_dispatch_at = nil
+      @pending_sample_trace = nil
       @unloaded_adapter_warned = {}
       @plan_override_warned = {}
       @unknown_adapter_warned = {}
@@ -268,6 +269,7 @@ module HireFire
       @next_dispatch_at = nil
       @last_rqt_second = nil
       @dispatch_frequency = DEFAULT_DISPATCH_FREQUENCY
+      @pending_sample_trace = nil
       @unloaded_adapter_warned = {}
       @plan_override_warned = {}
       @unknown_adapter_warned = {}
@@ -296,19 +298,30 @@ module HireFire
     end
 
     def sample_job_queues(live: nil)
+      wave = SampleTraceWave.start
       Plan.around_job_queue_sample do
         local_job_queues = configuration.job_queues
 
         @lease.job_queues.each do |entry|
           break if live && !live.call
 
-          if adapter_present?(entry)
-            sample_plan_adapter(entry, local_job_queues, live: live)
-          else
-            sample_strategy_only(entry, local_job_queues, live: live)
+          wave.measure(entry) do
+            if adapter_present?(entry)
+              sample_plan_adapter(entry, local_job_queues, live: live)
+            else
+              sample_strategy_only(entry, local_job_queues, live: live)
+            end
           end
         end
       end
+      payload = wave.finish
+      wave.log_to(logger) if verbose?
+      @pending_sample_trace = payload if @lease.trace?
+    end
+
+    def verbose?
+      value = ENV["HIREFIRE_VERBOSE"].to_s
+      !value.empty? && !%w[0 false no].include?(value.downcase)
     end
 
     def sample_plan_adapter(entry, local_job_queues, live: nil)
@@ -450,7 +463,7 @@ module HireFire
         return
       end
 
-      Log.safe(logger, :info, "[HireFire] Dispatching metrics: #{body}") if ENV["HIREFIRE_VERBOSE"]
+      Log.safe(logger, :info, "[HireFire] Dispatching metrics: #{body}") if verbose?
       response = @client.submit_samples(body)
 
       if generation && !loop_active?(generation)
@@ -465,6 +478,7 @@ module HireFire
         # 2xx → response object; 401 → nil. Both advance watermark, no repopulate.
         apply_dispatch_frequency(response)
         @last_rqt_second = watermark if watermark
+        @pending_sample_trace = nil
       end
     rescue => e
       # Reclaim only rqt so RPM/liveness can recover. Other strategies are re-sampled next cycle.
@@ -541,7 +555,15 @@ module HireFire
         entries << {"name" => name, "metrics" => encoded}
       end
 
+      attach_sample_trace!(entries)
       [entries, watermark]
+    end
+
+    # Sibling on the first process report when the grant asked for trace. Not mixed into series.
+    def attach_sample_trace!(entries)
+      return if @pending_sample_trace.nil? || entries.empty? || !@lease.trace?
+
+      entries.first["sample_trace"] = @pending_sample_trace
     end
 
     # HTTP process rqt: liveness backfill when enabled (sets watermark); otherwise flush

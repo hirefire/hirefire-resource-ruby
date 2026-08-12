@@ -355,9 +355,44 @@ class HireFire::LeaseTest < Minitest::Test
     lease.request_if_due(hold: ->(_) { true })
 
     assert lease.granted?
+    refute lease.trace?
     assert_equal 1, lease.job_queues.size
     assert_equal "worker", lease.job_queues[0]["name"]
     assert_equal "sidekiq", lease.job_queues[0]["adapter"]
+  end
+
+  def test_parses_grant_trace_true
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "15"
+      }, body: {
+        version: 1,
+        trace: true,
+        job_queues: [{"name" => "worker", "strategy" => "jql"}]
+      }.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert lease.granted?
+    assert lease.trace?
+  end
+
+  def test_trace_false_for_string_or_missing
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "15"
+      }, body: {
+        version: 1,
+        trace: "true",
+        job_queues: []
+      }.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert lease.granted?
+    refute lease.trace?
   end
 
   def test_ignores_oversized_grant_body

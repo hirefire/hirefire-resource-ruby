@@ -15,18 +15,22 @@ class HireFire::DispatcherTest < Minitest::Test
     HireFire.configuration.logger = Logger.new(log)
   end
 
-  def stub_lease(granted: false, job_queues: nil)
+  def stub_lease(granted: false, job_queues: nil, trace: false)
     body = if job_queues.nil?
       if granted
-        {version: 1, job_queues: [
+        payload = {version: 1, job_queues: [
           {"name" => "worker", "strategy" => "jql", "adapter" => nil, "queues" => [], "options" => {}},
           {"name" => "mailer", "strategy" => "jql", "adapter" => nil, "queues" => [], "options" => {}}
-        ]}.to_json
+        ]}
+        payload[:trace] = true if trace
+        payload.to_json
       else
         ""
       end
     else
-      {version: 1, job_queues: job_queues}.to_json
+      payload = {version: 1, job_queues: job_queues}
+      payload[:trace] = true if trace
+      payload.to_json
     end
 
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
@@ -402,6 +406,49 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher.send(:tick)
 
     assert_requested ingest
+  end
+
+  def test_sample_trace_attached_when_grant_trace_true
+    stub_lease(granted: true, trace: true)
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_workers_only
+    dispatcher.send(:job_queue_tick)
+    dispatcher.send(:tick)
+
+    assert_equal 1, bodies.size
+    assert bodies[0].first.key?("sample_trace"), "sample_trace attaches to first process report"
+    entry = bodies[0].first
+    assert entry["sample_trace"].key?("wave_ms")
+    assert entry["sample_trace"]["ops"].is_a?(Array)
+    assert_equal 2, entry["sample_trace"]["ops"].size, "one op per plan job_queue entry"
+    assert entry["sample_trace"]["ops"].all? { |op| op["strategy"] == "jql" && op.key?("ms") }
+    bodies[0].drop(1).each { |e| refute e.key?("sample_trace") }
+  end
+
+  def test_sample_trace_absent_without_grant_trace
+    stub_lease(granted: true, trace: false)
+    bodies = capture_ingest_bodies
+
+    dispatcher = configure_workers_only
+    dispatcher.send(:job_queue_tick)
+    dispatcher.send(:tick)
+
+    assert bodies.any?
+    bodies[0].each { |e| refute e.key?("sample_trace") }
+  end
+
+  def test_verbose_logs_sample_timings_without_server_trace
+    ENV["HIREFIRE_VERBOSE"] = "1"
+    stub_lease(granted: true, trace: false)
+
+    dispatcher = configure_workers_only
+    dispatcher.send(:job_queue_tick)
+
+    assert_includes log.string, "sample_job_queues wave_ms="
+    assert_includes log.string, "sample adapter="
+  ensure
+    ENV.delete("HIREFIRE_VERBOSE")
   end
 
   def test_lease_denied_skips_worker_collection

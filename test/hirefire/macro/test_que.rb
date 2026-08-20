@@ -138,7 +138,6 @@ class HireFire::Macro::QueTest < Minitest::Test
     job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
     Que.execute("UPDATE que_jobs SET error_count = 3 WHERE id = #{job.que_attrs[:id]};")
 
-    # Do not copy Que AR `ready` (drops error_count > 0). Due retries still wait.
     assert_equal 1, HireFire::Macro::Que.job_queue_size
   end
 
@@ -146,13 +145,11 @@ class HireFire::Macro::QueTest < Minitest::Test
     job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 60})
     Que.execute("UPDATE que_jobs SET error_count = 3 WHERE id = #{job.que_attrs[:id]};")
 
-    # Same waiting set as size: do not drop error_count > 0 (Que AR `ready` would).
     assert_in_delta 60, HireFire::Macro::Que.job_queue_latency, LATENCY_DELTA
   end
 
   def test_v0_size_path_counts_due_jobs_without_finished_filter
     HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
-    # Test DB is Que 1+/2 schema (`id`, not `job_id`). Pin lock column so v0 SQL runs.
     HireFire::Macro::Que.stubs(:advisory_lock_id_column).returns("id")
 
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
@@ -170,7 +167,6 @@ class HireFire::Macro::QueTest < Minitest::Test
     job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
     Que.execute("UPDATE que_jobs SET finished_at = NOW() WHERE id = #{job.que_attrs[:id]};")
 
-    # v0 SQL has no finished_at/expired_at predicates (those columns are v1+).
     assert_equal 1, HireFire::Macro::Que.job_queue_size
   end
 

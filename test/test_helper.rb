@@ -28,11 +28,6 @@ require "mocha/minitest"
 require "webmock/minitest"
 require "timecop"
 
-# Timecop mocks Time.now but leaves two Process clocks live. Bridge both to the frozen
-# wall time so a single Timecop.freeze drives every clock the code (and Sidekiq) reads.
-# mock_process_clock freezes CLOCK_REALTIME (Sidekiq stamps enqueued_at from it).
-# The prepend freezes CLOCK_MONOTONIC (Timecop never freezes it, and the dispatcher
-# and lease pace off it).
 Timecop.mock_process_clock = true
 
 Process.singleton_class.prepend(Module.new do

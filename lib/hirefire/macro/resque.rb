@@ -58,8 +58,6 @@ module HireFire
         batch = 1000
         total_size = 0
         current_time = Time.now.to_i
-        # Score-cursor pagination (exclusive min). Offset-based LIMIT re-skips from 0
-        # each page and is O(n²) on large delayed sets.
         min_score = "-inf"
 
         loop do

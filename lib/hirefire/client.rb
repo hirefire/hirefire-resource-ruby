@@ -49,8 +49,6 @@ module HireFire
       when Net::HTTPServerError
         raise RequestError, "Server responded with #{response.code} status."
       else
-        # Net::HTTP maps 413 to HTTPRequestEntityTooLarge; fall back on code for stacks
-        # that return a generic response object.
         return :payload_too_large if response.code.to_i == 413
 
         raise RequestError, "Unexpected response code #{response.code}."

@@ -12,7 +12,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
   def setup
     super
-    # Before clear: prior suite must not leave sample_active true.
     refute HireFire::Macro::Sidekiq::DueCache.sample_active?,
       "product suite must never inherit an open sample wave"
     HireFire::Macro::Sidekiq::DueCache.clear_all
@@ -195,8 +194,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   end
 
   def test_job_queue_latency_excludes_working_jobs
-    # Realistic WorkSet entry: nested payload with old enqueued_at/created_at so a
-    # regression that folds WorkSet payload ages into JQL reports ~900, not 0.
     enqueue_working(
       run_at: Time.now.to_i - 600,
       enqueued_at: Time.now.to_f - 900,
@@ -336,9 +333,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
   def test_job_queue_size_with_jobs_using_client_lookup
     populate_queue
-    # populate_queue composition (waiting default 5, with working 6):
-    # live: default+critical+low = 3; due schedule = 1; due retry = 1; working = 1 (excluded by default)
-    # futures on schedule/retry do not count.
 
     assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size # 3 live + 1 schedule + 1 retry
     assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(skip_scheduled: true) # 3 live + 1 retry
@@ -355,7 +349,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
   def test_job_queue_size_with_jobs_using_server_lookup
     populate_queue
-    # Same composition as client_lookup (server Lua path).
 
     assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(server: true)
     assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_scheduled: true)
@@ -469,7 +462,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal HireFire::Macro::Sidekiq.job_queue_working(:default), wrk_value
     assert_equal HireFire::Macro::Sidekiq.job_queue_size(:default), jqs_value
     assert_operator wrk_value, :>, 0
-    # Waiting-only jqs must not include working.
     assert_equal jqs_value, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: true)
   end
 
@@ -579,7 +571,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, skip_retries: true, skip_working: true)
 
-    # Walk budget: named client and server still cap. Client all-queues ZCOUNT does not.
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, max_scheduled: 3, skip_retries: true, skip_working: true)
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, max_scheduled: 3, skip_retries: true, skip_working: true)
     assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 3, skip_retries: true, skip_working: true)
@@ -593,7 +584,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, **options)
     assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, **options)
 
-    # Cap 2 with 5 older foreign dues: foreign must not consume the cap.
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, skip_retries: true, skip_working: true)
   end
@@ -604,7 +594,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, max_scheduled: 0, skip_retries: true, skip_working: true)
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, max_scheduled: 0, skip_retries: true, skip_working: true)
-    # Client all-queues ZCOUNT ignores the walk budget.
     assert_equal 6, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 0, skip_retries: true, skip_working: true)
   end
 
@@ -626,7 +615,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal total, HireFire::Macro::Sidekiq.job_queue_size(**options)
     assert_equal 1_500, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, max_scheduled: 1_500, **options)
     assert_equal 1_500, HireFire::Macro::Sidekiq.job_queue_size(:default, max_scheduled: 1_500, **options)
-    # Client all-queues still returns the full due set under max_scheduled.
     assert_equal total, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: 1_500, **options)
   end
 
@@ -671,7 +659,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   end
 
   def test_count_with_redis_loads_script_and_retries_on_noscript
-    # Sidekiq 7/8 default to RedisClient; still exercise the redis-rb rescue path.
     introduced_redis = false
     unless defined?(::Redis::CommandError)
       Object.const_set(:Redis, Module.new) unless defined?(::Redis)
@@ -834,7 +821,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue
     enqueue_working(run_at: Time.now.to_i + 120)
 
-    # live=1; future working excluded by modern path even with skip_working: false.
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_working: false),
       "modern JQS counts live only (excludes future run_at working)"
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_working: false)
@@ -1000,7 +986,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
         "enqueued_at" => enqueued_at,
         "created_at" => created_at
       }
-      # payload as JSON string matches Sidekiq processor WORK_STATE (jobstr).
       worker_data = {
         "queue" => queue,
         "run_at" => run_at,

@@ -12,7 +12,6 @@ module HireFire
       extend HireFire::Plan::Hooks
       extend self
 
-      # Lease-plan option schema: strategy → field → coercion type.
       PLAN_OPTION_SCHEMA = {
         "jql" => {
           "skip_retries" => :boolean,

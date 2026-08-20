@@ -44,8 +44,6 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     Timecop.freeze(5.seconds.ago) do
       insert_blocked_job(BlockedJob, queue: :mailer)
     end
-    # Blocked is concurrency throttle, not free-worker backlog. Exclude all blocked
-    # (including expired) from JQL.
     Timecop.freeze(5.seconds.from_now) do
       assert_in_delta 0, HireFire::Macro::SolidQueue.job_queue_latency, LATENCY_DELTA
       assert_in_delta 0, HireFire::Macro::SolidQueue.job_queue_latency(:default), LATENCY_DELTA
@@ -67,7 +65,6 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     Timecop.freeze(2.minutes.ago) { insert_claimed_job(BasicJob) }
     Timecop.freeze(3.minutes.ago) { insert_blocked_job(BlockedJob, queue: :mailer) }
     Timecop.freeze(1.minute.ago) { BasicJob.set(queue: :other).perform_later }
-    # Due scheduled older than ready: global JQL must track scheduled age, not claimed/blocked.
     Timecop.freeze(4.minutes.ago) do
       BasicJob.set(queue: :mailer_notification, wait_until: 1.second.from_now).perform_later
     end
@@ -159,7 +156,6 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size
     assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size(:default)
     assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size(:default, :mailer)
-    # Expired blocked still excluded (concurrency, not free-worker waiting).
     Timecop.freeze(15.seconds.from_now) do
       assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size
       assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size(:default)

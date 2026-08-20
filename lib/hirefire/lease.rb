@@ -11,7 +11,6 @@ module HireFire
     MAX_JOB_QUEUES = 64
     MAX_NAME_BYTES = 128
 
-    # Parsed grant JSON: plan entries plus optional sample-trace arm.
     GrantBody = Struct.new(:job_queues, :trace, keyword_init: true)
 
     # Plan entries from the lease grant body (+"job_queues"+).
@@ -78,7 +77,6 @@ module HireFire
         raise
       end
 
-      # Abandoned after stop/restart: ignore late responses entirely (no field writes).
       return if @epoch != epoch
 
       if response.is_a?(Net::HTTPUnauthorized)
@@ -95,8 +93,6 @@ module HireFire
         raise Client::RequestError, "Lease request failed with #{response.code} status."
       end
 
-      # Parse into locals first, then commit only if the epoch is still current so demote!
-      # during this method cannot leave half-applied cadence/plan state.
       next_sample_frequency = @sample_frequency
       next_sample_at = @next_sample_at
       if response.key?("HireFire-Sample-Frequency")
@@ -130,8 +126,6 @@ module HireFire
       @expires_at = next_expires_at
 
       if granted && !hold_ok
-        # Drop local grant and rotate process_id so the server exclusive lease is not
-        # renewed. Another process that can sample can win after the server TTL expires.
         @granted = false
         @trace = false
         @job_queues = []
@@ -144,8 +138,6 @@ module HireFire
         @granted = granted
         @trace = granted && grant_body.trace
         @job_queues = grant_body.job_queues
-        # Re-arm sampling immediately on false→true so a long sample_frequency window from a
-        # prior grant does not delay the first sample under the new hold.
         @next_sample_at = Clock.monotonic if granted && !was_granted
       end
     end

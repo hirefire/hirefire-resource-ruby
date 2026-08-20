@@ -190,7 +190,6 @@ class HireFire::LeaseTest < Minitest::Test
 
     refute lease.granted?
     assert_empty lease.job_queues
-    # Rotate process_id so the exclusive server lease is not sticky-renewed.
     refute_equal original_process_id, lease.process_id
   end
 
@@ -213,7 +212,6 @@ class HireFire::LeaseTest < Minitest::Test
     lease.sample_if_due { :sampled }
     far_deadline = lease.instance_variable_get(:@next_sample_at)
 
-    # Advance past TTL so renew is due; frequency drops 15→1.
     lease.instance_variable_set(:@expires_at, HireFire::Clock.monotonic - 1)
     lease.request_if_due(hold: ->(_) { true })
 

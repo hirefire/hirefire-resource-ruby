@@ -47,7 +47,6 @@ class HireFire::Source::CPUTest < Minitest::Test
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
-    # 0.25 cores used / 0.5 entitlement * 100 = 50%
     assert_equal({1001 => 50.0}, buffer.flush.dig("clock", "cpu"))
   end
 

@@ -126,7 +126,6 @@ class HireFire::SampleTraceWaveTest < Minitest::Test
     payload["ops"].each do |op|
       assert_operator payload["wave_ms"], :>=, op["ms"]
     end
-    # Sequential ops plus gaps; 1ms slack for clock resolution.
     assert_operator payload["wave_ms"] + 1.0, :>=, ops_ms
     assert_operator payload["wave_ms"], :>=, 10
   end

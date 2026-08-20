@@ -32,7 +32,6 @@ class HireFire::BufferTest < Minitest::Test
 
   def test_rqt_caps_count_at_sample_count_limit
     Timecop.freeze Time.at(100) do
-      # Seed near the cap without iterating 1e6 times.
       series = buffer.send(:series_for, "web", "rqt")
       series[100] = {sum: 0.0, count: HireFire::Buffer::SAMPLE_COUNT_LIMIT}
       buffer.sample("web", "rqt", 1)
@@ -40,7 +39,6 @@ class HireFire::BufferTest < Minitest::Test
       data = buffer.flush
       bucket = data["web"]["rqt"][100]
       assert_equal HireFire::Buffer::SAMPLE_COUNT_LIMIT, bucket[:count]
-      # Cap must freeze both sum and count (mean stays honest on the wire).
       assert_in_delta 0.0, bucket[:sum], 0.0001
     end
   end
@@ -182,7 +180,6 @@ class HireFire::BufferTest < Minitest::Test
   end
 
   def test_vector_c_repopulate_merge_sum_and_count
-    # Normative vector C: repopulate {10,1} + live {30,2} → {40,3}
     Timecop.freeze Time.at(100) do
       buffer.repopulate("web", "rqt", {100 => {sum: 10.0, count: 1}})
       buffer.sample("web", "rqt", 15)

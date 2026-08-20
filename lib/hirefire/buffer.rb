@@ -2,8 +2,6 @@
 
 module HireFire
   class Buffer
-    # Per-leaf request count cap (mirrors server SAMPLE_COUNT_LIMIT). Optional
-    # client stop so pathological RPS does not grow count unboundedly in memory.
     SAMPLE_COUNT_LIMIT = 1_000_000
 
     def initialize(ttl: 60)
@@ -95,7 +93,6 @@ module HireFire
 
     def clamp_rqt_bucket(sum, count)
       if count > SAMPLE_COUNT_LIMIT
-        # Keep mean: scale sum to the capped count so mean * n stays consistent.
         mean = sum / count
         {sum: mean * SAMPLE_COUNT_LIMIT, count: SAMPLE_COUNT_LIMIT}
       else

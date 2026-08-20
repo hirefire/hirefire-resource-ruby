@@ -45,7 +45,6 @@ module HireFire
 
           parts = line.split
           usec = number(parts[1]) if parts.length > 1
-          # Real zero usage is valid; only nil/malformed falls through the ladder.
           usec / 1_000_000.0 unless usec.nil?
         end
 

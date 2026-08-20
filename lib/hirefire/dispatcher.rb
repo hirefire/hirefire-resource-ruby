@@ -9,9 +9,6 @@ module HireFire
     METRIC_VALUE_LIMIT = 1e15
     DEFAULT_DISPATCH_FREQUENCY = 1
     MAX_DISPATCH_FREQUENCY = 30
-    # Bound how long {#stop} waits for each loop thread. A hung job-queue sampler can
-    # outlive this; the thread is abandoned (not killed) so a mid-mutex kill cannot
-    # deadlock final flush/close. MRI terminates leftover threads when the process exits.
     JOIN_TIMEOUT = 5
 
     def initialize
@@ -49,11 +46,9 @@ module HireFire
         return false if @stopping
         return false if healthy_running_locked?
 
-        # Latched @running with a dead main loop: clear so we can respawn (mirrors JQ path).
         if @running && @pid == Process.pid && !@thread&.alive?
           @running = false
           @thread = nil
-          # Retire a still-alive JQ loop from the dead generation before spawning a new one.
           if @job_queue_thread&.alive?
             retired_jq = @job_queue_thread
             @job_queue_thread = nil
@@ -67,8 +62,6 @@ module HireFire
           reset_dispatch_state_after_fork
         end
 
-        # Same-PID restart (stop→start or dead-main resurrection): reset pacing/watermark/lease
-        # so we do not inherit a long dispatch window or a stale local grant.
         unless after_fork
           reset_dispatch_state_for_restart
           @lease.demote!
@@ -99,7 +92,6 @@ module HireFire
     # @return [void]
     def ensure_job_queue_loop
       return if @job_queue_thread&.alive? && @running && @pid == Process.pid && !@stopping
-      # Pure web processes never enter the race: avoid taking the lifecycle mutex on every RQT sample.
       return unless enter_race?
 
       @mutex.synchronize do
@@ -146,11 +138,8 @@ module HireFire
         threads&.each { |thread| join_loop_thread(thread) }
 
         if flush
-          # Final flush is intentional stop work (no generation fence).
           dispatch
         else
-          # Prefork parent / no-flush stop: drop buffered samples so a later same-PID
-          # restart does not flush pre-fork data as live metrics.
           buffer.discard_inherited
         end
 
@@ -158,7 +147,6 @@ module HireFire
 
         true
       ensure
-        # Always close transports even when final dispatch raises (socket leak otherwise).
         begin
           @client.close
         rescue => e
@@ -277,8 +265,6 @@ module HireFire
       @unknown_strategy_warned = {}
     end
 
-    # --- lease race / job-queue sampling --------------------------------------
-
     # Enter the race when this process might sample job queues (local dynos or an
     # allowlisted library is loaded). Holding the grant is separate — see {#hold_lease?}.
     def enter_race?
@@ -389,6 +375,7 @@ module HireFire
         "#{name.inspect}, so config.dyno(#{name.inspect}) with a local sampler is ignored. " \
         "You can remove that local configuration; the UI adapter is used instead.")
     end
+
     def warn_unknown_adapter_once(name, adapter)
       return if @unknown_adapter_warned[name]
 
@@ -427,7 +414,6 @@ module HireFire
       return if generation && !loop_active?(generation)
 
       dispatch(generation)
-      # Only advance pacing when this generation still owns the process.
       if generation.nil? || loop_active?(generation)
         @next_dispatch_at = Clock.monotonic + @dispatch_frequency
       end
@@ -455,9 +441,6 @@ module HireFire
         return drop_oversized_payload(body, watermark)
       end
 
-      # Re-check after building the body: stop may have completed during CPU/sample work.
-      # Dead gen must not POST. For stop(flush: true), hand data back so the final flush can
-      # send it. For stop(flush: false), drop (must not undo discard).
       if generation && !loop_active?(generation)
         repopulate_rqt(data) if handoff_to_final_flush?
         return
@@ -467,7 +450,6 @@ module HireFire
       response = @client.submit_samples(body)
 
       if generation && !loop_active?(generation)
-        # Response arrived after stop: do not advance watermark or apply frequency for a dead gen.
         return
       end
 
@@ -475,15 +457,11 @@ module HireFire
       when :payload_too_large
         drop_oversized_payload(body, watermark, server: true)
       else
-        # 2xx → response object; 401 → nil. Both advance watermark, no repopulate.
         apply_dispatch_frequency(response)
         @last_rqt_second = watermark if watermark
         @pending_sample_trace = nil
       end
     rescue => e
-      # Reclaim only rqt so RPM/liveness can recover. Other strategies are re-sampled next cycle.
-      # Pre-encode buckets only (never synthetic backfill empties). Hand off to final flush when
-      # stop(flush: true) is in progress; otherwise skip if this generation died.
       if data && (generation.nil? || loop_active?(generation) || handoff_to_final_flush?)
         repopulate_rqt(data)
       end

@@ -95,7 +95,6 @@ class HireFire::ClientTest < Minitest::Test
     client.submit_samples("[]")
     http = client.instance_variable_get(:@http)
 
-    # Net::HTTP.new(host, port, nil) forces p_addr nil so ambient http(s)_proxy is ignored.
     assert_nil http.proxy_address
     refute http.proxy_from_env?
   ensure
@@ -399,7 +398,6 @@ class HireFire::ClientTest < Minitest::Test
     first = client.instance_variable_get(:@http)
 
     ENV["HIREFIRE_DATA_URL"] = "https://other.example.com"
-    # Client memoizes ingest URI; build a fresh client for the new host.
     other = HireFire::Client.new
     stub_request(:post, "https://other.example.com/metrics/ingest").to_return(status: 200)
     other.submit_samples("[]")

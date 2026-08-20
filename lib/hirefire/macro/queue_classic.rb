@@ -34,7 +34,6 @@ module HireFire
           FROM #{::QC.table_name}
           WHERE scheduled_at <= now()
             AND locked_at IS NULL
-          #{filter_by_queues_if_any(queues)}
           ORDER BY scheduled_at ASC
           LIMIT 1
         SQL
@@ -72,7 +71,6 @@ module HireFire
           SELECT COUNT(*) FROM #{::QC.table_name}
           WHERE scheduled_at <= now()
             AND locked_at IS NULL
-          #{filter_by_queues_if_any(queues)}
         SQL
 
         connection = ::QC.default_conn_adapter
@@ -101,7 +99,6 @@ module HireFire
         query = <<~SQL
           SELECT COUNT(*) FROM #{::QC.table_name}
           WHERE locked_at IS NOT NULL
-          #{filter_by_queues_if_any(queues)}
         SQL
 
         connection = ::QC.default_conn_adapter

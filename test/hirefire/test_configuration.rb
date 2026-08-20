@@ -200,7 +200,6 @@ class HireFire::ConfigurationTest < Minitest::Test
   def test_rqt_liveness_denied_when_identity_differs_from_name
     ENV["DYNO"] = "worker.1"
     @configuration.mark_http_active!
-    # Identity and http_name both resolve to worker, so liveness matches when armed.
     assert @configuration.rqt_liveness?
   end
 

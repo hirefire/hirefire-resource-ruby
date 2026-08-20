@@ -102,7 +102,6 @@ module HireFire
 
           nil
         when :non_negative_integer
-          # Strict integers only (no Float truncation: Integer(50.9) == 50).
           case value
           when Integer
             value if value >= 0

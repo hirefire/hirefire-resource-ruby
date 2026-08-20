@@ -5,9 +5,6 @@ module HireFire
   # token is present.
   class Railtie < ::Rails::Railtie
     initializer "hirefire.insert_middleware", after: :load_config_initializers do |app|
-      # Avoid double-counting RQT/RPM when the app also +use+s the middleware manually.
-      # Run after config initializers so a manual +config.middleware.use+ is already queued.
-      # Initializer blocks run on the railtie instance, so keep these helpers as instance methods.
       next if middleware_already_queued?(app)
 
       app.config.middleware.insert 0, HireFire::Middleware
@@ -15,7 +12,6 @@ module HireFire
 
     config.after_initialize do
       cfg = HireFire.configuration
-      # Prefer the app logger when the host has not set one explicitly.
       cfg.logger = ::Rails.logger if cfg.using_default_logger? && defined?(::Rails) && ::Rails.logger
       HireFire.boot if cfg.token
     end

@@ -250,7 +250,7 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher.send(:tick)
 
     assert_not_requested(:post, "https://data.hirefire.io/metrics/ingest")
-    refute_includes log.string, "401"
+    refute_match(/\b401\b/, log.string)
   end
 
   def test_web_buffer_discarded_on_unauthorized
@@ -563,7 +563,6 @@ class HireFire::DispatcherTest < Minitest::Test
     Timecop.freeze(Time.at(1000)) { dispatcher.send(:tick) }
     Timecop.freeze(Time.at(1001)) { dispatcher.send(:tick) }
 
-    # First tick establishes the CPU baseline (no sample). Second tick dispatches cpu.
     entry = bodies.flat_map { |b| b }.find { |e| e["name"] == "web" }
     assert entry
     assert entry.dig("metrics", "cpu")
@@ -697,7 +696,6 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher.instance_variable_set(:@generation, 2)
 
     HireFire.configuration.buffer.sample("web", "rqt", 99)
-    # Stale loop still holds a pre-restart generation and must not dispatch.
     dispatcher.send(:loop_until_stopped, 1) { dispatcher.send(:tick) }
 
     assert_empty bodies
@@ -774,7 +772,6 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher = HireFire.configuration.dispatcher
     assert dispatcher.start
 
-    # Let the job-queue loop enter the hanging sampler.
     sleep 0.2
 
     log = StringIO.new
@@ -899,7 +896,6 @@ class HireFire::DispatcherTest < Minitest::Test
     bodies = capture_ingest_bodies
 
     dispatcher = configure_web_only
-    # Enough values for CPU sample + dispatch pacing across two ticks.
     HireFire::Clock.stubs(:monotonic).returns(
       500.0, 500.0, 500.0,
       502.0, 502.0, 502.0,
@@ -1054,8 +1050,6 @@ class HireFire::DispatcherTest < Minitest::Test
     ])
     bodies = capture_ingest_bodies
 
-    # Local sampler keeps the grant so the plan path still runs (unsupported
-    # strategy alone would demote and never sample).
     HireFire.configuration.dyno(:other) { 0 }
     dispatcher = HireFire.configuration.dispatcher
     dispatcher.send(:job_queue_tick)
@@ -1120,7 +1114,6 @@ class HireFire::DispatcherTest < Minitest::Test
 
     starters = 8.times.map do
       Thread.new do
-        # Contended with stop: must not leave a half-running dispatcher.
         start_results << dispatcher.start
       end
     end
@@ -1131,7 +1124,6 @@ class HireFire::DispatcherTest < Minitest::Test
     results << start_results.pop until start_results.empty?
 
     refute dispatcher.running?
-    # After stop finishes, start must work again.
     assert dispatcher.start
     assert dispatcher.running?
     dispatcher.stop
@@ -1400,7 +1392,6 @@ class HireFire::DispatcherTest < Minitest::Test
     dead.join
     refute dead.alive?
 
-    # Mark running without spawning loops so ensure_job_queue_loop is the only starter.
     dispatcher.instance_variable_set(:@running, true)
     dispatcher.instance_variable_set(:@pid, Process.pid)
     dispatcher.instance_variable_set(:@generation, 1)
@@ -1451,7 +1442,6 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher.instance_variable_set(:@pid, Process.pid)
     dispatcher.instance_variable_set(:@generation, 2)
 
-    # Generation 1 is stale at entry: no flush, no POST (samples stay buffered).
     dispatcher.send(:dispatch, 1)
 
     assert_not_requested ingest
@@ -1471,8 +1461,6 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher.instance_variable_set(:@pid, Process.pid)
     dispatcher.instance_variable_set(:@generation, 1)
 
-    # After flush, generation dies (stop(flush: false) path). Must not POST and must not
-    # repopulate (would undo discard).
     calls = 0
     dispatcher.define_singleton_method(:loop_active?) do |generation|
       calls += 1
@@ -1570,7 +1558,6 @@ class HireFire::DispatcherTest < Minitest::Test
     calls = 0
     dispatcher.define_singleton_method(:loop_active?) do |_generation|
       calls += 1
-      # Active through build/POST; dead for post-response apply.
       calls <= 2
     end
 
@@ -1595,7 +1582,6 @@ class HireFire::DispatcherTest < Minitest::Test
     calls = 0
     dispatcher.define_singleton_method(:loop_active?) do |_generation|
       calls += 1
-      # Active for flush/build; dead for rescue repopulate check.
       calls <= 2
     end
 
@@ -1644,7 +1630,6 @@ class HireFire::DispatcherTest < Minitest::Test
     calls = 0
     dispatcher.define_singleton_method(:loop_active?) do |_generation|
       calls += 1
-      # First check in dispatch_if_due and early dispatch pass; later checks fail.
       calls == 1
     end
 
@@ -1781,7 +1766,6 @@ class HireFire::DispatcherTest < Minitest::Test
     ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
     dispatcher = configure_web_only
 
-    # Equality is accepted: body of exactly PAYLOAD_SIZE_LIMIT still POSTs.
     Timecop.freeze Time.at(1000) do
       HireFire.configuration.buffer.sample("web", "rqt", 1)
       JSON.stubs(:generate).returns("e" * limit)
@@ -1790,7 +1774,6 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_requested ingest, times: 1
     refute_includes log.string, "Dropped metrics payload"
 
-    # Strict greater drops without a request and logs the oversize path.
     Timecop.freeze Time.at(1001) do
       HireFire.configuration.buffer.sample("web", "rqt", 1)
       JSON.stubs(:generate).returns("o" * (limit + 1))
@@ -1813,7 +1796,6 @@ class HireFire::DispatcherTest < Minitest::Test
       buffer = HireFire.configuration.buffer
       buffer.instance_variable_get(:@mutex).synchronize do
         metrics = buffer.instance_variable_get(:@metrics)
-        # Mix finite and non-finite so a POST still happens (liveness + real leaf).
         metrics["web"] = {
           "rqt" => {
             1000 => {sum: Float::INFINITY, count: 1},

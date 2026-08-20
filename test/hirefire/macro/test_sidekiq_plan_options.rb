@@ -23,7 +23,6 @@ class HireFire::Macro::SidekiqPlanOptionsTest < Minitest::Test
   end
 
   def test_coerces_option_values_strictly
-    # Invalid boolean string "false" is dropped (strict coerce). Boolean false is kept.
     opts = HireFire::Macro::Sidekiq.plan_options("jqs", {
       "skip_working" => "false",
       "server" => false,

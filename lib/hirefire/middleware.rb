@@ -28,8 +28,6 @@ module HireFire
     private
 
     def process_request_queue_time(env)
-      # Prefer X-Request-Start, then X-Queue-Start. Blank / whitespace-only values are
-      # absent so an empty Request-Start does not block Queue-Start fallback.
       request_start = present_header(env["HTTP_X_REQUEST_START"]) ||
         present_header(env["HTTP_X_QUEUE_START"])
       return unless request_start
@@ -39,7 +37,6 @@ module HireFire
 
       configuration = HireFire.configuration
 
-      # Legacy Logplex QueueTime path: no token required (1.x parity).
       log_request_queue_time(request_queue_time) if configuration.log_queue_metrics
 
       if configuration.token
@@ -48,7 +45,6 @@ module HireFire
         configuration.dispatcher.start
         configuration.dispatcher.ensure_job_queue_loop
       end
-
     rescue => e
       Log.safe(HireFire.configuration.logger, :error, "[HireFire] Middleware error: #{e.message}")
     end

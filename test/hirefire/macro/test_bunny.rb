@@ -131,21 +131,18 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     saved = keys.to_h { |k| [k, ENV[k]] }
     keys.each { |k| ENV.delete(k) }
 
-    # Higher-priority key wins when several are set (order of the || chain).
     ENV["AMQP_URL"] = "amqp://amqp.example/vhost"
     ENV["RABBITMQ_URL"] = "amqp://rabbitmq.example/vhost"
     ENV["RABBITMQ_BIGWIG_URL"] = "amqp://bigwig.example/vhost"
     ENV["CLOUDAMQP_URL"] = "amqp://cloudamqp.example/vhost"
     expect_bunny_connection("amqp://amqp.example/vhost")
 
-    # First unset, second wins over lower keys.
     keys.each { |k| ENV.delete(k) }
     ENV["RABBITMQ_URL"] = "amqp://rabbitmq.example/vhost"
     ENV["RABBITMQ_BIGWIG_URL"] = "amqp://bigwig.example/vhost"
     ENV["CLOUDAMQP_URL"] = "amqp://cloudamqp.example/vhost"
     expect_bunny_connection("amqp://rabbitmq.example/vhost")
 
-    # Each name alone, then the localhost default.
     cascade = [
       ["AMQP_URL", "amqp://amqp-only.example/vhost"],
       ["RABBITMQ_URL", "amqp://rabbitmq-only.example/vhost"],

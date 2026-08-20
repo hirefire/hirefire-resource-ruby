@@ -22,7 +22,6 @@ class HireFire::PlanTest < Minitest::Test
     assert HireFire::Plan.known_strategy?("jql")
     assert HireFire::Plan.known_strategy?("jqs")
     refute HireFire::Plan.known_strategy?("rpm")
-    # wrk is a companion series, not a lease plan strategy entry.
     refute HireFire::Plan.known_strategy?("wrk")
   end
 

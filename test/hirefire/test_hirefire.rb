@@ -280,10 +280,8 @@ class HireFireTest < Minitest::Test
       read_io.close
       begin
         dispatcher = HireFire.configuration.dispatcher
-        # Job-only child must abandon inherited state (not auto-start).
         running = dispatcher.running?
         buffer_empty = HireFire.configuration.buffer.flush.empty?
-        # at_exit-equivalent: stop must not POST abandoned parent samples.
         dispatcher.stop
         write_io.write([running ? "running" : "stopped", buffer_empty ? "empty" : "full"].join(","))
       ensure
@@ -322,8 +320,6 @@ class HireFireTest < Minitest::Test
           exit!(1)
         end
 
-        # HireFire registers at_exit { configuration.stop_dispatcher } at load time.
-        # Observe that path by wrapping stop_dispatcher on this configuration instance.
         config = HireFire.configuration
         config.define_singleton_method(:stop_dispatcher) do
           was_running = dispatcher.running?
@@ -336,7 +332,6 @@ class HireFireTest < Minitest::Test
         write_io.close
         exit!(1)
       end
-      # Plain exit (not exit!) so registered at_exit handlers run.
       exit(0)
     end
     write_io.close

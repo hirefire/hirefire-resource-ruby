@@ -73,6 +73,7 @@ module HireFire
         HireFire::Dispatcher.any_instance.stubs(:start)
         HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
         ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+        ENV["DYNO"] = "web.1"
         HireFire.configure { |config| config.dyno(:web) }
       end
     end

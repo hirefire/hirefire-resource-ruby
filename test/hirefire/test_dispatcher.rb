@@ -1123,7 +1123,10 @@ class HireFire::DispatcherTest < Minitest::Test
     results = []
     results << start_results.pop until start_results.empty?
 
+    # A starter can win the post-stop retry window after @stopping clears.
+    dispatcher.stop if dispatcher.running?
     refute dispatcher.running?
+    refute_empty results
     assert dispatcher.start
     assert dispatcher.running?
     dispatcher.stop

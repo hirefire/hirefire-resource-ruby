@@ -2,7 +2,7 @@
 
 module HireFire
   module Clock
-    module_function
+    extend self
 
     def monotonic
       Process.clock_gettime(Process::CLOCK_MONOTONIC)

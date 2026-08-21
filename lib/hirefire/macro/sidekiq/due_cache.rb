@@ -3,25 +3,6 @@
 module HireFire
   module Macro
     module Sidekiq
-      # Process-local, sample-wave-scoped cache that amortizes Sidekiq schedule/retry due walks
-      # across many macro calls in one Dispatcher#sample_job_queues run.
-      #
-      # Stores eligibility scores (+oldest_at+), per-queue due counts, and a rank cursor.
-      # Latency ages are recomputed at read time against the live clock. Live lists and the
-      # Lua (+server: true+) path never use this cache.
-      #
-      # All-queues (empty queue list) due JQL/JQS never walk or decode ZSET members: JQS uses
-      # +ZCOUNT+ (score ≤ now), JQL uses the first member's score via +ZRANGE 0 0+. Those paths
-      # do not write the rank cache, so they never mark +complete+ or poison named free-hits.
-      # +max_scheduled+ is a named-walk budget only (ignored for all-queues +ZCOUNT+).
-      # Named-queue calls still use the rank-cursor walk below.
-      #
-      # Lifetime is one sample wave: +begin_sample!+ opens a clean epoch, +end_sample!+ clears
-      # maps. Within a wave, free-hits reuse the registry. Outside a wave (console / one-off),
-      # each +cache_for+ installs a fresh object so ad-hoc calls never share leftover state.
-      # +now_fill+ is frozen at install for that set within the wave.
-      #
-      # @api private
       class DueCache
         BATCH = 1_000
         TRACE_LIMIT = 1_000
@@ -47,9 +28,7 @@ module HireFire
             end
           end
 
-          # Child-side fork reset: new mutex + empty registry. Must not lock the inherited
-          # mutex (it may be stuck if the parent held it across fork).
-          def reinit_after_fork!
+          def reinit_after_fork
             @mutex = Mutex.new
             @condition = ConditionVariable.new
             @sample_active = false
@@ -61,10 +40,6 @@ module HireFire
             @generation_seq = {}
           end
 
-          # Open a sample-wave epoch (one Dispatcher#sample_job_queues run). Clears registry,
-          # filling, and generation counters so every wave starts at rank 0.
-          #
-          # @return [Integer] monotonic wave token for +end_sample!+ ownership fencing
           def begin_sample!
             mutex.synchronize do
               @wave_seq = (@wave_seq || 0) + 1
@@ -78,14 +53,6 @@ module HireFire
             end
           end
 
-          # Close the sample-wave epoch. Clears maps so the next wave cannot free-hit.
-          #
-          # When +wave+ is given (token from +begin_sample!+), no-ops unless that wave is still
-          # active. An abandoned hung sample must not clear a later generation's maps.
-          # When +wave+ is nil, force-clears the current wave (tests / explicit teardown).
-          #
-          # @param wave [Integer, nil]
-          # @return [Boolean] true when maps were cleared
           def end_sample!(wave = nil)
             mutex.synchronize do
               if !wave.nil? && @active_wave != wave
@@ -101,8 +68,6 @@ module HireFire
             end
           end
 
-          # Safe for external/test callers. Hot path under mutex must read +@sample_active+
-          # directly (Ruby Mutex is not re-entrant).
           def sample_active?
             mutex.synchronize { @sample_active == true }
           end
@@ -115,16 +80,10 @@ module HireFire
             mutex.synchronize { @trace_log = [] }
           end
 
-          # @return [DueCache, nil]
           def peek(set_name)
             mutex.synchronize { registry[set_name.to_s] }
           end
 
-          # Due latency contribution for one ZSET (schedule or retry), in seconds.
-          #
-          # @param set_name [String] +"schedule"+ or +"retry"+
-          # @param queues [Set] empty means all queues
-          # @return [Float]
           def latency(set_name, queues)
             needed = needed_from(queues)
             return all_queues_latency(set_name) if needed == :all
@@ -138,13 +97,6 @@ module HireFire
             Time.now.to_f - score
           end
 
-          # Due size contribution for one ZSET.
-          #
-          # @param set_name [String] +"schedule"+ or +"retry"+
-          # @param queues [Set] empty means all queues
-          # @param max_scheduled [Integer, nil] named schedule walk budget only (ignored for
-          #   all-queues +ZCOUNT+)
-          # @return [Integer]
           def size(set_name, queues, max_scheduled: nil)
             set_name = set_name.to_s
             needed = needed_from(queues)
@@ -163,11 +115,6 @@ module HireFire
             count
           end
 
-          # Ensures the due walk is far enough for +mode+/+needed+, then returns the cache
-          # object the caller must read (the filled draft or a satisfied registry entry).
-          # Never re-peeks the registry after a fill: that avoids TOCTOU with concurrent install.
-          #
-          # @return [DueCache]
           def ensure_walk(set_name, mode:, needed:, max_scheduled: nil)
             set_name = set_name.to_s
             max_scheduled = nil unless set_name == "schedule" && mode == :jqs
@@ -246,8 +193,6 @@ module HireFire
             (queues.nil? || queues.empty?) ? :all : queues
           end
 
-          # All-queues due JQL: eligibility score of the oldest ZSET member when due.
-          # One +ZRANGE 0 0 WITHSCORES+; never decodes the job body or walks ranks.
           def all_queues_latency(set_name)
             first = zrange_first_with_score(set_name.to_s)
             return 0.0 if first.nil?
@@ -259,8 +204,6 @@ module HireFire
             now - score
           end
 
-          # All-queues due JQS: count members with score ≤ now via +ZCOUNT+. No walk budget
-          # (+max_scheduled+ is for named/server walks only). Never decodes job bodies.
           def all_queues_size(set_name)
             zcount_due(set_name.to_s)
           end
@@ -271,7 +214,6 @@ module HireFire
             end.to_i
           end
 
-          # @return [Array(String, Float), nil] first member and score, or nil when empty
           def zrange_first_with_score(set_name)
             batch = ::Sidekiq.redis do |connection|
               if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("7.0.0")

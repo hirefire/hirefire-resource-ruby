@@ -6,7 +6,7 @@ module HireFire
   module Source
     class CPU
       module Usage
-        module_function
+        extend self
 
         CGROUP_V2_USAGE = "/sys/fs/cgroup/cpu.stat"
         CGROUP_V1_USAGE = "/sys/fs/cgroup/cpuacct/cpuacct.usage"

@@ -624,7 +624,7 @@ class HireFire::PlanTest < Minitest::Test
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, {"a" => a, "b" => b})
 
-    HireFire::Plan.reinit_macros_after_fork!
+    HireFire::Plan.reinit_macros_after_fork
     assert_equal [:a, :b], called
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)

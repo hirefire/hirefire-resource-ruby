@@ -792,7 +792,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
     old_mutex = Cache.send(:mutex)
     old_condition = Cache.send(:condition)
-    Cache.reinit_after_fork!
+    Cache.reinit_after_fork
     refute_same old_mutex, Cache.send(:mutex)
     refute_same old_condition, Cache.send(:condition)
     assert_nil Cache.peek("schedule")
@@ -820,10 +820,10 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
     finished = false
     reinit_thread = Thread.new do
-      Cache.reinit_after_fork!
+      Cache.reinit_after_fork
       finished = true
     end
-    refute_nil reinit_thread.join(1.0), "reinit_after_fork! deadlocked on stuck inherited mutex"
+    refute_nil reinit_thread.join(1.0), "reinit_after_fork deadlocked on stuck inherited mutex"
     assert finished
     refute_same old_mutex, Cache.send(:mutex)
     assert_nil Cache.peek("schedule")
@@ -1759,8 +1759,6 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     recover_due_cache_after_concurrency!
   end
 
-  # --- JQS skip isolation ---
-
   def test_jqs_skip_scheduled_and_skip_retries_isolation
     Timecop.freeze(Time.now - 100) { enqueue_scheduled(queue: "default") }
     Timecop.freeze(Time.now - 80) { enqueue_retry(queue: "default") }
@@ -1794,8 +1792,6 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_nil Cache.peek("retry")
     refute_nil Cache.peek("schedule")
   end
-
-  # --- BATCH boundary ---
 
   def test_batch_boundary_multi_batch_rank_and_resume
     batch = Cache::BATCH
@@ -1843,8 +1839,6 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal [1, 1 + batch], resume_starts, "resume must cross a full BATCH after cursor"
   end
 
-  # --- reinit filling clear + draft isolation ---
-
   def test_reinit_after_fork_clears_filling_and_generation
     Cache.begin_sample!
     Cache.send(:mutex).synchronize do
@@ -1857,7 +1851,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       Cache.send(:registry)["schedule"] = Cache.new("schedule", now_f: Time.now.to_f, generation: 7)
     end
 
-    Cache.reinit_after_fork!
+    Cache.reinit_after_fork
 
     refute Cache.sample_active?
     Cache.send(:mutex).synchronize do
@@ -1881,8 +1875,6 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       assert_equal 1, draft.total_due
     end
   end
-
-  # --- nits: score == now_fill inclusive; named post-complete min ---
 
   def test_score_equal_now_fill_counts_as_due
     t0 = Time.at(1_700_000_000)
@@ -1950,7 +1942,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   # Full reinit after concurrent tests that may Thread#kill while holding the mutex.
   def recover_due_cache_after_concurrency!
-    Cache.reinit_after_fork!
+    Cache.reinit_after_fork
     Cache.begin_sample!
     Cache.trace = false
     Cache.clear_trace!

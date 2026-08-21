@@ -2,47 +2,27 @@
 
 module HireFire
   module Source
-    # Collection of local {HireFire::Source::JobQueue} sources declared on the configuration.
     class JobQueues
       include Enumerable
 
-      # @param configuration [HireFire::Configuration, nil] owning configuration. When set,
-      #   samples and logs use that instance (not the process-global {HireFire.configuration}),
-      #   so an abandoned sampler thread cannot write into a later reset's buffer.
       def initialize(configuration = nil)
         @configuration = configuration
         @job_queues = []
       end
 
-      # @param job_queue [HireFire::Source::JobQueue]
-      # @return [Array<HireFire::Source::JobQueue>]
       def <<(job_queue)
         @job_queues << job_queue
       end
 
-      # Case-insensitive match (same rule as config duplicate-name detection). The
-      # returned source keeps its canonical declared name for emit.
-      #
-      # @param name [String]
-      # @return [HireFire::Source::JobQueue, nil]
       def find_by_name(name)
         needle = name.to_s
         @job_queues.find { |job_queue| job_queue.name.casecmp?(needle) }
       end
 
-      # @yieldparam job_queue [HireFire::Source::JobQueue]
-      # @return [Enumerator] if no block is given
       def each(&block)
         @job_queues.each(&block)
       end
 
-      # Samples a job-queue source and buffers a valid metric under the given wire strategy.
-      #
-      # @param job_queue [HireFire::Source::JobQueue]
-      # @param strategy [String] +jql+ or +jqs+
-      # @param live [Proc, nil] optional gate called after the sampler returns. When it is
-      #   +false+, the value is dropped (abandoned dispatcher loop after {HireFire::Dispatcher#stop}).
-      # @return [void]
       def sample_job_queue(job_queue, strategy, live: nil)
         return unless job_queue
 

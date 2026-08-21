@@ -10,10 +10,6 @@ module HireFire
       @ttl = ttl
     end
 
-    # Records a sample. Strategy-default write rule:
-    # - rqt: accumulate sum+count for the current Unix second
-    # - everything else: latest-wins bare Numeric
-    # Non-finite / non-Numeric values are ignored (defense in depth).
     def sample(name, strategy, value)
       return unless value.is_a?(Numeric) && value.finite?
 
@@ -42,26 +38,15 @@ module HireFire
       end
     end
 
-    # Clears samples inherited across a fork (parent CPU/job-queue state). Any RQT already
-    # recorded on the child's first request before {Dispatcher#start} is also dropped —
-    # one sample is negligible compared to a simpler, complete reset.
-    #
-    # Prefer {#reinit_after_fork} in the child: it replaces the mutex so a lock held at
-    # +Process._fork+ cannot deadlock the child.
     def discard_inherited
       @mutex.synchronize { @metrics = {} }
     end
 
-    # Child-side fork reset: new mutex + empty metrics. Must not lock the inherited
-    # mutex (it may be stuck if the parent held it across fork).
     def reinit_after_fork
       @mutex = Mutex.new
       @metrics = {}
     end
 
-    # Re-insert previously flushed rqt buckets ({sum, count} per second). Merges
-    # with any live bucket for the same second by adding sum and count. Caps at
-    # SAMPLE_COUNT_LIMIT (same as sample) so wire weight stays honest with mean.
     def repopulate(name, strategy, data)
       strategy = strategy.to_s
       return unless strategy == "rqt"

@@ -49,7 +49,6 @@ module HireFire
       Log.safe(HireFire.configuration.logger, :error, "[HireFire] Middleware error: #{e.message}")
     end
 
-    # Exact 1.x shape for logdrain app-router parser: +[hirefire:router] queue=Nms+.
     def log_request_queue_time(request_queue_time)
       puts "[hirefire:router] queue=#{request_queue_time}ms"
     end

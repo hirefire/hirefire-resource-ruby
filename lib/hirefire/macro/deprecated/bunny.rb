@@ -64,12 +64,6 @@ module HireFire
         module Private
           extend self
 
-          # Counts the number of messages in the specified queues.
-          #
-          # @param channel [Bunny::Channel] The channel to interact with RabbitMQ.
-          # @param queues [Array<String, Symbol>] The names of the queues to count messages from.
-          # @param options [Hash] The options for the queues, including durability and priority settings.
-          # @return [Integer] The total number of messages across all specified queues.
           def count_messages(channel, queues, options)
             queues.inject(0) do |sum, queue|
               queue_options = {durable: options[:durable]}

@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 module HireFire
-  # Rails integration that inserts {HireFire::Middleware} and starts always-on collectors when a
-  # token is present.
   class Railtie < ::Rails::Railtie
     initializer "hirefire.insert_middleware", after: :load_config_initializers do |app|
       next if middleware_already_queued?(app)
@@ -18,9 +16,6 @@ module HireFire
 
     private
 
-    # +config.middleware+ is a MiddlewareStackProxy during initializers: operations are
-    # deferred and there is no live +#middlewares+ list. Inspect the proxy's operations
-    # (and the built stack when available) for an existing HireFire::Middleware insert/use.
     def middleware_already_queued?(app)
       stack = app.config.middleware
       return true if operations_include_hirefire?(stack)

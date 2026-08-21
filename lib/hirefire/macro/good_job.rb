@@ -82,8 +82,6 @@ module HireFire
 
       private
 
-      # Ready queue relation aligned with GoodJob's +queued+ notion (unfinished and not started),
-      # plus null +scheduled_at+ as due, and discard +error_event+ as defense in depth.
       def ready_jobs(*queues)
         queues = normalize_queues(queues, allow_empty: true)
         query = good_job_class

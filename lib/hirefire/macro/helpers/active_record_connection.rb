@@ -3,11 +3,6 @@
 module HireFire
   module Macro
     module Helpers
-      # Optional Active Record pool checkout for macros that query via AR.
-      #
-      # Safe outside Rails: when Active Record (or its connection pool) is absent,
-      # the block runs with no pool interaction. Use from SQL-backed macros so
-      # long-lived HireFire sampler threads check connections back in.
       module ActiveRecordConnection
         private
 

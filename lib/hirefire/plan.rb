@@ -54,13 +54,6 @@ module HireFire
       STRATEGIES.key?(strategy.to_s)
     end
 
-    # Whether the allowlisted adapter can sample +strategy+ when its library is loaded.
-    # Used by the dispatcher to skip unsupported pairs (e.g. Bunny/Resque + +jql+) without
-    # re-invoking the macro every sample tick.
-    #
-    # @param adapter [String, Symbol]
-    # @param strategy [String, Symbol]
-    # @return [Boolean]
     def supports_strategy?(adapter, strategy)
       macro = ADAPTERS[adapter.to_s]
       return false unless macro
@@ -69,12 +62,6 @@ module HireFire
       macro.supports_plan_strategy?(strategy)
     end
 
-    # Run +block+ as one job-queue sample wave. Every allowlisted macro receives
-    # {HireFire::Plan::Hooks#before_sample_job_queues} / +after_sample_job_queues+
-    # (defaults no-op). Dispatcher must not know adapter cache details.
-    #
-    # @yield
-    # @return [Object] the block's return value
     def around_job_queue_sample
       tokens = {}
       ADAPTERS.each do |name, macro|
@@ -96,11 +83,7 @@ module HireFire
       end
     end
 
-    # Notify every allowlisted macro after fork / abandoned inherited state.
-    # Mirrors buffer reinit sites on the dispatcher.
-    #
-    # @return [void]
-    def reinit_macros_after_fork!
+    def reinit_macros_after_fork
       ADAPTERS.each do |name, macro|
         macro.reinit_after_fork
       rescue => e
@@ -150,8 +133,6 @@ module HireFire
 
     private
 
-    # Primary jql/jqs (or other plan strategy) sample. Returns true when a value
-    # was buffered so companions like +wrk+ may run.
     def sample_job_strategy(macro, name, strategy, method_name, queues, options)
       value = macro.public_send(method_name, *queues, **options)
       unless valid_sample?(value)
@@ -164,9 +145,6 @@ module HireFire
       true
     end
 
-    # Companion in-flight series for adapters that implement +job_queue_working+
-    # (e.g. Sidekiq). Same queues as the jql/jqs sample. Unconditional (not gated
-    # on hold). Failures are logged and do not drop the job strategy sample.
     def sample_working(macro, name, queues)
       wrk = macro.job_queue_working(*queues)
       unless valid_sample?(wrk)
@@ -185,9 +163,6 @@ module HireFire
       HireFire.configuration.buffer.sample(name, strategy, coerce_sample(value))
     end
 
-    # Returns an Array of queue names, or +nil+ when the entry must be skipped.
-    # Missing / null +queues+ → [] (macro may sample all queues when allow_empty).
-    # Non-array, or a non-empty list that filters to empty → skip (do not widen to all).
     def normalize_queues(queues, name:)
       return [] if queues.nil?
 

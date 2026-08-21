@@ -67,8 +67,6 @@ class HireFire::Source::CPU::PlatformTest < Minitest::Test
     Usage.stubs(:process_seconds).returns(nil)
   end
 
-  # --- Cedar (Heroku classic): entitlement ---
-
   def test_cedar_basic_1x_fingerprint_not_host_nproc
     ENV["DYNO"] = "web.1"
     closed_world(
@@ -101,8 +99,6 @@ class HireFire::Source::CPU::PlatformTest < Minitest::Test
     end
   end
 
-  # Private-S and Shield-S share the 1 GiB Standard-2X fingerprint key
-  # (cpu-platform-samples.md decision log: no Private/Shield special case).
   def test_cedar_private_s_and_shield_s_one_gib_fingerprint_no_space_special_case
     ENV["DYNO"] = "run.8256"
     closed_world(
@@ -121,8 +117,6 @@ class HireFire::Source::CPU::PlatformTest < Minitest::Test
 
     assert_in_delta 8.0, Usage.available_cpus, DELTA
   end
-
-  # --- Cedar: /proc usage ---
 
   def test_cedar_basic_formation_puma_master_and_worker_proc_sum
     master = fixture("cedar/proc_basic_formation_puma_master.txt")
@@ -156,8 +150,6 @@ class HireFire::Source::CPU::PlatformTest < Minitest::Test
     assert_equal :proc, source
     assert_in_delta 0.0, seconds, DELTA
   end
-
-  # --- Fir (Heroku CNB) ---
 
   def test_fir_dyno_1c_0_5gb_cpu_stat_usage
     closed_world(
@@ -202,8 +194,6 @@ class HireFire::Source::CPU::PlatformTest < Minitest::Test
     assert_nil Usage.read(Usage::CEDAR_MEMORY_LIMIT)
     assert_in_delta 0.9, Usage.available_cpus, DELTA
   end
-
-  # --- Render ---
 
   def test_render_starter_cpu_stat_usage
     closed_world(

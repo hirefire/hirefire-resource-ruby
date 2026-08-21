@@ -62,9 +62,6 @@ module HireFire
       @default_logger = false
     end
 
-    # True until {#logger=} has been called (railtie may replace the stdout default).
-    #
-    # @return [Boolean]
     def using_default_logger?
       @default_logger
     end
@@ -160,42 +157,18 @@ module HireFire
       @dispatcher&.stop(flush: flush)
     end
 
-    # Process name used for request-queue-time metrics.
-    #
-    # Resolved process identity only. No invented default (e.g. not +"web"+): without a real
-    # name there is nothing reliable to report under.
-    #
-    # @return [String, nil]
     def http_name
       soft_identity
     end
 
-    # Marks this process as serving HTTP (middleware has sampled). Universal always-on RQT arm
-    # for any platform once real traffic is observed.
-    #
-    # @return [void]
     def mark_http_active!
       @http_active = true
     end
 
-    # Whether this process should emit the +rqt+ wire metric (real samples and/or liveness).
-    #
-    # Arming layers (any one is enough):
-    # 1. **Traffic-first (universal):** middleware has sampled (+mark_http_active!+).
-    # 2. **Platform role (optional pre-traffic):** Heroku process type +"web"+ (Cedar/Fir
-    #    +DYNO+ strip) or Render +RENDER_SERVICE_TYPE=web+. See {HireFire::Identity.platform_http_role?}.
-    #
-    # Other platforms without a role signal wait for traffic. That only affects idle heartbeats
-    # before the first request.
-    #
-    # @return [Boolean]
     def rqt_enabled?
       @http_active || HireFire::Identity.platform_http_role?
     end
 
-    # The HTTP source used for sampling, creating an always-on source when a report name is known.
-    #
-    # @return [HireFire::Source::HTTP, nil]
     def http_source
       name = http_name
       if name.nil?
@@ -209,12 +182,6 @@ module HireFire
       @always_on_http
     end
 
-    # Whether +rqt+ liveness claims (heartbeats and backfill) may be synthesized for this process.
-    #
-    # Requires RQT arming, a resolved process identity, and that identity matching {#http_name}.
-    # Unresolved identity never synthesizes liveness (no guessing).
-    #
-    # @return [Boolean]
     def rqt_liveness?
       return false unless rqt_enabled?
 
@@ -224,13 +191,6 @@ module HireFire
       identity.casecmp?(http_name)
     end
 
-    # Always-on CPU source for this process when identity resolves.
-    #
-    # Unresolved identity yields no CPU sources (no declaration can enable CPU without
-    # identity) and logs once so operators notice missing +HIREFIRE_SERVICE_NAME+ / platform
-    # identity env.
-    #
-    # @return [Array<HireFire::Source::CPU>]
     def active_cpu_sources
       identity = soft_identity
       if identity.nil?
@@ -244,22 +204,11 @@ module HireFire
       [@always_on_cpu]
     end
 
-    # Drop process-local always-on source instances after a fork so CPU baselines are not
-    # inherited from the parent. Called from {HireFire::Dispatcher} on child restart.
-    #
-    # @return [void]
     def reset_after_fork
       @always_on_cpu = nil
       @always_on_http = nil
     end
 
-    # Whether this process participates in prefork web master → worker handoff on +Process._fork+.
-    #
-    # True when RQT is armed (platform web role or prior traffic). Job-only processes stay false
-    # so Resque-style fork-per-job parents keep reporting and children do not start a short-lived
-    # dispatcher.
-    #
-    # @return [Boolean]
     def prefork_web_handoff?
       rqt_enabled?
     end

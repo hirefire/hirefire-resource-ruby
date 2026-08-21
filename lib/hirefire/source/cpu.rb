@@ -2,11 +2,6 @@
 
 module HireFire
   module Source
-    # CPU utilization source for an always-on process identity name.
-    #
-    # @!attribute [r] name
-    #   The process name this source reports under.
-    #   @return [String]
     class CPU
       attr_reader :name
 
@@ -17,13 +12,6 @@ module HireFire
         @last_source = nil
       end
 
-      # Samples CPU utilization and buffers a percentage when a delta is available.
-      #
-      # The first sample only seeds a baseline. Later samples no-op when the usage source changes,
-      # elapsed time is non-positive, usage went backwards, or available CPUs cannot be determined.
-      # A successful sample is clamped to 0-100 and rounded to two decimal places.
-      #
-      # @return [void]
       def sample
         time = Clock.monotonic
         usage, source = Usage.reading

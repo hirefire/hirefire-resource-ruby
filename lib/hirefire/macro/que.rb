@@ -158,8 +158,6 @@ module HireFire
         query_job_queue_working(query, queues)
       end
 
-      # Matches Que `job_stats` / locker: session advisory lock key is the job row id
-      # (`job_id` on Que 0, `id` on Que 1+). `pg_locks` only (no `que_lockers` join).
       def not_advisory_locked_sql
         <<~SQL.chomp
           AND NOT EXISTS (

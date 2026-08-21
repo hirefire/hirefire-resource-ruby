@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 module HireFire
-  # One job-queue sample wave: monotonic start, per-op timings, finish payload for
-  # +sample_trace+ / verbose logging.
   class SampleTraceWave
     def self.start
       new
@@ -14,7 +12,6 @@ module HireFire
       @payload = nil
     end
 
-    # Times +block+ and records one op for +entry+. Returns the block's result.
     def measure(entry)
       op_start = Clock.monotonic
       result = yield
@@ -22,7 +19,6 @@ module HireFire
       result
     end
 
-    # Records one op with a pre-measured duration in milliseconds.
     def record(entry, ms)
       @payload = nil
       entry = {} unless entry.is_a?(Hash)
@@ -39,8 +35,6 @@ module HireFire
       self
     end
 
-    # Wire payload: +{ "wave_ms" => Number, "ops" => [ ... ] }+.
-    # Ops is a copy so later +record+ does not mutate a previous finish handle.
     def finish
       @payload ||= {
         "wave_ms" => elapsed_ms(@start),
@@ -48,7 +42,6 @@ module HireFire
       }
     end
 
-    # Verbose sample timing lines (same format as the former dispatcher helper).
     def log_to(logger)
       payload = finish
       Log.safe(logger, :info,

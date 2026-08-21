@@ -59,7 +59,7 @@ module HireFire
       #
       # @return [void]
       def reinit_after_fork
-        DueCache.reinit_after_fork!
+        DueCache.reinit_after_fork
       end
 
       # Calculates the maximum job queue latency using Sidekiq. If no queues are specified, it
@@ -154,7 +154,6 @@ module HireFire
           ::Sidekiq::Queue.all.map(&:name).to_set
         end
 
-        # WorkSet / process work hashes. +queues+ is a Set (possibly empty = all).
         def working_size(queues)
           now = Time.now
           now_as_i = now.to_i

@@ -58,7 +58,7 @@ module HireFire
         after_fork = @pid && @pid != Process.pid
         if after_fork
           buffer.reinit_after_fork
-          Plan.reinit_macros_after_fork!
+          Plan.reinit_macros_after_fork
           reset_dispatch_state_after_fork
         end
 
@@ -110,7 +110,7 @@ module HireFire
     # Stops the dispatcher loops and closes transport resources.
     #
     # Joins local loop threads for up to {JOIN_TIMEOUT} seconds each. A hung sampler is abandoned
-    # (not {Thread#kill}'d) so a kill mid-mutex cannot deadlock flush/close. Loop generations
+    # (not +Thread#kill+'d) so a kill mid-mutex cannot deadlock flush/close. Loop generations
     # prevent an abandoned thread from resuming work after a later {#start}. A +@stopping+ gate
     # rejects concurrent {#start} until close finishes.
     #
@@ -188,7 +188,7 @@ module HireFire
         @generation += 1
       end
       buffer.reinit_after_fork
-      Plan.reinit_macros_after_fork!
+      Plan.reinit_macros_after_fork
       @lease.demote!
       @client.close
       @lease.close
@@ -197,8 +197,6 @@ module HireFire
     end
 
     private
-
-    # --- lifecycle / loops ----------------------------------------------------
 
     def healthy_running?
       @running && !@stopping && @pid == Process.pid && @thread&.alive?
@@ -219,8 +217,6 @@ module HireFire
       end
     end
 
-    # Join a loop thread with a hard timeout. Do not kill: a Thread#kill while holding a
-    # HireFire or Net::HTTP mutex can deadlock the final flush/close on this stop path.
     def join_loop_thread(thread)
       return if thread.join(JOIN_TIMEOUT)
 
@@ -228,8 +224,6 @@ module HireFire
         "[HireFire] Dispatcher loop did not stop within #{JOIN_TIMEOUT}s. Abandoning thread.")
     end
 
-    # +generation+ is set by the live loop so abandoned threads stop mid-tick after {#stop}.
-    # Direct/test calls omit it and always run.
     def tick(generation = nil)
       return if generation && !loop_active?(generation)
 
@@ -237,7 +231,6 @@ module HireFire
       dispatch_if_due(generation)
     end
 
-    # Spawned only when {#enter_race?} is true ({#start} / {#ensure_job_queue_loop}).
     def job_queue_tick(generation = nil)
       live = loop_live_proc(generation)
       return unless live.call
@@ -265,14 +258,10 @@ module HireFire
       @unknown_strategy_warned = {}
     end
 
-    # Enter the race when this process might sample job queues (local dynos or an
-    # allowlisted library is loaded). Holding the grant is separate — see {#hold_lease?}.
     def enter_race?
       configuration.job_queues.any? || Plan.any_allowlisted_job_queue_library_loaded?
     end
 
-    # Keep the grant only when this process can actually sample: local job queues, or at
-    # least one plan entry with an executable adapter that supports the plan strategy.
     def hold_lease?(plan_job_queues)
       return true if configuration.job_queues.any?
 
@@ -349,8 +338,6 @@ module HireFire
       local_job_queues.sample_job_queue(job_queue, strategy, live: live) if job_queue
     end
 
-    # Direct/test calls omit +generation+ and are always live. Loop threads pass their
-    # generation so a hung sampler that returns after {#stop} does not buffer metrics.
     def loop_live_proc(generation)
       if generation
         -> { loop_active?(generation) }
@@ -407,8 +394,6 @@ module HireFire
       !(adapter.nil? || adapter == "")
     end
 
-    # --- dispatch / payload ---------------------------------------------------
-
     def dispatch_if_due(generation = nil)
       return if @next_dispatch_at && Clock.monotonic < @next_dispatch_at
       return if generation && !loop_active?(generation)
@@ -425,8 +410,6 @@ module HireFire
       Log.safe(logger, :error, "[HireFire] #{e.class}: #{e.message}")
     end
 
-    # +generation+ fences abandoned loop threads after {#stop}: they must not POST or
-    # repopulate once a later generation owns the process. Final {#stop} flush omits it.
     def dispatch(generation = nil)
       return if generation && !loop_active?(generation)
 
@@ -468,8 +451,6 @@ module HireFire
       Log.safe(logger, :error, "[HireFire] Dispatch error: #{e.class}: #{e.message}")
     end
 
-    # True while {#stop}(flush: true) is joining/finishing: abandoned ticks may return flushed
-    # data to the buffer for the final dispatch. False for stop(flush: false) discard.
     def handoff_to_final_flush?
       @mutex.synchronize { @stopping && @stopping_flush }
     end
@@ -537,15 +518,12 @@ module HireFire
       [entries, watermark]
     end
 
-    # Sibling on the first process report when the grant asked for trace. Not mixed into series.
     def attach_sample_trace!(entries)
       return if @pending_sample_trace.nil? || entries.empty? || !@lease.trace?
 
       entries.first["sample_trace"] = @pending_sample_trace
     end
 
-    # HTTP process rqt: liveness backfill when enabled (sets watermark); otherwise flush
-    # real samples only. Non-http rqt and all other strategies are merged by the caller.
     def append_http_rqt!(entries_by_name, data, http_name)
       return nil unless http_name
 
@@ -561,7 +539,6 @@ module HireFire
       end
     end
 
-    # Strategy-aware merge of flushed buckets into the payload-side map.
     def merge_metrics(entries_by_name, name, strategy, series_buckets)
       strategy = strategy.to_s
       entries_by_name[name] ||= {}
@@ -603,9 +580,6 @@ module HireFire
       end
     end
 
-    # Encode a buffer bucket into a wire leaf.
-    # rqt: [] heartbeat or [mean, n]. Non-rqt: bare number.
-    # Returns :omit to skip a non-finite / out-of-range value.
     def encode_leaf(strategy, bucket)
       if strategy == "rqt"
         sum, count = rqt_parts(bucket)
@@ -631,9 +605,6 @@ module HireFire
       end
     end
 
-    # Payload-only backfill: missing seconds become empty {sum, count} buckets.
-    # Never writes into the live buffer. Synthetic empties are not in flush data
-    # and are therefore not repopulated on failure.
     def backfill_rqt_seconds(buckets)
       now = Time.now.to_i
       from = @last_rqt_second ? @last_rqt_second + 1 : now
@@ -649,8 +620,6 @@ module HireFire
       end
       payload
     end
-
-    # --- accessors ------------------------------------------------------------
 
     def buffer
       HireFire.configuration.buffer

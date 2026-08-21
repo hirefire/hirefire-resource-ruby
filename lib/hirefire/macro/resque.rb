@@ -9,7 +9,6 @@ module HireFire
       extend HireFire::Macro::Deprecated::Resque
       extend HireFire::Utility
       extend HireFire::Plan::Hooks
-      # After Hooks so supports_plan_strategy? rejects jql.
       extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
 

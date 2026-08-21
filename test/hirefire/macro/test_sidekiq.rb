@@ -255,9 +255,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_in_delta score_age, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true), LATENCY_DELTA
   end
 
-  # Inverse of due_age_uses_score_not_body_timestamps: score is only slightly past due
-  # while body enqueued_at/created_at are much older. Due JQL is eligibility lateness
-  # (now - score), not original create/enqueue age.
   def test_job_queue_latency_due_age_ignores_older_body_timestamps
     score_age = 30
     score = Time.now.to_i - score_age
@@ -291,9 +288,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_in_delta 500, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
   end
 
-  # score == now: eligibility age is 0 whether the job is included or excluded, so
-  # latency≈0 alone does not prove the inclusive bound. JQS size==1 is the real
-  # residual lock; latency is only a smoke check (Float, no raise, age 0).
   def test_job_queue_latency_includes_due_when_score_equals_now
     frozen = Time.at(1_700_000_000)
     Timecop.freeze(frozen) do
@@ -627,7 +621,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 6, HireFire::Macro::Sidekiq.job_queue_size(max_scheduled: -5, skip_retries: true, skip_working: true)
   end
 
-  # max_scheduled is schedule-only walk budget on named/server; retries still full.
   def test_max_scheduled_zero_caps_schedule_only_retries_still_full_named_and_server
     3.times { enqueue_scheduled }
     2.times { enqueue_retry }
@@ -815,8 +808,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 5, HireFire::Macro::Sidekiq.queue(skip_working: false)
   end
 
-  # Legacy all-queues fast_lookup uses stats.workers_size with no run_at filter (unlike modern JQS).
-  # Pin the divergence so an accidental alignment or double-drop cannot go silent.
   def test_deprecated_queue_fast_lookup_counts_future_run_at_working
     enqueue
     enqueue_working(run_at: Time.now.to_i + 120)
@@ -897,8 +888,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     end
   end
 
-  # Plant a schedule/retry member with an explicit ZSET score and body timestamps.
-  # Use past score + fresh body times to residual-test eligibility age (score), not payload age.
   def plant_sorted_set_job(set_name, score:, enqueued_at:, queue: "default", created_at: nil)
     payload = {
       "queue" => queue,
@@ -963,11 +952,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue_retry(queue: queue, at: Time.now.to_i + 60)
   end
 
-  # Plant a Sidekiq WorkSet entry matching processes:*:work as Sidekiq::Workers yields it:
-  # { "queue" => name, "run_at" => epoch_i, "payload" => job_hash_or_json }.
-  # Real Sidekiq stores payload as a JSON string of the job (processor jobstr). Nested
-  # enqueued_at/created_at are aged so JQL residuals fail if WorkSet payload ages are maxed in.
-  # Hash field is the job jid so multiple working plants coexist on the same process key.
   def enqueue_working(
     queue: "default",
     run_at: Time.now.to_i - 60,

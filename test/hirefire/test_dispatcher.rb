@@ -2003,7 +2003,6 @@ class HireFire::DispatcherTest < Minitest::Test
 
   private
 
-  # Inject enough process/second series that JSON exceeds PAYLOAD_SIZE_LIMIT.
   def inject_oversized_series(name, strategy)
     buffer = HireFire.configuration.buffer
     now = Time.now.to_i

@@ -2,7 +2,7 @@
 
 module HireFire
   module Log
-    module_function
+    extend self
 
     def safe(logger, level, message)
       logger.public_send(level, message) if logger.respond_to?(level)

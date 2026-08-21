@@ -13,7 +13,6 @@ module HireFire
 
     GrantBody = Struct.new(:job_queues, :trace, keyword_init: true)
 
-    # Plan entries from the lease grant body (+"job_queues"+).
     attr_reader :process_id, :sample_frequency, :job_queues
 
     def initialize
@@ -34,14 +33,10 @@ module HireFire
       @granted
     end
 
-    # Whether the current grant asked the client to ship sample_trace on ingest.
     def trace?
       @trace
     end
 
-    # Drop local grant state without closing the transport. Used on stop/restart so a
-    # later start does not sample on a stale grant while another process holds the server lease.
-    # Bumps +@epoch+ so an in-flight lease HTTP response cannot re-apply grant state.
     def demote!
       @epoch += 1
       @granted = false
@@ -152,8 +147,6 @@ module HireFire
       GrantBody.new(job_queues: [], trace: trace)
     end
 
-    # Wire body: +{ "version": 1, "trace"?: true, "job_queues": [ … ] }+.
-    # Returns {GrantBody}. Unknown top-level keys are tolerated.
     def parse_grant_body(body)
       return empty_grant_body if body.nil? || body.empty?
 

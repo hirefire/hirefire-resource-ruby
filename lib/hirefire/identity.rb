@@ -2,7 +2,7 @@
 
 module HireFire
   module Identity
-    module_function
+    extend self
 
     def resolve
       explicit || heroku_dyno || render_service
@@ -32,40 +32,20 @@ module HireFire
       explicit && heroku_dyno && !explicit.casecmp?(heroku_dyno)
     end
 
-    # True when the platform marks this process as an HTTP web role (pre-traffic RQT arm).
-    #
-    # Universal RQT arming is traffic-first (middleware). This is an optional platform
-    # improvement for idle heartbeats before the first request. Not a substitute for
-    # identity or report names.
-    #
-    # @return [Boolean]
     def platform_http_role?
       heroku_web_process? || render_web_service?
     end
 
-    # Heroku process type after Cedar/Fir strip equals +"web"+ (case-insensitive).
-    # Exact match only: a naive +start_with?("web")+ would match +"worker"+.
-    #
-    # @return [Boolean]
     def heroku_web_process?
       name = heroku_dyno
       !name.nil? && name.casecmp?("web")
     end
 
-    # Render service type is +"web"+ (public web service). Private services use +"pserv"+
-    # and arm RQT via traffic (middleware) or explicit http registration.
-    #
-    # @return [Boolean]
     def render_web_service?
       type = presence(ENV["RENDER_SERVICE_TYPE"])
       !type.nil? && type.casecmp?("web")
     end
 
-    # Strips leading/trailing whitespace (same class of paste footgun as the token).
-    # Blank or whitespace-only values are treated as absent.
-    #
-    # @param value [String, nil]
-    # @return [String, nil]
     def presence(value)
       return if value.nil?
 

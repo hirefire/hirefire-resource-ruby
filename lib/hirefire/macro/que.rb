@@ -89,6 +89,8 @@ module HireFire
           SELECT run_at
           FROM que_jobs
           WHERE run_at <= NOW()
+          #{not_advisory_locked_sql}
+          #{filter_by_queues_if_any(queues)}
           ORDER BY run_at ASC
           LIMIT 1
         SQL
@@ -104,6 +106,8 @@ module HireFire
           WHERE run_at <= NOW()
           AND finished_at IS NULL
           AND expired_at IS NULL
+          #{not_advisory_locked_sql}
+          #{filter_by_queues_if_any(queues)}
           ORDER BY run_at ASC
           LIMIT 1
         SQL
@@ -117,6 +121,8 @@ module HireFire
           SELECT COUNT(*) AS job_queue_size
           FROM que_jobs
           WHERE run_at <= NOW()
+          #{not_advisory_locked_sql}
+          #{filter_by_queues_if_any(queues)}
         SQL
 
         query_job_queue_size(query, queues)
@@ -130,6 +136,8 @@ module HireFire
           WHERE run_at <= NOW()
           AND finished_at IS NULL
           AND expired_at IS NULL
+          #{not_advisory_locked_sql}
+          #{filter_by_queues_if_any(queues)}
         SQL
 
         query_job_queue_size(query, queues)
@@ -141,6 +149,8 @@ module HireFire
           SELECT COUNT(*) AS job_queue_working
           FROM que_jobs
           WHERE TRUE
+          #{advisory_locked_sql}
+          #{filter_by_queues_if_any(queues)}
         SQL
 
         query_job_queue_working(query, queues)
@@ -153,6 +163,8 @@ module HireFire
           FROM que_jobs
           WHERE finished_at IS NULL
           AND expired_at IS NULL
+          #{advisory_locked_sql}
+          #{filter_by_queues_if_any(queues)}
         SQL
 
         query_job_queue_working(query, queues)

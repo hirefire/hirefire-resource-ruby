@@ -24,14 +24,14 @@ Job Queue Latency, and Job Queue Size. Set `HIREFIRE_TOKEN` for the library to r
 - Sidekiq 7+
 - Resque 2+ (size only, no job queue latency)
 - Que 1+
-- QC 4+
+- Queue Classic 4+
 - Bunny 2+ (size only, no job queue latency)
 
 The test suite runs against these minimum versions and the current latest release of each runtime and library. Older versions may still work, but are not officially supported.
 
 **Documentation:**
 
-Public API prose is YARD on the consumer-facing surface. Published gems are browsable on [rubydoc.info](https://www.rubydoc.info/gems/hirefire-resource). Locally: `bundle exec rake doc`.
+Public API prose is YARD on the consumer-facing surface. Published gems are browsable on [rubydoc.info](https://www.rubydoc.info/gems/hirefire-resource). Locally: `bundle exec rake doc`. Changelog lives in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -48,7 +48,7 @@ Learn more at the [home page][HireFire].
 Requires [Docker](https://www.docker.com/) and [mise](https://mise.jdx.dev/). PostgreSQL, MongoDB, Redis, and RabbitMQ for the macro tests run in containers, and mise installs the pinned Ruby versions from `.tool-versions`. `bin/services up` starts them on Docker-assigned free host ports recorded in a git-ignored `.env` (read by the test suite). `bin/services down` stops them and removes `.env`. Because the ports are assigned fresh at startup, multiple worktrees can run side by side without conflicting with each other or with any system-wide databases.
 
 - Run `bin/setup` to prepare the environment.
-- Run `bin/services up` / `bin/services down` to start / stop the database containers.
+- Run `bin/services up` / `bin/services down` to start / stop PostgreSQL, MongoDB, Redis, and RabbitMQ.
 - See `rake -T` for common tasks (`rake check`, `rake format`, `rake test`).
 
 ## Release

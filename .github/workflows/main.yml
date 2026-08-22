@@ -46,9 +46,11 @@ jobs:
           ruby-version: "4.0"
           bundler-cache: true
       - name: Run check
-        run: bundle exec rake standard
+        run: bundle exec rake check
       - name: Run build
         run: bundle exec rake build
+      - name: Verify package artifacts
+        run: bin/verify-package
 
   validate:
     needs: matrix
@@ -86,7 +88,7 @@ jobs:
           - 3.3
           - 3.4
           - 4.0
-        appraisal: ${{ fromJson(needs.matrix.outputs.list) }}
+        appraisal: ${{ fromJSON(needs.matrix.outputs.list) }}
         exclude:
           # Rails 8, Sidekiq 8, and resque-retry 1.9 (resque 3) require Ruby >= 3.2
           - ruby-version: 3.1
@@ -111,6 +113,7 @@ jobs:
             appraisal: delayed_job_active_record_4
           - ruby-version: 3.1
             appraisal: delayed_job_mongoid_3
+    name: ${{ matrix.appraisal }} (Ruby ${{ matrix.ruby-version }})
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -167,5 +170,9 @@ jobs:
             echo "CHANGELOG.md must contain a section: ## [${version}] - YYYY-MM-DD"
             exit 1
           fi
+      - name: Run build
+        run: bundle exec rake build
+      - name: Verify package artifacts
+        run: bin/verify-package
       - name: Publish package
         uses: rubygems/release-gem@v1

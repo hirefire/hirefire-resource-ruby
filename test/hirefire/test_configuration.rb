@@ -48,8 +48,9 @@ class HireFire::ConfigurationTest < Minitest::Test
     @configuration.dyno(:web)
     @configuration.dyno(:Web)
 
-    assert_equal 1, log.string.scan("config.dyno(:web) without a sampler is no longer").size
+    assert_equal 1, log.string.scan("config.dyno(:web) is deprecated").size
     assert_includes log.string, "You can remove"
+    assert_includes log.string, "does nothing"
   end
 
   def test_dyno_with_a_block_configures_a_job_queue
@@ -249,6 +250,7 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_includes log.string, "HIREFIRE_TOKEN"
     assert_includes log.string, "remove this log_queue_metrics = true line"
     assert_includes log.string, "still emit"
+    assert_includes log.string, "Logplex - Request Queue Time"
   end
 
   def test_log_queue_metrics_false_is_silent

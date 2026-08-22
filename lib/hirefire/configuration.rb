@@ -22,9 +22,9 @@ module HireFire
   #   (or a logger missing the log methods) to silence diagnostics.
   #   @return [#error, #warn, #info, nil]
   # @!attribute [rw] log_queue_metrics
-  #   Legacy flag: when true, middleware still prints +[hirefire:router] queue=…ms+ to
-  #   stdout (Logplex QueueTime BC). Setting true once-warns to migrate to HireFire
-  #   Request Queue Time with +HIREFIRE_TOKEN+. Preferred web RQT is push to data.hirefire.io.
+  #   Deprecated. When true, middleware still prints +[hirefire:router] queue=…ms+ to
+  #   stdout so Logplex Request Queue Time keeps working. Setting true once-warns to
+  #   switch to HireFire Request Queue Time (push to data.hirefire.io) with +HIREFIRE_TOKEN+.
   #   @return [Boolean]
   class Configuration
     # Raised when {#dyno} cannot resolve a source because a name was given without a sampler
@@ -67,8 +67,8 @@ module HireFire
     end
 
     # Legacy flag. When true, middleware still prints +[hirefire:router] queue=…ms+
-    # to stdout for Logplex QueueTime (1.x BC). Setting true also once-warns to
-    # migrate to HireFire Request Queue Time.
+    # to stdout so Logplex Request Queue Time keeps working (1.x BC). Setting true
+    # also once-warns to switch to HireFire Request Queue Time.
     #
     # @param value [Object] truthy enables stdout emit on each measured request
     # @return [void]
@@ -101,10 +101,10 @@ module HireFire
     # and CPU, and lease plan adapters in the HireFire UI for managed job queues. Use {#dyno}
     # with a sampler for custom probes or strategy-only (custom configuration) plan entries.
     #
-    # Bare +dyno(:web)+ (no block, name +"web"+ case-insensitive) is accepted for 1.x
-    # backwards compatibility but does nothing: RQT is armed only by platform web role and
-    # middleware traffic. A once-per-process warning explains that the line can be removed.
-    # +dyno(:web) { … }+ still registers a job-queue sampler under the name +"web"+.
+    # Bare +dyno(:web)+ (no block, name +"web"+ case-insensitive) is deprecated. It is
+    # accepted so 1.x configs do not break, but it does nothing. Request queue time is
+    # sampled automatically from HTTP traffic. A once-per-process warning says the line
+    # can be removed. +dyno(:web) { … }+ still registers a job-queue sampler under +"web"+.
     #
     # @param name [String, Symbol] the process name. Must be non-empty.
     # @yield a sampler returning the current job-queue metric (a non-negative, finite number).
@@ -279,20 +279,20 @@ module HireFire
       return if defined?(@bare_web_dyno_warned)
 
       @bare_web_dyno_warned = true
-      Log.safe(logger, :warn, "[HireFire] config.dyno(:web) without a sampler is no longer " \
-        "necessary. Request queue time is armed by platform web identity (for example DYNO " \
-        "type web or RENDER_SERVICE_TYPE=web) and by HTTP middleware traffic. You can remove " \
-        "this line.")
+      Log.safe(logger, :warn, "[HireFire] config.dyno(:web) is deprecated. It does nothing. " \
+        "Request queue time is sampled automatically from HTTP traffic. You can remove this " \
+        "line. Leaving it does not break anything.")
     end
 
     def warn_log_queue_metrics_once
       return if defined?(@log_queue_metrics_warned)
 
       @log_queue_metrics_warned = true
-      Log.safe(logger, :warn, "[HireFire] config.log_queue_metrics is deprecated. Prefer the " \
-        "HireFire Request Queue Time strategy, set HIREFIRE_TOKEN, then remove this " \
-        "log_queue_metrics = true line. Stdout [hirefire:router] lines still emit while this " \
-        "flag is set.")
+      Log.safe(logger, :warn, "[HireFire] config.log_queue_metrics is deprecated. Stdout " \
+        "[hirefire:router] lines still emit while this flag is set. Switch to HireFire " \
+        "Request Queue Time: install hirefire-resource 2.0.0 or newer, remove this " \
+        "log_queue_metrics = true line, in the HireFire UI change Logplex - Request Queue " \
+        "Time to HireFire - Request Queue Time, and set HIREFIRE_TOKEN in the Heroku env.")
     end
 
     def warn_rqt_unresolved_once

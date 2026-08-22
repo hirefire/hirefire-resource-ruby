@@ -9,28 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Push job-queue and request-queue-time metrics to `https://data.hirefire.io` (lease plus nested ingest) so HireFire no longer polls the app.
-- Always-on request queue time on the HTTP middleware path, and always-on CPU when process identity resolves (`DYNO`, `HIREFIRE_SERVICE_NAME`, or `RENDER_SERVICE_NAME`).
-- `HireFire.boot` for token-only zero-config. Local `config.dyno` job-queue blocks remain for custom probes and root installs.
-- Job-queue working count (`job_queue_working`) and nested `wrk` beside `jql`/`jqs` for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
-- Lease collection plans: the server grant can drive allowlisted macros (`sidekiq`, `solid_queue`, `good_job`, `que`, `queue_classic`, `delayed_job`, `resque`, `bunny`). Strategy-only entries still run the matching local `config.dyno` sampler.
-- Support Bunny 3.x and resque-scheduler 5. Existing macros work unchanged against those majors.
+- The library now pushes metrics to `https://data.hirefire.io`. HireFire no longer polls the app.
+- Request queue time is sampled automatically from HTTP traffic. You do not need a web `dyno` line.
+- CPU activity is sampled automatically.
+- Optional token-only setup with `HireFire.boot`. Existing `config.dyno` job queue blocks still work.
+- Count of jobs still being processed (`job_queue_working`) for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
+- Support Resque 3, Bunny 3.x, and resque-scheduler 5.
 
 ### Changed
 
-- Job-queue macros count only the waiting set (live plus due scheduled plus due retry). In-flight jobs are no longer included in JQL or JQS.
-- `HireFire::Macro::Sidekiq.job_queue_size` (and deprecated `.queue`) defaults `skip_working` to `true`. Pass `skip_working: false` to restore the previous include-working count (kept through 2.0).
+- Job queue macros count queued jobs plus scheduled or retry jobs that are due. Jobs already being processed are no longer included in job queue size or job queue latency.
+- `HireFire::Macro::Sidekiq.job_queue_size` (and deprecated `.queue`) defaults `skip_working` to `true`. Pass `skip_working: false` to include jobs that are already being processed.
 - Required Ruby is 3.1+. Official support is Rails 7+, Sidekiq 7+, Good Job 3+, Que 1+, and Solid Queue 1+.
-- Metric dispatch and lease requests ignore `http_proxy`/`https_proxy` so an ambient proxy cannot intercept token-bearing traffic.
 
 ### Deprecated
 
-- `config.log_queue_metrics = true` still prints `[hirefire:router] queue=<N>ms` for Logplex QueueTime. Setting it once-warns to prefer HireFire Request Queue Time plus `HIREFIRE_TOKEN`.
-- Bare `config.dyno(:web)` (no sampler) is a once-warn no-op. Request queue time is armed by platform web identity and HTTP middleware traffic.
+- If you use Logplex Request Queue Time, `config.log_queue_metrics = true` is deprecated. It still prints `[hirefire:router] queue=<N>ms`, so Logplex Request Queue Time keeps working. Switch to HireFire Request Queue Time (push, no logdrain):
+  - Install hirefire-resource 2.0.0 or newer
+  - Remove `config.log_queue_metrics = true`
+  - In the HireFire UI, change the manager from `Logplex - Request Queue Time` to `HireFire - Request Queue Time`
+  - Ensure `HIREFIRE_TOKEN` is set in the Heroku app env
+- Bare `config.dyno(:web)` (no sampler) is deprecated. It does nothing. Request queue time is sampled automatically from HTTP traffic. You can remove the line. Leaving it does not break anything.
 
 ### Removed
 
-- Serving `GET /hirefire/:token/info`. Job metrics are push-only.
+- Serving `GET /hirefire/:token/info`.
+- Official support for Ruby 2.7 and 3.0.
 - Official support for Sidekiq 6, Good Job 2, Que 0, and Solid Queue 0.
 
 ## [1.0.8] - 2025-08-04

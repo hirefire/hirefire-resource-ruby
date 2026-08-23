@@ -548,7 +548,51 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
       assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: true)
       assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, skip_working: true)
+      assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(skip_working: true)
+      assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_working: true)
     end
+  end
+
+  def test_server_lookup_counts_due_score_in_the_current_fractional_second
+    frozen = Time.at(1_700_000_000.8)
+    Timecop.freeze(frozen) do
+      plant_sorted_set_job("schedule", score: 1_700_000_000.5, enqueued_at: frozen.to_f)
+
+      options = {skip_retries: true, skip_working: true}
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, **options)
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, **options)
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(**options)
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, **options)
+    end
+  end
+
+  def test_skip_working_nil_excludes_working_like_the_default
+    enqueue
+    enqueue_working(run_at: Time.now.to_i - 60)
+
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(skip_working: nil)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_working: nil)
+    assert_equal 1, HireFire::Macro::Sidekiq.queue(skip_working: nil)
+  end
+
+  def test_plan_execute_honors_skip_working_false
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+    enqueue
+    enqueue_working(queue: "default", run_at: Time.now.to_i - 30)
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "sidekiq",
+      "strategy" => "jqs",
+      "queues" => ["default"],
+      "options" => {"skip_working" => false}
+    )
+
+    flushed = buffer.flush
+    assert_equal 2, flushed.dig("worker", "jqs")&.values&.last
+    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
   end
 
   def test_server_lookup_does_not_double_count_numeric_queue_names
@@ -634,21 +678,20 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, **positive_cap)
   end
 
-  def test_server_lookup_reraises_non_noscript_script_errors
+  def test_server_lookup_skips_corrupt_due_members
+    plant_sorted_set_job("schedule", score: Time.now.to_i - 100, enqueued_at: Time.now.to_f)
     Sidekiq.redis do |connection|
       case identify_redis_client(connection)
       when :redis
-        connection.zadd("schedule", Time.now.to_i - 100, "not-json")
+        connection.zadd("schedule", Time.now.to_i - 90, "not-json")
       when :redis_client
-        connection.call("zadd", "schedule", Time.now.to_i - 100, "not-json")
+        connection.call("zadd", "schedule", Time.now.to_i - 90, "not-json")
       end
     end
 
-    error = assert_raises(StandardError) do
-      HireFire::Macro::Sidekiq.job_queue_size(server: true)
-    end
-
-    refute_includes error.message, "NOSCRIPT"
+    options = {skip_retries: true, skip_working: true}
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, **options)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, **options)
   end
 
   def test_count_with_redis_loads_script_and_retries_on_noscript
@@ -817,8 +860,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_working: false)
     assert_equal 1, HireFire::Macro::Sidekiq.queue(skip_working: true),
       "deprecated skip_working true: live only"
-    assert_equal 2, HireFire::Macro::Sidekiq.queue(skip_working: false),
-      "deprecated fast_lookup includes future run_at via workers_size"
+    assert_equal 1, HireFire::Macro::Sidekiq.queue(skip_working: false)
   end
 
   private

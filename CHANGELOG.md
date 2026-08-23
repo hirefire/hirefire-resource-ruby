@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Official support for Ruby 2.7 and 3.0.
 - Official support for Sidekiq 6, Good Job 2, Que 0, and Solid Queue 0.
 
+### Fixed
+
+- Sidekiq `server: true` counts due jobs in the current second the same way the client path does.
+- Sidekiq `server: true` skips corrupt schedule or retry members instead of aborting the sample.
+- Deprecated Sidekiq `.queue(..., skip_working: false)` no longer counts jobs that have not started.
+
 ## [1.0.8] - 2025-08-04
 
 ### Fixed

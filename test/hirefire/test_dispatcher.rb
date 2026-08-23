@@ -993,6 +993,22 @@ class HireFire::DispatcherTest < Minitest::Test
     refute_includes log.string, "UI adapter is configured"
   end
 
+  def test_strategy_only_plan_reports_lease_name_not_local_dyno_spelling
+    stub_lease(granted: true, job_queues: [
+      {"name" => "worker", "strategy" => "jqs", "adapter" => nil, "queues" => [], "options" => {}}
+    ])
+    bodies = capture_ingest_bodies
+
+    HireFire.configuration.dyno(:Worker) { 7 }
+    dispatcher = HireFire.configuration.dispatcher
+    dispatcher.send(:job_queue_tick)
+    dispatcher.send(:tick)
+
+    names = bodies[0].map { |e| e["name"] }
+    assert_includes names, "worker"
+    refute_includes names, "Worker"
+  end
+
   def test_unknown_plan_adapter_skips_without_local_fallback
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "nope", "queues" => [], "options" => {}}

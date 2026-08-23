@@ -315,7 +315,7 @@ module HireFire
         warn_plan_override_once(name) if local_job_queues.find_by_name(name)
         return if live && !live.call
 
-        Plan.execute(entry)
+        Plan.execute(entry, live)
       elsif Plan.known_adapter?(adapter)
         warn_unloaded_adapter_once(name, adapter)
       else
@@ -335,7 +335,7 @@ module HireFire
       end
 
       job_queue = local_job_queues.find_by_name(name)
-      local_job_queues.sample_job_queue(job_queue, strategy, live: live) if job_queue
+      local_job_queues.sample_job_queue(job_queue, strategy, live: live, name: name.strip) if job_queue
     end
 
     def loop_live_proc(generation)

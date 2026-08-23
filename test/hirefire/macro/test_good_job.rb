@@ -178,6 +178,14 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 1, HireFire::Macro::GoodJob.queue(:default)
   end
 
+  def test_deprecated_queue_includes_running
+    id = BasicJob.perform_later.job_id
+    mark_running(id, at: Time.now)
+
+    assert_equal 1, HireFire::Macro::GoodJob.queue(:default)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(:default)
+  end
+
   def test_job_queue_working_idle_is_zero
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_working
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_working(:default)

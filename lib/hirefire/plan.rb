@@ -93,7 +93,7 @@ module HireFire
       end
     end
 
-    def execute(entry)
+    def execute(entry, live = nil)
       adapter = entry["adapter"].to_s.strip
       strategy = entry["strategy"].to_s.strip
       name = entry["name"].to_s.strip
@@ -123,9 +123,9 @@ module HireFire
 
       options = macro.plan_options(strategy, entry["options"])
         .merge(macro.plan_connection_options)
-      return unless sample_job_strategy(macro, name, strategy, method_name, queues, options)
+      return unless sample_job_strategy(macro, name, strategy, method_name, queues, options, live: live)
 
-      sample_working(macro, name, queues) if macro.respond_to?(:job_queue_working)
+      sample_working(macro, name, queues, live: live) if macro.respond_to?(:job_queue_working)
     rescue => e
       Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " \
         "#{e.class}: #{e.message}")
@@ -133,8 +133,10 @@ module HireFire
 
     private
 
-    def sample_job_strategy(macro, name, strategy, method_name, queues, options)
+    def sample_job_strategy(macro, name, strategy, method_name, queues, options, live: nil)
       value = macro.public_send(method_name, *queues, **options)
+      return false if live && !live.call
+
       unless valid_sample?(value)
         Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} returned " \
           "#{format_sample_value(value)}, expected a non-negative number. Sample dropped.")
@@ -145,8 +147,10 @@ module HireFire
       true
     end
 
-    def sample_working(macro, name, queues)
+    def sample_working(macro, name, queues, live: nil)
       wrk = macro.job_queue_working(*queues)
+      return if live && !live.call
+
       unless valid_sample?(wrk)
         Log.safe(logger, :error, "[HireFire] Plan working sampler for #{name.inspect} returned " \
           "#{format_sample_value(wrk)}, expected a non-negative number. wrk sample dropped.")

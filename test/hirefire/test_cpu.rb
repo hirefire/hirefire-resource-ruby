@@ -327,6 +327,13 @@ class HireFire::Source::CPU::UsageTest < Minitest::Test
     assert_equal Etc.nprocessors, Usage.available_cpus
   end
 
+  def test_available_cpus_ignores_a_non_positive_v1_quota
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns("0")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns("100000")
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
   def test_available_cpus_reads_cgroup_v1_quota
     Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns(nil)
     Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns("150000")

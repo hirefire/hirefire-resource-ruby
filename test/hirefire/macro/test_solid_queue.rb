@@ -211,6 +211,25 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     assert_equal 2, HireFire::Macro::SolidQueue.job_queue_working(:default, :mailer)
   end
 
+  def test_job_queue_working_excludes_paused_queues
+    insert_claimed_job(BasicJob)
+    insert_claimed_job(BasicJob, queue: :mailer)
+    pause_queue(:default)
+
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_working
+    assert_equal 0, HireFire::Macro::SolidQueue.job_queue_working(:default)
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_working(:mailer)
+  end
+
+  def test_job_queue_working_expands_wildcards
+    insert_claimed_job(BasicJob, queue: :mailer)
+    insert_claimed_job(BasicJob, queue: :mailer_notification)
+    insert_claimed_job(BasicJob, queue: :critical)
+
+    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_working(:"mailer*")
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_working(:"mailer_*")
+  end
+
   def test_job_queue_working_excludes_ready_and_blocked
     BasicJob.perform_later
     insert_blocked_job(BlockedJob, queue: :mailer)

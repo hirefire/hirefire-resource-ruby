@@ -52,11 +52,12 @@ module HireFire
           args.flatten!
 
           options = args.last.is_a?(Hash) ? args.pop : {}
+          options[:skip_working] = true if options.key?(:skip_working) && options[:skip_working].nil?
           queues = args.map(&:to_s)
           all_queues = ::Sidekiq::Queue.all.map(&:name)
           queues = all_queues if queues.empty?
 
-          if fast_lookup_capable?(queues, all_queues)
+          if fast_lookup_capable?(queues, all_queues, options)
             fast_lookup(options)
           else
             dynamic_lookup(queues, options)
@@ -65,7 +66,9 @@ module HireFire
 
         private
 
-        def fast_lookup_capable?(queues, all_queues)
+        def fast_lookup_capable?(queues, all_queues, options)
+          return false unless options.fetch(:skip_working, true)
+
           queues.sort == all_queues.sort
         end
 

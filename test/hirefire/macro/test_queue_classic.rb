@@ -57,6 +57,7 @@ class HireFire::Macro::QCTest < Minitest::Test
   end
 
   def test_job_queue_size_without_jobs
+    assert_equal 0, HireFire::Macro::QC.job_queue_size
     assert_equal 0, HireFire::Macro::QC.job_queue_size(:default)
   end
 

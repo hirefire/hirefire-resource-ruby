@@ -285,9 +285,9 @@ module HireFire
                       return size
                    end
 
-                   local job = cjson_decode(jobs[i])
+                   local ok, job = pcall(cjson_decode, jobs[i])
 
-                   if job and (next(queues) == nil or queues[job.queue]) then
+                   if ok and job and (next(queues) == nil or queues[job.queue]) then
                       size = size + 1
                    end
                 end
@@ -309,9 +309,9 @@ module HireFire
                    local worker_data = redis.call("HGETALL", worker_key)
 
                    for i = 2, #worker_data, 2 do
-                      local worker = cjson_decode(worker_data[i])
+                      local ok, worker = pcall(cjson_decode, worker_data[i])
 
-                      if (next(queues) == nil or queues[worker.queue])
+                      if ok and worker and (next(queues) == nil or queues[worker.queue])
                          and tonumber(worker.run_at or 0) <= now then
                          size = size + 1
                       end
@@ -367,6 +367,7 @@ module HireFire
         private
 
         def client_lookup(queues, skip_retries: false, skip_scheduled: false, skip_working: true, max_scheduled: nil)
+          skip_working = true if skip_working.nil?
           size = enqueued_size(queues)
           size += scheduled_size(queues, max_scheduled) unless skip_scheduled
           size += retry_size(queues) unless skip_retries
@@ -393,9 +394,10 @@ module HireFire
         end
 
         def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: true, max_scheduled: nil)
+          skip_working = true if skip_working.nil?
           max_scheduled = max_scheduled.nil? ? -1 : [max_scheduled.to_i, 0].max
           ::Sidekiq.redis do |connection|
-            now = Time.now.to_i
+            now = Time.now.to_f
             skip_scheduled = skip_scheduled ? 1 : 0
             skip_retries = skip_retries ? 1 : 0
             skip_working = skip_working ? 1 : 0

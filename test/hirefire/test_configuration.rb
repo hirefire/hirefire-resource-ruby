@@ -198,10 +198,24 @@ class HireFire::ConfigurationTest < Minitest::Test
     refute @configuration.rqt_liveness?
   end
 
-  def test_rqt_liveness_denied_when_identity_differs_from_name
+  def test_rqt_liveness_allowed_when_identity_is_worker
     ENV["DYNO"] = "worker.1"
     @configuration.mark_http_active!
     assert @configuration.rqt_liveness?
+  end
+
+  def test_soft_identity_over_max_bytes_disables_http_and_cpu_and_warns_once
+    ENV["HIREFIRE_SERVICE_NAME"] = "x" * (HireFire::Configuration::MAX_NAME_BYTES + 1)
+    log = StringIO.new
+    @configuration.logger = Logger.new(log)
+
+    refute @configuration.http_source
+    assert_empty @configuration.active_cpu_sources
+    assert_equal 1, log.string.scan("Process identity exceeds").size
+
+    refute @configuration.http_source
+    assert_empty @configuration.active_cpu_sources
+    assert_equal 1, log.string.scan("Process identity exceeds").size
   end
 
   def test_rqt_liveness_matches_case_insensitively

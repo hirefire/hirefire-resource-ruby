@@ -25,8 +25,20 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     refute HireFire::Macro::Resque.supports_plan_strategy?("rpm")
   end
 
+  def test_does_not_define_job_queue_working
+    refute HireFire::Macro::Resque.respond_to?(:job_queue_working)
+  end
+
   def test_job_queue_size_without_jobs
     assert_equal 0, HireFire::Macro::Resque.job_queue_size
+  end
+
+  def test_all_queues_ignores_orphan_queue_keys
+    Resque.enqueue_to(:default, BasicJob)
+    Resque.redis.lpush("queue:orphan", Resque.encode("class" => "BasicJob", "args" => []))
+    refute_includes Resque.queues, "orphan"
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
   end
 
   def test_job_queue_size_with_jobs

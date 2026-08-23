@@ -611,6 +611,122 @@ class HireFire::PlanTest < Minitest::Test
     assert_nil mod.reinit_after_fork
   end
 
+  def test_execute_live_gate_drops_a_sample_that_returns_after_stop
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+    original = HireFire::Plan::ADAPTERS
+    original_checks = HireFire::Plan::LIBRARY_CHECKS
+    mod = stub_macro do |m|
+      m.define_singleton_method(:job_queue_size) { |*_a, **_o| 11 }
+      m.define_singleton_method(:job_queue_working) { |*_a| 3 }
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
+
+    HireFire::Plan.execute(
+      {
+        "name" => "worker",
+        "adapter" => "sidekiq",
+        "strategy" => "jqs",
+        "queues" => ["default"],
+        "options" => {}
+      },
+      -> { false }
+    )
+
+    assert_empty buffer.flush
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
+  end
+
+  def test_around_job_queue_sample_rescues_raising_before_hook_and_still_runs_body_and_after
+    original = HireFire::Plan::ADAPTERS
+    events = []
+    bad = stub_macro do |m|
+      m.define_singleton_method(:before_sample_job_queues) { raise "before boom" }
+      m.define_singleton_method(:after_sample_job_queues) { |_token| events << :bad_after }
+    end
+    good = stub_macro do |m|
+      m.define_singleton_method(:before_sample_job_queues) {
+        events << :good_before
+        :tok
+      }
+      m.define_singleton_method(:after_sample_job_queues) { |token| events << [:good_after, token] }
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, {"bad" => bad, "good" => good})
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+
+    result = HireFire::Plan.around_job_queue_sample {
+      events << :body
+      :ok
+    }
+
+    assert_equal :ok, result
+    assert_equal [:good_before, :body, [:good_after, :tok]], events
+    refute_includes events, :bad_after
+    assert_includes log.string, "before_sample_job_queues"
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+  end
+
+  def test_around_job_queue_sample_rescues_raising_after_hook_and_still_runs_other_afters
+    original = HireFire::Plan::ADAPTERS
+    events = []
+    bad = stub_macro do |m|
+      m.define_singleton_method(:before_sample_job_queues) { :bad }
+      m.define_singleton_method(:after_sample_job_queues) { |_token| raise "after boom" }
+    end
+    good = stub_macro do |m|
+      m.define_singleton_method(:before_sample_job_queues) { :good }
+      m.define_singleton_method(:after_sample_job_queues) { |token| events << token }
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, {"bad" => bad, "good" => good})
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+
+    assert_equal :ok, HireFire::Plan.around_job_queue_sample { :ok }
+    assert_equal [:good], events
+    assert_includes log.string, "after_sample_job_queues"
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+  end
+
+  def test_reinit_macros_after_fork_rescues_raising_adapter_and_continues
+    original = HireFire::Plan::ADAPTERS
+    called = []
+    bad = stub_macro do |m|
+      m.define_singleton_method(:reinit_after_fork) { raise "reinit boom" }
+    end
+    good = stub_macro do |m|
+      m.define_singleton_method(:reinit_after_fork) { called << :good }
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, {"bad" => bad, "good" => good})
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+
+    HireFire::Plan.reinit_macros_after_fork
+    assert_equal [:good], called
+    assert_includes log.string, "reinit_after_fork"
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+  end
+
   def test_reinit_macros_after_fork_notifies_every_adapter
     original = HireFire::Plan::ADAPTERS
     called = []

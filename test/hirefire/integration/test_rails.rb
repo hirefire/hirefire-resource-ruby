@@ -107,7 +107,10 @@ module HireFire
             end
 
             RailtieBootApp.initialize!
-            exit(File.file?(#{marker.inspect}) ? 0 : 1)
+            booted = File.file?(#{marker.inspect}) && File.read(#{marker.inspect}) == "started"
+            assigned = HireFire.configuration.logger.equal?(::Rails.logger)
+            File.write(#{marker.inspect}, (booted && assigned) ? "started" : "failed")
+            exit((booted && assigned) ? 0 : 1)
           RUBY
 
           env = {

@@ -126,6 +126,19 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
     assert_equal 7, old.buffer.flush.dig("worker", "jql").values.first
   end
 
+  def test_sample_job_queue_reports_under_explicit_name
+    HireFire.configure do |config|
+      config.dyno(:Worker) { 4 }
+    end
+    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
+
+    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jqs", name: "worker")
+
+    data = HireFire.configuration.buffer.flush
+    assert_equal 4, data.dig("worker", "jqs")&.values&.first
+    refute data.key?("Worker")
+  end
+
   def test_live_gate_drops_a_sample_that_returns_after_stop
     HireFire.configure do |config|
       config.dyno(:worker) { 9 }

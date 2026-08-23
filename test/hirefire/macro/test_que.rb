@@ -190,6 +190,20 @@ class HireFire::Macro::QueTest < Minitest::Test
     end
   end
 
+  def test_v0_working_path_counts_advisory_locked_jobs
+    HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
+    HireFire::Macro::Que.stubs(:advisory_lock_id_column).returns("id")
+
+    job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
+
+    assert_equal 0, HireFire::Macro::Que.job_queue_working
+    with_advisory_lock(job.que_attrs[:id]) do
+      assert_equal 1, HireFire::Macro::Que.job_queue_working
+      assert_equal 1, HireFire::Macro::Que.job_queue_working(:default)
+    end
+  end
+
   def test_v0_latency_path_excludes_advisory_locked_jobs
     HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
     HireFire::Macro::Que.stubs(:advisory_lock_id_column).returns("id")

@@ -53,7 +53,7 @@ Requires [Docker](https://www.docker.com/) and [mise](https://mise.jdx.dev/). Po
 
 ## Release
 
-1. Update the `HireFire::VERSION` constant.
+1. Update `HireFire::VERSION` in `lib/hirefire/version.rb`.
 2. If root `Gemfile` or gemspec development dependencies changed, update root `Gemfile.lock` with `bundle install`. Appraisal `gemfiles/*.gemfile.lock` files are gitignored so CI re-resolves each matrix cell to the latest minor/patch on its major.
 3. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` (today's date) and add a fresh empty `## [Unreleased]` above it.
 4. Commit changes with `git commit`.

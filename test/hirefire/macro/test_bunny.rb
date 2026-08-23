@@ -14,6 +14,10 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
   end
 
+  def test_does_not_define_job_queue_working
+    refute HireFire::Macro::Bunny.respond_to?(:job_queue_working)
+  end
+
   def test_supports_plan_strategy_size_only
     refute HireFire::Macro::Bunny.supports_plan_strategy?("jql")
     refute HireFire::Macro::Bunny.supports_plan_strategy?(:jql)
@@ -28,22 +32,50 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
   end
 
+  def test_job_queue_size_empty_ready_queue_is_zero
+    with_connection(queue: :empty_ready) do |_connection, _channel, queue|
+      assert_equal 0, HireFire::Macro::Bunny.job_queue_size(queue.name, amqp_url: AMQP_URL)
+    end
+  end
+
   def test_job_queue_size_with_jobs_using_amqp_url
-    with_connection(queue: :default) do |connection, channel, default|
-      with_connection(queue: :mailer) do |connection, channel, mailer|
-        [default, mailer].each { |queue| queue.publish(TEST_MESSAGE) }
-        assert_equal 1, HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: AMQP_URL)
-        assert_equal 2, HireFire::Macro::Bunny.job_queue_size(:default, :mailer, amqp_url: AMQP_URL)
+    with_connection(queue: :default) do |_connection, channel, default|
+      with_connection(queue: :mailer) do |_connection, mailer_channel, mailer|
+        publish_confirmed(channel, default)
+        publish_confirmed(mailer_channel, mailer)
+        assert_size 1, :default, amqp_url: AMQP_URL
+        assert_size 2, :default, :mailer, amqp_url: AMQP_URL
       end
     end
   end
 
   def test_job_queue_size_with_jobs_using_durable
-    with_connection(durable: true) do |connection, channel, queue|
-      queue.publish(TEST_MESSAGE)
+    with_connection(durable: true) do |_connection, channel, queue|
+      publish_confirmed(channel, queue)
       assert queue.options[:durable]
-      assert_equal 1, HireFire::Macro::Bunny.job_queue_size(queue.name)
+      assert_size 1, queue.name
     end
+  end
+
+  def test_job_queue_size_excludes_unacked
+    with_connection(queue: :unacked) do |_connection, channel, queue|
+      publish_confirmed(channel, queue)
+      delivery_info, _properties, _payload = queue.pop(manual_ack: true)
+      refute_nil delivery_info
+      assert_size 0, queue.name, amqp_url: AMQP_URL
+    end
+  end
+
+  def test_connection_kwarg_wins_over_amqp_url
+    connection = ::Bunny.new(AMQP_URL).tap(&:start)
+
+    with_connection(queue: :precedence, durable: true) do |_conn, channel, queue|
+      publish_confirmed(channel, queue)
+      assert_size 1, :precedence, connection: connection, amqp_url: "amqp://invalid.example:5672"
+      assert connection.open?
+    end
+  ensure
+    connection&.close
   end
 
   def test_job_queue_size_with_missing_queue_raises_not_found
@@ -56,12 +88,12 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   def test_job_queue_size_reuses_provided_connection
     connection = ::Bunny.new(AMQP_URL).tap(&:start)
 
-    with_connection(queue: :reuse_queue, durable: true) do |_conn, _channel, queue|
-      queue.publish(TEST_MESSAGE)
+    with_connection(queue: :reuse_queue, durable: true) do |_conn, channel, queue|
+      publish_confirmed(channel, queue)
 
-      assert_equal 1, HireFire::Macro::Bunny.job_queue_size(:reuse_queue, connection: connection)
+      assert_size 1, :reuse_queue, connection: connection
       assert connection.open?, "provided connection must stay open for reuse"
-      assert_equal 1, HireFire::Macro::Bunny.job_queue_size(:reuse_queue, connection: connection)
+      assert_size 1, :reuse_queue, connection: connection
       assert connection.open?
     end
   ensure
@@ -111,11 +143,19 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   end
 
   def test_deprecated_queue_method
-    with_connection(queue: :default_legacy, durable: true) do |connection, channel, default|
-      with_connection(queue: :mailer_legacy, durable: true) do |connection, channel, mailer|
-        [default, mailer].each { |queue| queue.publish(TEST_MESSAGE) }
-        assert_equal 1, HireFire::Macro::Bunny.queue(:default_legacy, amqp_url: AMQP_URL)
-        assert_equal 2, HireFire::Macro::Bunny.queue(:default_legacy, :mailer_legacy, connection: connection)
+    with_connection(queue: :default_legacy, durable: true) do |_connection, default_channel, default|
+      with_connection(queue: :mailer_legacy, durable: true) do |connection, mailer_channel, mailer|
+        publish_confirmed(default_channel, default)
+        publish_confirmed(mailer_channel, mailer)
+        assert_size 1, :default_legacy, amqp_url: AMQP_URL
+        seen = nil
+        deadline = Time.now + 2
+        while Time.now < deadline
+          seen = HireFire::Macro::Bunny.queue(:default_legacy, :mailer_legacy, connection: connection)
+          break if seen == 2
+          sleep 0.02
+        end
+        assert_equal 2, seen
       end
     end
   end
@@ -170,6 +210,23 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     ::Bunny.expects(:new).with(url).returns(fake)
     result = HireFire::Macro::Bunny.send(:acquire_connection, nil)
     assert_same fake, result
+  end
+
+  def publish_confirmed(channel, queue)
+    channel.confirm_select
+    queue.publish(TEST_MESSAGE)
+    raise "publish was not confirmed" unless channel.wait_for_confirms
+  end
+
+  def assert_size(expected, *queues, **kwargs)
+    deadline = Time.now + 2
+    seen = nil
+    while Time.now < deadline
+      seen = HireFire::Macro::Bunny.job_queue_size(*queues, **kwargs)
+      return if seen == expected
+      sleep 0.02
+    end
+    assert_equal expected, seen
   end
 
   def with_connection(options = {})

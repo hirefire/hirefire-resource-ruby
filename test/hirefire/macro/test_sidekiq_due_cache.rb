@@ -1560,7 +1560,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     saw_active = false
     owner = HireFire::Plan.singleton_class
     original = owner.instance_method(:execute)
-    owner.define_method(:execute) do |_entry|
+    owner.define_method(:execute) do |_entry, _live = nil|
       saw_active = Cache.sample_active?
       HireFire::Macro::Sidekiq.job_queue_size(
         :default,

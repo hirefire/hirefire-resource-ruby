@@ -23,13 +23,14 @@ module HireFire
         @job_queues.each(&block)
       end
 
-      def sample_job_queue(job_queue, strategy, live: nil)
+      def sample_job_queue(job_queue, strategy, live: nil, name: nil)
         return unless job_queue
 
+        report_name = (name.nil? || name.to_s.strip.empty?) ? job_queue.name : name.to_s.strip
         strategy = strategy.to_s
         unless strategy == "jql" || strategy == "jqs"
           Log.safe(logger, :error, "[HireFire] Unknown job-queue strategy #{strategy.inspect} for " \
-            "#{job_queue.name.inspect}. Sample dropped.")
+            "#{report_name.inspect}. Sample dropped.")
           return
         end
 
@@ -37,12 +38,12 @@ module HireFire
         return if live && !live.call
 
         unless valid_sample?(value)
-          Log.safe(logger, :error, "[HireFire] The sampler for #{job_queue.name.inspect} returned " \
+          Log.safe(logger, :error, "[HireFire] The sampler for #{report_name.inspect} returned " \
             "#{format_sample_value(value)}, expected a non-negative number. Sample dropped.")
           return
         end
 
-        buffer.sample(job_queue.name, strategy, coerce_sample(value))
+        buffer.sample(report_name, strategy, coerce_sample(value))
       rescue => e
         Log.safe(logger, :error, "[HireFire] The sampler for #{job_queue&.name.inspect} raised " \
           "#{e.class}: #{e.message}")

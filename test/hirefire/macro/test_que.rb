@@ -16,7 +16,14 @@ class HireFire::Macro::QueTest < Minitest::Test
   end
 
   def setup
+    super
     prepare_database
+  end
+
+  def test_library_loaded_is_true_when_que_gem_is_loaded
+    assert HireFire::Plan.library_loaded?("que")
+    assert HireFire::Plan.executable?("que")
+    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
   end
 
   def test_job_queue_latency_without_jobs

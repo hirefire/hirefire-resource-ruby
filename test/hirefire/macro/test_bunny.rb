@@ -8,6 +8,12 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   AMQP_URL = ENV.fetch("AMQP_URL")
   TEST_MESSAGE = "Test Message"
 
+  def test_library_loaded_is_true_when_bunny_gem_is_loaded
+    assert HireFire::Plan.library_loaded?("bunny")
+    assert HireFire::Plan.executable?("bunny")
+    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
+  end
+
   def test_missing_queues_raises_error
     assert_raises HireFire::Errors::MissingQueueError do
       HireFire::Macro::Bunny.job_queue_size

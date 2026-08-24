@@ -10,8 +10,15 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
   LATENCY_DELTA = 2
 
   def setup
+    super
     prepare_database
     SolidQueue.logger = Logger.new(File::NULL)
+  end
+
+  def test_library_loaded_is_true_when_solid_queue_gem_is_loaded
+    assert HireFire::Plan.library_loaded?("solid_queue")
+    assert HireFire::Plan.executable?("solid_queue")
+    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
   end
 
   def test_job_queue_latency_without_jobs

@@ -300,6 +300,20 @@ class HireFire::ClientTest < Minitest::Test
     ENV.delete("HIREFIRE_DATA_URL")
   end
 
+  def test_whitespace_padded_data_url_is_stripped
+    ENV["HIREFIRE_DATA_URL"] = "  https://custom.hirefire.io  "
+    custom_client = HireFire::Client.new
+
+    request = stub_request(:post, "https://custom.hirefire.io/metrics/ingest")
+      .to_return(status: 200)
+
+    custom_client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
+
+    assert_requested request
+  ensure
+    ENV.delete("HIREFIRE_DATA_URL")
+  end
+
   def test_custom_data_url
     ENV["HIREFIRE_DATA_URL"] = "https://custom.hirefire.io"
     custom_client = HireFire::Client.new

@@ -14,6 +14,7 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
   LATENCY_DELTA = 2
 
   def setup
+    super
     if defined?(ActiveRecord)
       prepare_active_record_database
     end
@@ -21,6 +22,12 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     if defined?(Mongoid)
       prepare_mongoid_database
     end
+  end
+
+  def test_library_loaded_is_true_when_delayed_job_gem_is_loaded
+    assert HireFire::Plan.library_loaded?("delayed_job")
+    assert HireFire::Plan.executable?("delayed_job")
+    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
   end
 
   def test_job_queue_latency_without_jobs

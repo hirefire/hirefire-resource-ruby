@@ -16,6 +16,7 @@ class HireFire::Plan::HooksTest < Minitest::Test
   }.freeze
 
   def setup
+    super
     @helper = Object.new.extend(HireFire::Plan::Hooks)
   end
 

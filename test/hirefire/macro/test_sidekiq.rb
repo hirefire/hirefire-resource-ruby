@@ -27,6 +27,12 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     super
   end
 
+  def test_library_loaded_is_true_when_sidekiq_gem_is_loaded
+    assert HireFire::Plan.library_loaded?("sidekiq")
+    assert HireFire::Plan.executable?("sidekiq")
+    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
+  end
+
   def flush_sidekiq_redis
     Sidekiq.redis do |connection|
       case identify_redis_client(connection)

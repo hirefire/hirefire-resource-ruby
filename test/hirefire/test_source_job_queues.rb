@@ -83,14 +83,14 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
 
   def test_invalid_sample_values_are_dropped_and_logged
     log = StringIO.new
-    values = ["10", nil, -1, Float::INFINITY, Float::NAN, 7].each
+    values = ["10", nil, -1, Float::INFINITY, Float::NAN, true, false, 7].each
     HireFire.configure do |config|
       config.dyno(:worker) { values.next }
     end
     HireFire.configuration.logger = Logger.new(log)
     job_queue = HireFire.configuration.job_queues.find_by_name("worker")
 
-    5.times { HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql") }
+    7.times { HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql") }
     assert_empty buffer.flush
     assert_includes log.string, "expected a non-negative number"
 

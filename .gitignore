@@ -8,6 +8,7 @@ dump.rdb
 /coverage/
 /doc/
 /pkg/
+*.gem
 /tmp/
 
 # Appraisal lockfiles are intentionally not committed so CI resolves each

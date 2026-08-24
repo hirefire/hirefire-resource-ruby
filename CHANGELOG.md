@@ -15,12 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Optional token-only setup with `HireFire.boot`. Existing `config.dyno` job queue blocks still work.
 - Count of jobs still being processed (`job_queue_working`) for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
 - Support Resque 3, Bunny 3.x, and resque-scheduler 5.
+- Support Ruby 3.4 and 4.0.
 
 ### Changed
 
 - Job queue macros count queued jobs plus scheduled or retry jobs that are due. Jobs already being processed are no longer included in job queue size or job queue latency.
-- `HireFire::Macro::Sidekiq.job_queue_size` (and deprecated `.queue`) defaults `skip_working` to `true`. Pass `skip_working: false` to include jobs that are already being processed.
-- Required Ruby is 3.1+. Official support is Rails 7+, Sidekiq 7+, Good Job 3+, Que 1+, and Solid Queue 1+.
+- Sidekiq job queue size (and deprecated `.queue`) no longer includes jobs that are already being processed. Pass `skip_working: false` to include them.
+- Required Ruby is 3.1+. Official Rails support is 7+.
 
 ### Deprecated
 

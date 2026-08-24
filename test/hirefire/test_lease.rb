@@ -457,6 +457,49 @@ class HireFire::LeaseTest < Minitest::Test
     assert_includes log.string, "skipped"
   end
 
+  def test_json_null_adapter_is_strategy_only
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "15"
+      }, body: {
+        version: 1,
+        job_queues: [
+          {"name" => "worker", "strategy" => "jql", "adapter" => nil, "queues" => [], "options" => {}}
+        ]
+      }.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert_equal 1, lease.job_queues.size
+    assert_equal "worker", lease.job_queues[0]["name"]
+    assert_equal "", lease.job_queues[0]["adapter"]
+  end
+
+  def test_json_null_name_or_strategy_is_skipped
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "15"
+      }, body: {
+        version: 1,
+        job_queues: [
+          {"name" => nil, "strategy" => "jql", "adapter" => nil},
+          {"name" => "worker", "strategy" => nil, "adapter" => nil},
+          {"name" => "ok", "strategy" => "jql", "adapter" => nil, "queues" => [], "options" => {}}
+        ]
+      }.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert_equal 1, lease.job_queues.size
+    assert_equal "ok", lease.job_queues[0]["name"]
+    assert_includes log.string, "skipped"
+  end
+
   def test_invalid_json_grant_body_is_ignored
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)

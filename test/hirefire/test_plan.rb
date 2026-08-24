@@ -415,7 +415,7 @@ class HireFire::PlanTest < Minitest::Test
     original = HireFire::Plan::ADAPTERS
     original_checks = HireFire::Plan::LIBRARY_CHECKS
 
-    [-1, Float::NAN, Float::INFINITY, nil, "nope"].each do |bad|
+    [-1, Float::NAN, Float::INFINITY, nil, "nope", true, false].each do |bad|
       mod = stub_macro do |m|
         m.define_singleton_method(:job_queue_latency) { |*_queues, **_options| bad }
       end
@@ -434,7 +434,7 @@ class HireFire::PlanTest < Minitest::Test
     end
 
     assert_empty HireFire.configuration.buffer.flush
-    assert_operator log.string.scan("Sample dropped").size, :>=, 5
+    assert_operator log.string.scan("Sample dropped").size, :>=, 7
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)

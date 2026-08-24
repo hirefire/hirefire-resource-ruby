@@ -13,7 +13,14 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   LATENCY_DELTA = 2
 
   def setup
+    super
     prepare_database
+  end
+
+  def test_library_loaded_is_true_when_good_job_gem_is_loaded
+    assert HireFire::Plan.library_loaded?("good_job")
+    assert HireFire::Plan.executable?("good_job")
+    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
   end
 
   def test_job_queue_latency_without_jobs

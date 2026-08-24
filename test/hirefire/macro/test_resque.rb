@@ -4,11 +4,19 @@ require "test_helper"
 
 class HireFire::Macro::ResqueTest < Minitest::Test
   def setup
+    super
     Resque.redis = Redis.new(port: ENV.fetch("REDIS_PORT", 6379).to_i, db: 0).tap(&:flushdb)
   end
 
   def teardown
     Resque.redis.close
+    super
+  end
+
+  def test_library_loaded_is_true_when_resque_gem_is_loaded
+    assert HireFire::Plan.library_loaded?("resque")
+    assert HireFire::Plan.executable?("resque")
+    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
   end
 
   def test_job_queue_latency_unsupported

@@ -430,6 +430,24 @@ class HireFire::MiddlewareTest < Minitest::Test
     end
   end
 
+  def test_rounds_a_fractional_nanosecond_remainder
+    ENV["DYNO"] = "web.1"
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire::Dispatcher.any_instance.stubs(:start)
+    HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
+
+    HireFire.configure do |config|
+      config.dyno(:web)
+    end
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000250600000")
+      @middleware.call(request)
+
+      assert_equal({1_700_000_001 => {sum: 749.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
+    end
+  end
+
   def test_drops_a_negative_request_start
     ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"

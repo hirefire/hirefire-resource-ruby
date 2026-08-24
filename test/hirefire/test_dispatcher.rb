@@ -267,6 +267,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
     data = HireFire.configuration.buffer.flush
     assert_nil data.dig("web", "rqt")
+    assert_equal 1000, dispatcher.instance_variable_get(:@last_rqt_second)
     refute_includes log.string, "Dispatch error"
   end
 

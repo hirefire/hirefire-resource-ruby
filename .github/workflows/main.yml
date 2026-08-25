@@ -1,5 +1,8 @@
 name: Main
 
+# Every push runs CI, including branches with no PR. Same-repo PRs also fire
+# pull_request, so those commits run twice. Keep both. Do not merge the
+# concurrency groups (required-check status becomes unreliable).
 on:
   push:
     branches:
@@ -90,7 +93,8 @@ jobs:
           - "4.0"
         appraisal: ${{ fromJSON(needs.matrix.outputs.list) }}
         exclude:
-          # Rails 8, Sidekiq 8, and resque-retry 1.9 (resque 3) require Ruby >= 3.2
+          # Ruby 3.1 cannot install these cells. Rails 8, Sidekiq 8, and resque-retry 1.9
+          # (resque_3) require Ruby >= 3.2, and the worker appraisals below pin rails ~> 8.
           - ruby-version: "3.1"
             appraisal: rails_8
           - ruby-version: "3.1"

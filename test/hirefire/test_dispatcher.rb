@@ -1141,7 +1141,7 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher.stop
   end
 
-  def test_concurrent_start_during_stop_is_rejected_then_retryable
+  def test_concurrent_start_during_stop_is_rejected_then_retryable_even_if_a_starter_wins_after_stopping_clears
     stub_lease
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
 
@@ -1168,7 +1168,6 @@ class HireFire::DispatcherTest < Minitest::Test
     results = []
     results << start_results.pop until start_results.empty?
 
-    # A starter can win the post-stop retry window after @stopping clears.
     dispatcher.stop if dispatcher.running?
     refute dispatcher.running?
     refute_empty results

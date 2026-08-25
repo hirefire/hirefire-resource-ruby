@@ -24,11 +24,9 @@ module HireFire
       end
 
       def reinit_after_fork
-        old = @reused_connection
         @connection_mutex = Mutex.new
         @reused_connection = nil
         @reused_url = nil
-        close_connection(old)
       end
 
       # Calculates the total job queue size using Bunny.
@@ -62,7 +60,8 @@ module HireFire
       #   it) and only a per-call channel is opened and closed. Otherwise a new connection is opened
       #   and closed on each call unless +reuse_connection+ is true.
       # @param reuse_connection [Boolean] when true (the plan path), keep one process-local
-      #   connection and open a fresh channel per call. {#reinit_after_fork} closes it.
+      #   connection and open a fresh channel per call. {#reinit_after_fork} drops the
+      #   inherited reference in a forked child without closing the session.
       # @return [Integer] Total job queue size.
       # @raise [HireFire::Errors::MissingQueueError] If no queue names are specified.
       # @raise [Bunny::Exception] If a queue does not exist (a passive declare returns a 404) or

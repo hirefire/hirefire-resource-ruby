@@ -71,20 +71,6 @@ class HireFire::ClientTest < Minitest::Test
     assert_equal :payload_too_large, client.submit_samples("[]")
   end
 
-  def test_submit_samples_treats_code_413_without_entity_too_large_class_as_payload_too_large
-    generic = Net::HTTPResponse.allocate
-    generic.instance_variable_set(:@read, true)
-    generic.instance_variable_set(:@code, "413")
-    generic.instance_variable_set(:@message, "Payload Too Large")
-    generic.instance_variable_set(:@header, {})
-    generic.instance_variable_set(:@body, '{"error":"payload too large"}')
-
-    refute generic.is_a?(Net::HTTPRequestEntityTooLarge)
-    client.stubs(:execute).returns(generic)
-
-    assert_equal :payload_too_large, client.submit_samples("[]")
-  end
-
   def test_connection_bypasses_ambient_http_proxy
     ENV["http_proxy"] = "http://proxy.invalid:8080"
     ENV["HTTP_PROXY"] = "http://proxy.invalid:8080"

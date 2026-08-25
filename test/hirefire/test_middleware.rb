@@ -557,6 +557,27 @@ class HireFire::MiddlewareTest < Minitest::Test
     assert_includes log.string, "Middleware error"
   end
 
+  def test_a_raising_http_source_sample_does_not_start_the_dispatcher
+    ENV["DYNO"] = "web.1"
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire.configuration.logger = Logger.new(log)
+
+    HireFire::Source::HTTP.any_instance.stubs(:sample).raises(StandardError, "sample boom")
+    HireFire.configuration.dispatcher.expects(:start).never
+    HireFire.configuration.dispatcher.expects(:ensure_job_queue_loop).never
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      request = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+      status, _headers, body = @middleware.call(request)
+
+      assert_equal 200, status
+      assert_equal ["Hello"], body
+    end
+
+    refute HireFire.configuration.dispatcher.running?
+    assert_includes log.string, "Middleware error"
+  end
+
   def test_a_raising_logger_does_not_break_the_request
     ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"

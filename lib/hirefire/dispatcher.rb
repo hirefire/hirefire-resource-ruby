@@ -550,7 +550,7 @@ module HireFire
     def append_http_rqt!(entries_by_name, data, http_name)
       return nil unless http_name
 
-      rqt_buckets = data.dig(http_name, "rqt") || data.dig(http_name, :rqt) || {}
+      rqt_buckets = data.dig(http_name, "rqt") || {}
 
       if configuration.rqt_enabled? && configuration.rqt_liveness?
         payload_rqt = backfill_rqt_seconds(rqt_buckets)

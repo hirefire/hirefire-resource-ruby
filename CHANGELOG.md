@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Support Resque 3, Bunny 3.x, and resque-scheduler 5.
 - Support Ruby 3.4 and 4.0.
 - Support Mongoid 9 for Delayed Job.
-- `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` again so a caller can reuse a long-lived Bunny session.
+- `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` again so a caller can reuse a long-lived Bunny session. A forked child drops the inherited session without closing it, so the parent keeps sampling.
 
 ### Changed
 
@@ -56,8 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Resque named-queue size skips corrupt delayed payloads instead of aborting the sample.
 - Que latency uses the database clock so a lagging app clock cannot return a negative value.
 - Queue Classic returns the Active Record pool connection after each sample.
-- An oversized support sample-trace is dropped so ordinary metrics still ship.
-- The count of jobs still being processed is still reported when the queue size or latency reading fails.
+- A forked child no longer closes the RabbitMQ connection it inherited, so job queue readings in the parent process are not interrupted.
 
 ## [1.0.8] - 2025-08-04
 

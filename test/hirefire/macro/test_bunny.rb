@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "timeout"
 
 ENV["AMQP_URL"] ||= "amqp://guest:guest@localhost:#{ENV.fetch("RABBITMQ_PORT", 5672)}"
 
@@ -89,6 +90,48 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     assert_raises Bunny::NotFound do
       HireFire::Macro::Bunny.job_queue_size(queue_name, amqp_url: AMQP_URL)
     end
+  end
+
+  def test_forked_child_drops_reused_connection_without_closing_parent
+    skip "Process.fork unavailable" unless Process.respond_to?(:fork)
+    skip "Process._fork unavailable" unless Process.respond_to?(:_fork)
+
+    with_connection(queue: :fork_drop) do |_connection, channel, queue|
+      publish_confirmed(channel, queue)
+      assert_size 1, queue.name, amqp_url: AMQP_URL, reuse_connection: true
+
+      parent_session = HireFire::Macro::Bunny.instance_variable_get(:@reused_connection)
+      refute_nil parent_session
+      assert parent_session.open?
+
+      read_io, write_io = IO.pipe
+      pid = Process.fork do
+        read_io.close
+        begin
+          child_session = HireFire::Macro::Bunny.instance_variable_get(:@reused_connection)
+          write_io.write(child_session.nil? ? "nil" : "present")
+        ensure
+          write_io.close
+          exit!(0)
+        end
+      end
+      write_io.close
+      status = read_io.read
+      Process.wait(pid)
+
+      assert_equal "nil", status
+      assert parent_session.open?, "parent session must stay open after the child drops it"
+
+      Timeout.timeout(5) do
+        assert_equal 1, HireFire::Macro::Bunny.job_queue_size(
+          queue.name, amqp_url: AMQP_URL, reuse_connection: true
+        )
+      end
+    end
+  ensure
+    old = HireFire::Macro::Bunny.instance_variable_get(:@reused_connection)
+    HireFire::Macro::Bunny.send(:close_connection, old) if old
+    HireFire::Macro::Bunny.reinit_after_fork
   end
 
   def test_reuse_connection_opens_once_across_calls

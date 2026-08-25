@@ -23,6 +23,20 @@ Bundler.require(:default)
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 require "hirefire-resource"
 
+HireFire.singleton_class.prepend(Module.new do
+  def configure(...)
+    super.tap do
+      if HireFire.configuration.using_default_logger?
+        HireFire.configuration.logger = Logger.new(File::NULL)
+      end
+    end
+  end
+
+  def reset(...)
+    super.tap { HireFire.configuration.logger = Logger.new(File::NULL) }
+  end
+end)
+
 require "minitest/autorun"
 require "mocha/minitest"
 require "webmock/minitest"
@@ -47,13 +61,17 @@ class Minitest::Test
     RENDER_CPU_COUNT
   ].freeze
 
+  def silence_hirefire_logger
+    HireFire.configuration.logger = Logger.new(File::NULL)
+  end
+
   def setup
     ENV["HIREFIRE_TOKEN"] = nil
     ENV["HIREFIRE_DATA_URL"] = nil
     ENV["HIREFIRE_VERBOSE"] = nil
     IDENTITY_ENV.each { |key| ENV[key] = nil }
     HireFire.reset
-    HireFire.configuration.logger = Logger.new(File::NULL)
+    silence_hirefire_logger
     super
   end
 

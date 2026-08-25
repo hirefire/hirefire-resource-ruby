@@ -151,14 +151,6 @@ module HireFire
         end
       end
 
-      def reset_reused_connection
-        connection_mutex.synchronize do
-          close_connection(@reused_connection)
-          @reused_connection = nil
-          @reused_url = nil
-        end
-      end
-
       def connection_open?(connection)
         connection.respond_to?(:open?) && connection.open?
       rescue ::Bunny::Exception

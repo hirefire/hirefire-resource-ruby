@@ -1,6 +1,6 @@
 ## HireFire Integration Library for Ruby Applications
 
-This library integrates Ruby applications on [Heroku] with HireFire's autoscalers.
+This library integrates Ruby applications with HireFire's autoscalers on Heroku, Render, and other platforms.
 It reports app metrics so HireFire can autoscale web and worker processes. That
 unlocks strategies such as Request Queue Time, Requests Per Minute, CPU Activity,
 Job Queue Latency, and Job Queue Size. Set `HIREFIRE_TOKEN` for the library to run.

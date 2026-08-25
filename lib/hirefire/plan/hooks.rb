@@ -2,7 +2,7 @@
 
 module HireFire
   module Plan
-    # Uniform plan hooks for every queue macro. Plan always calls these; adapters
+    # Uniform plan hooks for every queue macro. Plan always calls these. Adapters
     # override when they accept lease options or need connection kwargs.
     #
     # For lease JSON +options+, prefer a strategy → field → type schema and

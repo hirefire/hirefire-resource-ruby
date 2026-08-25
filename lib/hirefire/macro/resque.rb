@@ -89,7 +89,8 @@ module HireFire
                 break if encoded_jobs.empty?
 
                 total_size += encoded_jobs.count do |encoded_job|
-                  queues.include?(::Resque.decode(encoded_job)["queue"])
+                  queue = delayed_job_queue(encoded_job)
+                  queue && queues.include?(queue)
                 end
 
                 break if encoded_jobs.size < batch
@@ -105,6 +106,18 @@ module HireFire
         end
 
         total_size
+      end
+
+      def delayed_job_queue(encoded_job)
+        payload = ::Resque.decode(encoded_job)
+        return unless payload.is_a?(Hash)
+
+        queue = payload["queue"]
+        return if queue.nil? || queue == ""
+
+        queue
+      rescue ::Resque::Helpers::DecodeException, TypeError
+        nil
       end
 
       def registered_queues

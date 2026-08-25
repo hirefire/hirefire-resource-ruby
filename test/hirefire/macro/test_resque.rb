@@ -144,6 +144,33 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     assert_equal 500, HireFire::Macro::Resque.job_queue_size(:mailer)
   end
 
+  def test_job_queue_size_skips_corrupt_delayed_payloads
+    timestamp = Time.now.to_i - 10
+    Resque.redis.zadd("delayed_queue_schedule", timestamp, timestamp)
+    Resque.redis.rpush("delayed:#{timestamp}", "not-json")
+    Resque.redis.rpush("delayed:#{timestamp}", "null")
+    Resque.redis.rpush(
+      "delayed:#{timestamp}",
+      Resque.encode("class" => "BasicJob", "args" => [], "queue" => "default")
+    )
+
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 3, HireFire::Macro::Resque.job_queue_size
+  end
+
+  def test_all_queues_counts_delayed_payloads_for_unregistered_queues
+    timestamp = Time.now.to_i - 10
+    Resque.redis.zadd("delayed_queue_schedule", timestamp, timestamp)
+    Resque.redis.rpush(
+      "delayed:#{timestamp}",
+      Resque.encode("class" => "BasicJob", "args" => [], "queue" => "never_registered")
+    )
+
+    refute_includes Resque.queues, "never_registered"
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default)
+  end
+
   def test_deprecated_queue_method
     Resque.enqueue_to(:default, BasicJob)
     assert_equal 1, HireFire::Macro::Resque.queue(:default)

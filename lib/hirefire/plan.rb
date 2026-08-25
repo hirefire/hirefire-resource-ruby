@@ -123,8 +123,7 @@ module HireFire
 
       options = macro.plan_options(strategy, entry["options"])
         .merge(macro.plan_connection_options)
-      return unless sample_job_strategy(macro, name, strategy, method_name, queues, options, live: live)
-
+      sample_job_strategy(macro, name, strategy, method_name, queues, options, live: live)
       sample_working(macro, name, queues, live: live) if macro.respond_to?(:job_queue_working)
     rescue => e
       Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " \

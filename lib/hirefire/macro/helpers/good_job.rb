@@ -8,6 +8,20 @@ module HireFire
           base.send(:private, :good_job_class)
         end
 
+        def self.extended(base)
+          privatize_helpers(base)
+        end
+
+        def self.privatize_helpers(base)
+          base.send(
+            :private_class_method,
+            :good_job_class,
+            :error_event_supported?,
+            :retried_enum,
+            :discarded_enum
+          )
+        end
+
         def good_job_class
           if Gem::Version.new(::GoodJob::VERSION) >= Gem::Version.new("4.0.0")
             ::GoodJob::Job

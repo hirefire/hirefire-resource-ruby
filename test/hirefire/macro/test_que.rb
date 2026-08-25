@@ -221,6 +221,15 @@ class HireFire::Macro::QueTest < Minitest::Test
     end
   end
 
+  def test_job_queue_latency_stays_non_negative_when_app_clock_trails_database
+    enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 5})
+    Time.stub(:now, Time.now - 30) do
+      latency = HireFire::Macro::Que.job_queue_latency
+      assert latency >= 0
+      assert_in_delta 5, latency, LATENCY_DELTA
+    end
+  end
+
   def test_deprecated_queue_method
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
     assert_equal 1, HireFire::Macro::Que.queue(:default)
@@ -368,8 +377,7 @@ class HireFire::Macro::QueTest < Minitest::Test
   end
 
   # Hold a Que-style session advisory lock on a dedicated connection so the macro's
-  # `pg_locks` anti-join sees working jobs. Residual lock count proves the lock is
-  # present so size/latency zeros are not false-green from a failed lock acquire.
+  # `pg_locks` anti-join sees working jobs.
   def with_advisory_lock(job_id, &block)
     with_advisory_locks(job_id, &block)
   end

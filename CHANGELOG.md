@@ -16,11 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Count of jobs still being processed (`job_queue_working`) for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
 - Support Resque 3, Bunny 3.x, and resque-scheduler 5.
 - Support Ruby 3.4 and 4.0.
+- Support Mongoid 9 for Delayed Job.
+- `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` again so a caller can reuse a long-lived Bunny session.
 
 ### Changed
 
-- Job queue macros count queued jobs plus scheduled or retry jobs that are due. Jobs already being processed are no longer included in job queue size or job queue latency.
+- Job queue macros count queued jobs plus scheduled or retry jobs that are due. Jobs already being processed are no longer included in job queue size or job queue latency. Deprecated `.queue` aliases keep their 1.x mix on Good Job and Resque.
 - Sidekiq job queue size (and deprecated `.queue`) no longer includes jobs that are already being processed. Pass `skip_working: false` to include them.
+- Sidekiq job queue latency returns a Float.
 - Required Ruby is 3.1+. Official Rails support is 7+.
 
 ### Deprecated
@@ -37,12 +40,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Serving `GET /hirefire/:token/info`.
 - Official support for Ruby 2.7 and 3.0.
 - Official support for Sidekiq 6, Good Job 2, Que 0, and Solid Queue 0.
+- `HireFire::Worker` and `HireFire::Web` (and `HireFire::Web::DispatchError`, `HireFire::Worker::InvalidDynoNameError`, `HireFire::Worker::MissingDynoBlockError`). Use `HireFire.configure` / `config.dyno`.
+- `HireFire::Macro::Bunny::ConnectionError`. Bunny connection failures raise `Bunny::Exception`.
+- `HireFire::Configuration::LogQueueMetricsUnsupportedError`.
 
 ### Fixed
 
 - Sidekiq `server: true` counts due jobs in the current second the same way the client path does.
 - Sidekiq `server: true` skips corrupt schedule or retry members instead of aborting the sample.
+- Sidekiq `server: true` enumerates queues with `SMEMBERS queues` instead of `KEYS queue:*`.
 - Deprecated Sidekiq `.queue(..., skip_working: false)` no longer counts jobs that have not started.
+- Good Job latency orders by `COALESCE(scheduled_at, created_at)` so immediate jobs with a null `scheduled_at` are not sorted last.
+- Good Job detects the `error_event` column from the schema, so Good Job 3.0 to 3.15 no longer queries a missing column.
+- Resque all-queues size uses `Resque.queues` instead of `KEYS queue:*`.
+- Resque named-queue size skips corrupt delayed payloads instead of aborting the sample.
+- Que latency uses the database clock so a lagging app clock cannot return a negative value.
+- Queue Classic returns the Active Record pool connection after each sample.
+- An oversized support sample-trace is dropped so ordinary metrics still ship.
 
 ## [1.0.8] - 2025-08-04
 

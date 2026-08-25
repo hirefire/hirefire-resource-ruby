@@ -427,6 +427,34 @@ class HireFire::DispatcherTest < Minitest::Test
     bodies[0].drop(1).each { |e| refute e.key?("sample_trace") }
   end
 
+  def test_oversized_sample_trace_is_stripped_so_metrics_still_ship
+    stub_lease
+    bodies = capture_ingest_bodies
+    dispatcher = configure_web_only
+    dispatcher.instance_variable_get(:@lease).stubs(:trace?).returns(true)
+    dispatcher.instance_variable_set(:@pending_sample_trace, {
+      "wave_ms" => 1.0,
+      "ops" => [{
+        "adapter" => "sidekiq",
+        "strategy" => "jqs",
+        "queues" => ["q" * 40_000],
+        "options" => {},
+        "ms" => 1.0
+      }]
+    })
+
+    Timecop.freeze Time.at(1000) do
+      HireFire.configuration.buffer.sample("web", "rqt", 7)
+      dispatcher.send(:tick)
+    end
+
+    assert_equal 1, bodies.size
+    refute bodies[0].first.key?("sample_trace")
+    assert bodies[0].first.dig("metrics", "rqt")
+    refute_includes log.string, "Dropped metrics payload"
+    assert_nil dispatcher.instance_variable_get(:@pending_sample_trace)
+  end
+
   def test_sample_trace_absent_without_grant_trace
     stub_lease(granted: true, trace: false)
     bodies = capture_ingest_bodies
@@ -1731,6 +1759,40 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_empty dispatcher.instance_variable_get(:@unsupported_strategy_warned)
 
     dispatcher.stop
+  end
+
+  def test_start_after_parent_stop_reinitializes_inherited_state
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+
+    ENV["DYNO"] = "web.1"
+    dispatcher = configure_web_only
+    assert dispatcher.start
+    first_cpu = HireFire.configuration.active_cpu_sources.first
+    buffer = HireFire.configuration.buffer
+    old_mutex = buffer.instance_variable_get(:@mutex)
+
+    dispatcher.stop(flush: false)
+    parent_pid = dispatcher.instance_variable_get(:@pid)
+    assert parent_pid
+
+    Process.stubs(:pid).returns(parent_pid + 1)
+    assert dispatcher.start
+
+    refute_same old_mutex, buffer.instance_variable_get(:@mutex)
+    refute_same first_cpu, HireFire.configuration.active_cpu_sources.first
+    dispatcher.stop
+  end
+
+  def test_abandon_inherited_state_resets_always_on_sources
+    stub_lease
+    ENV["DYNO"] = "web.1"
+    dispatcher = configure_web_only
+    cpu = HireFire.configuration.active_cpu_sources.first
+
+    dispatcher.abandon_inherited_state!
+
+    refute_same cpu, HireFire.configuration.active_cpu_sources.first
   end
 
   def test_wire_payload_nested_multi_strategy_shape

@@ -117,8 +117,13 @@ namespace :doc do
   end
 end
 
-desc "Run checks: standard"
-task check: ["standard"]
+desc "Fail if YARD emits warnings"
+task "doc:check" do
+  sh "bundle exec yard doc --fail-on-warning --no-progress"
+end
+
+desc "Run checks: standard and YARD"
+task check: ["standard", "doc:check"]
 
 desc "Run formatters: standard:fix"
 task format: ["standard:fix"]

@@ -249,6 +249,22 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_equal HireFire::Macro::QC.job_queue_working, flushed.dig("worker", "wrk")&.values&.last
   end
 
+  def test_job_queue_size_releases_the_active_record_connection
+    pool = ActiveRecord::Base.connection_pool
+    started = Queue.new
+    release = Queue.new
+    holder = Thread.new do
+      HireFire::Macro::QC.job_queue_size
+      started << true
+      release.pop
+    end
+    started.pop
+    assert_operator pool.stat[:busy], :<=, 1
+  ensure
+    release << true
+    holder&.join
+  end
+
   private
 
   def prepare_database

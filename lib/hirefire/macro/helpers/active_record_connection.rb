@@ -9,9 +9,9 @@ module HireFire
         def with_connection
           if defined?(::ActiveRecord::Base) &&
               ::ActiveRecord::Base.respond_to?(:connection_pool)
-            ::ActiveRecord::Base.connection_pool.with_connection { yield }
+            ::ActiveRecord::Base.connection_pool.with_connection { |connection| yield connection }
           else
-            yield
+            yield nil
           end
         end
       end

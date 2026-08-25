@@ -27,7 +27,7 @@ Job Queue Latency, and Job Queue Size. Set `HIREFIRE_TOKEN` for the library to r
 - Queue Classic 4+
 - Bunny 2+ (size only, no job queue latency)
 
-The test suite runs against these minimum versions and the current latest release of each runtime and library. Older versions may still work, but are not officially supported.
+Ruby 3.1+ is required and tested for the library core, Rack, Rails 7, Sidekiq 7, Bunny, and Resque 2. Worker-library cells that boot through Rails 8 in CI run on Ruby 3.2+. Older versions may still work, but are not officially supported.
 
 **Documentation:**
 

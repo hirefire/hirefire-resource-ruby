@@ -10,7 +10,7 @@ class HireFire::Macro::BunnyPlanOptionsTest < Minitest::Test
   end
 
   def test_plan_connection_options_empty_without_env
-    assert_equal({}, HireFire::Macro::Bunny.plan_connection_options)
+    assert_equal({reuse_connection: true}, HireFire::Macro::Bunny.plan_connection_options)
   end
 
   def test_plan_connection_options_prefer_hirefire_bunny_url
@@ -18,7 +18,7 @@ class HireFire::Macro::BunnyPlanOptionsTest < Minitest::Test
     ENV["HIREFIRE_BUNNY_URL"] = "amqp://bunny.example/vhost"
 
     assert_equal(
-      {amqp_url: "amqp://bunny.example/vhost"},
+      {reuse_connection: true, amqp_url: "amqp://bunny.example/vhost"},
       HireFire::Macro::Bunny.plan_connection_options
     )
   end
@@ -27,7 +27,7 @@ class HireFire::Macro::BunnyPlanOptionsTest < Minitest::Test
     ENV["HIREFIRE_AMQP_URL"] = "amqp://amqp.example/vhost"
 
     assert_equal(
-      {amqp_url: "amqp://amqp.example/vhost"},
+      {reuse_connection: true, amqp_url: "amqp://amqp.example/vhost"},
       HireFire::Macro::Bunny.plan_connection_options
     )
   end
@@ -39,6 +39,6 @@ class HireFire::Macro::BunnyPlanOptionsTest < Minitest::Test
   def test_plan_connection_options_ignore_blank_hirefire_urls
     ENV["HIREFIRE_BUNNY_URL"] = ""
     ENV["HIREFIRE_AMQP_URL"] = "   "
-    assert_equal({}, HireFire::Macro::Bunny.plan_connection_options)
+    assert_equal({reuse_connection: true}, HireFire::Macro::Bunny.plan_connection_options)
   end
 end

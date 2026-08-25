@@ -10,13 +10,6 @@ module HireFire
   # blocks remain the escape hatch for custom probes and legacy root installs until lease plans
   # cover them fully.
   #
-  # @!attribute [r] http
-  #   Always +nil+. Kept for readers that still check +configuration.http+. Request queue time
-  #   uses always-on sources under {#http_name} (process identity), not an explicit http dyno.
-  #   @return [nil]
-  # @!attribute [r] job_queues
-  #   Local job-queue sources declared via sampler blocks on {#dyno}.
-  #   @return [HireFire::Source::JobQueues]
   # @!attribute [rw] logger
   #   Logger used for HireFire diagnostic messages. Defaults to a stdout logger. Set to +nil+
   #   (or a logger missing the log methods) to silence diagnostics.
@@ -113,7 +106,7 @@ module HireFire
     # @raise [MissingSamplerError] a name other than +"web"+ given without a sampler.
     # @raise [DuplicateDynoError] the name was already declared for the same source kind.
     # @example
-    #   config.dyno(:web) # no-op BC; safe to remove
+    #   config.dyno(:web) # no-op BC, safe to remove
     #   config.dyno(:worker) { HireFire::Macro::Sidekiq.job_queue_size(:default) }
     def dyno(name, &sampler)
       name = coerce_name!(name)
@@ -131,7 +124,7 @@ module HireFire
       raise MissingSamplerError,
         "config.dyno(#{name.inspect}) could not be resolved: it needs a sampler block " \
         "(job-queue metrics). Request queue time is always-on via platform web role or " \
-        "middleware traffic; CPU is always-on when process identity resolves. " \
+        "middleware traffic. CPU is always-on when process identity resolves. " \
         "Bare config.dyno(:web) is a no-op and can be removed."
     end
 
@@ -244,17 +237,10 @@ module HireFire
       end
 
       if source == :job_queue
-        @job_queues << Source::JobQueue.new(canonical_name(name), &sampler)
+        @job_queues << Source::JobQueue.new(name, &sampler)
       end
 
       @sources_by_name[key] = kinds + [source]
-    end
-
-    def canonical_name(name)
-      existing = @sources_by_name.keys.find { |key| key.casecmp?(name) }
-      return name unless existing
-
-      @job_queues.map(&:name).find { |n| n.casecmp?(name) } || name
     end
 
     def soft_identity

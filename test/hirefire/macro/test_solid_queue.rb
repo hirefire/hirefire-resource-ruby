@@ -119,8 +119,8 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     assert_equal 4, HireFire::Macro::SolidQueue.job_queue_size
     assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size(:default)
     assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size(:default, :mailer)
-    assert_equal 3, HireFire::Macro::SolidQueue.job_queue_size(:"mailer*") # expand to mailer, mailer_notification, mailer_newsletter
-    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size(:"mailer_*") # expand to mailer_notification, mailer_newsletter
+    assert_equal 3, HireFire::Macro::SolidQueue.job_queue_size(:"mailer*")
+    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size(:"mailer_*")
   end
 
   def test_job_queue_size_with_paused_queues
@@ -176,7 +176,7 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     BasicJob.set(queue: :mailer_newsletter).perform_later
     BasicJob.set(queue: :other).perform_later
 
-    assert_equal 3, HireFire::Macro::SolidQueue.job_queue_size(:default, :"mailer_*") # default + the two mailer_ queues
+    assert_equal 3, HireFire::Macro::SolidQueue.job_queue_size(:default, :"mailer_*")
   end
 
   def test_job_queue_size_with_claimed_jobs

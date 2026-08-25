@@ -91,6 +91,27 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
   end
 
+  def test_reuse_connection_opens_once_across_calls
+    HireFire::Macro::Bunny.reinit_after_fork
+    fake = mock("bunny-reuse")
+    fake.stubs(:open?).returns(true)
+    fake.expects(:start).once
+    channel = mock("channel")
+    queue = mock("queue")
+    queue.stubs(:message_count).returns(0)
+    channel.stubs(:queue).returns(queue)
+    channel.stubs(:close)
+    fake.stubs(:create_channel).returns(channel)
+    fake.stubs(:close)
+    ::Bunny.expects(:new).once.returns(fake)
+
+    2.times do
+      HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: AMQP_URL, reuse_connection: true)
+    end
+  ensure
+    HireFire::Macro::Bunny.reinit_after_fork
+  end
+
   def test_job_queue_size_reuses_provided_connection
     connection = ::Bunny.new(AMQP_URL).tap(&:start)
 

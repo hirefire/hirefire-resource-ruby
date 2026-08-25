@@ -10,6 +10,7 @@ module HireFire
     DEFAULT_DISPATCH_FREQUENCY = 1
     MAX_DISPATCH_FREQUENCY = 30
     JOIN_TIMEOUT = 5
+    WARN_MAP_LIMIT = 128
 
     def initialize
       @client = Client.new
@@ -60,9 +61,7 @@ module HireFire
           buffer.reinit_after_fork
           Plan.reinit_macros_after_fork
           reset_dispatch_state_after_fork
-        end
-
-        unless after_fork
+        else
           reset_dispatch_state_for_restart
           @lease.demote!
         end
@@ -109,10 +108,9 @@ module HireFire
 
     # Stops the dispatcher loops and closes transport resources.
     #
-    # Joins local loop threads for up to {JOIN_TIMEOUT} seconds each. A hung sampler is abandoned
-    # (not +Thread#kill+'d) so a kill mid-mutex cannot deadlock flush/close. Loop generations
-    # prevent an abandoned thread from resuming work after a later {#start}. A +@stopping+ gate
-    # rejects concurrent {#start} until close finishes.
+    # Joins local loop threads for up to {JOIN_TIMEOUT} seconds each. A hung sampler is
+    # abandoned rather than killed. A later {#start} increments the loop generation so an
+    # abandoned thread cannot resume work. Concurrent {#start} is rejected until close finishes.
     #
     # @param flush [Boolean] when +true+ (default), best-effort final metric flush before close.
     #   Prefork parents pass +false+ so the master does not claim empty web liveness after workers
@@ -131,7 +129,6 @@ module HireFire
         threads = [@thread, @job_queue_thread].compact if @pid == Process.pid
         @thread = nil
         @job_queue_thread = nil
-        @pid = nil
       end
 
       begin
@@ -189,6 +186,7 @@ module HireFire
       end
       buffer.reinit_after_fork
       Plan.reinit_macros_after_fork
+      configuration.reset_after_fork
       @lease.demote!
       @client.close
       @lease.close
@@ -212,7 +210,11 @@ module HireFire
 
     def loop_until_stopped(generation)
       while loop_active?(generation)
-        yield
+        begin
+          yield
+        rescue => e
+          Log.safe(logger, :error, "[HireFire] #{e.class}: #{e.message}")
+        end
         sleep 1
       end
     end
@@ -227,7 +229,9 @@ module HireFire
     def tick(generation = nil)
       return if generation && !loop_active?(generation)
 
-      configuration.active_cpu_sources.each { |source| guard { source.sample } }
+      sources = []
+      guard { sources = configuration.active_cpu_sources }
+      sources.each { |source| guard { source.sample } }
       dispatch_if_due(generation)
     end
 
@@ -346,45 +350,46 @@ module HireFire
       end
     end
 
-    def warn_unloaded_adapter_once(name, adapter)
-      return if @unloaded_adapter_warned[name]
+    def remember_warn(map, key)
+      return true if map[key]
 
-      @unloaded_adapter_warned[name] = true
+      map.shift while map.size >= WARN_MAP_LIMIT
+      map[key] = true
+      false
+    end
+
+    def warn_unloaded_adapter_once(name, adapter)
+      return if remember_warn(@unloaded_adapter_warned, name)
+
       Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} for #{name.inspect} " \
         "is not loaded in this process. Entry skipped.")
     end
 
     def warn_plan_override_once(name)
-      return if @plan_override_warned[name]
+      return if remember_warn(@plan_override_warned, name)
 
-      @plan_override_warned[name] = true
       Log.safe(logger, :warn, "[HireFire] A HireFire UI adapter is configured for " \
         "#{name.inspect}, so config.dyno(#{name.inspect}) with a local sampler is ignored. " \
-        "You can remove that local configuration; the UI adapter is used instead.")
+        "You can remove that local configuration. The UI adapter is used instead.")
     end
 
     def warn_unknown_adapter_once(name, adapter)
-      return if @unknown_adapter_warned[name]
+      return if remember_warn(@unknown_adapter_warned, name)
 
-      @unknown_adapter_warned[name] = true
       Log.safe(logger, :error, "[HireFire] Unknown plan adapter " \
         "#{adapter.inspect} for #{name.inspect}. Entry skipped.")
     end
 
     def warn_unsupported_strategy_once(name, adapter, strategy)
-      key = "#{name}\0#{adapter}\0#{strategy}"
-      return if @unsupported_strategy_warned[key]
+      return if remember_warn(@unsupported_strategy_warned, "#{name}\0#{adapter}\0#{strategy}")
 
-      @unsupported_strategy_warned[key] = true
       Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} does not support " \
         "strategy #{strategy.inspect} for #{name.inspect}. Entry skipped.")
     end
 
     def warn_unknown_strategy_once(name, strategy)
-      key = "#{name}\0#{strategy}"
-      return if @unknown_strategy_warned[key]
+      return if remember_warn(@unknown_strategy_warned, "#{name}\0#{strategy}")
 
-      @unknown_strategy_warned[key] = true
       Log.safe(logger, :error, "[HireFire] Unknown plan strategy #{strategy.inspect} for " \
         "#{name.inspect}. Entry skipped.")
     end
@@ -418,6 +423,10 @@ module HireFire
       return if payload.empty?
 
       body = JSON.generate(payload)
+      if body.bytesize > PAYLOAD_SIZE_LIMIT && payload_has_sample_trace?(payload)
+        payload = strip_sample_trace(payload)
+        body = JSON.generate(payload)
+      end
       if body.bytesize > PAYLOAD_SIZE_LIMIT
         return unless generation.nil? || loop_active?(generation) || handoff_to_final_flush?
 
@@ -474,10 +483,24 @@ module HireFire
     end
 
     def drop_oversized_payload(body, watermark, server: false)
+      @pending_sample_trace = nil
       @last_rqt_second = watermark if watermark
       source = server ? "server rejected (413)" : "exceeds the #{PAYLOAD_SIZE_LIMIT}-byte limit"
       Log.safe(logger, :error, "[HireFire] Dropped metrics payload: #{body.bytesize} bytes " \
         "#{source}. Resuming from the current second.")
+    end
+
+    def payload_has_sample_trace?(payload)
+      payload.first.is_a?(Hash) && payload.first.key?("sample_trace")
+    end
+
+    def strip_sample_trace(payload)
+      @pending_sample_trace = nil
+      payload.map do |entry|
+        next entry unless entry.is_a?(Hash) && entry.key?("sample_trace")
+
+        entry.dup.tap { |copy| copy.delete("sample_trace") }
+      end
     end
 
     def build_payload(data)

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "helpers/active_record_connection"
 require_relative "../plan/hooks"
 require_relative "deprecated/queue_classic"
 
@@ -8,6 +9,7 @@ module HireFire
     module QC
       extend HireFire::Macro::Deprecated::QC
       extend HireFire::Utility
+      extend HireFire::Macro::Helpers::ActiveRecordConnection
       extend HireFire::Plan::Hooks
       extend self
 
@@ -27,27 +29,20 @@ module HireFire
       # @example Calculate latency across "default" and "mailer" queues
       #   HireFire::Macro::QC.job_queue_latency(:default, :mailer)
       def job_queue_latency(*queues)
-        queues = normalize_queues(queues, allow_empty: true)
-
-        query = <<~SQL
-          SELECT EXTRACT(EPOCH FROM (now() - scheduled_at)) AS latency
-          FROM #{::QC.table_name}
-          WHERE scheduled_at <= now()
-            AND locked_at IS NULL
-          #{filter_by_queues_if_any(queues)}
-          ORDER BY scheduled_at ASC
-          LIMIT 1
-        SQL
-
-        connection = ::QC.default_conn_adapter
-
-        result = if queues.any?
-          connection.execute(query, *queues.to_a)
-        else
-          connection.execute(query)
+        with_connection do |connection|
+          queues = normalize_queues(queues, allow_empty: true)
+          query = <<~SQL
+            SELECT EXTRACT(EPOCH FROM (now() - scheduled_at)) AS latency
+            FROM #{::QC.table_name}
+            WHERE scheduled_at <= now()
+              AND locked_at IS NULL
+            #{filter_by_queues_if_any(queues, style: connection ? :ar : :dollar)}
+            ORDER BY scheduled_at ASC
+            LIMIT 1
+          SQL
+          result = query_one(connection, query, queues.to_a)
+          (result && result["latency"]) ? result["latency"].to_f : 0.0
         end
-
-        (result && result["latency"]) ? result["latency"].to_f : 0.0
       end
 
       # Calculates the total job queue size using Queue Classic. If no queues are specified, it
@@ -66,24 +61,17 @@ module HireFire
       # @example Calculate size across "default" and "mailer" queues
       #   HireFire::Macro::QC.job_queue_size(:default, :mailer)
       def job_queue_size(*queues)
-        queues = normalize_queues(queues, allow_empty: true)
-
-        query = <<~SQL
-          SELECT COUNT(*) FROM #{::QC.table_name}
-          WHERE scheduled_at <= now()
-            AND locked_at IS NULL
-          #{filter_by_queues_if_any(queues)}
-        SQL
-
-        connection = ::QC.default_conn_adapter
-
-        result = if queues.any?
-          connection.execute(query, *queues.to_a)
-        else
-          connection.execute(query)
+        with_connection do |connection|
+          queues = normalize_queues(queues, allow_empty: true)
+          query = <<~SQL
+            SELECT COUNT(*) FROM #{::QC.table_name}
+            WHERE scheduled_at <= now()
+              AND locked_at IS NULL
+            #{filter_by_queues_if_any(queues, style: connection ? :ar : :dollar)}
+          SQL
+          result = query_one(connection, query, queues.to_a)
+          result["count"].to_i
         end
-
-        result["count"].to_i
       end
 
       # Counts in-flight (working) jobs: +locked_at+ set. Never folded into JQL/JQS.
@@ -96,31 +84,41 @@ module HireFire
       # @example Named queues
       #   HireFire::Macro::QC.job_queue_working(:default, :mailer)
       def job_queue_working(*queues)
-        queues = normalize_queues(queues, allow_empty: true)
-
-        query = <<~SQL
-          SELECT COUNT(*) FROM #{::QC.table_name}
-          WHERE locked_at IS NOT NULL
-          #{filter_by_queues_if_any(queues)}
-        SQL
-
-        connection = ::QC.default_conn_adapter
-
-        result = if queues.any?
-          connection.execute(query, *queues.to_a)
-        else
-          connection.execute(query)
+        with_connection do |connection|
+          queues = normalize_queues(queues, allow_empty: true)
+          query = <<~SQL
+            SELECT COUNT(*) FROM #{::QC.table_name}
+            WHERE locked_at IS NOT NULL
+            #{filter_by_queues_if_any(queues, style: connection ? :ar : :dollar)}
+          SQL
+          result = query_one(connection, query, queues.to_a)
+          result["count"].to_i
         end
-
-        result["count"].to_i
       end
 
       private
 
-      def filter_by_queues_if_any(queues)
+      def filter_by_queues_if_any(queues, style:)
         return "" unless queues.any?
-        placeholders = (1..queues.size).map { |i| "$#{i}" }.join(", ")
+
+        placeholders =
+          if style == :ar
+            (["?"] * queues.size).join(", ")
+          else
+            (1..queues.size).map { |i| "$#{i}" }.join(", ")
+          end
         "AND q_name IN (#{placeholders})"
+      end
+
+      def query_one(connection, query, binds)
+        if connection
+          sql = binds.any? ? ActiveRecord::Base.sanitize_sql_array([query, *binds]) : query
+          connection.select_one(sql)
+        elsif binds.any?
+          ::QC.default_conn_adapter.execute(query, *binds)
+        else
+          ::QC.default_conn_adapter.execute(query)
+        end
       end
     end
   end

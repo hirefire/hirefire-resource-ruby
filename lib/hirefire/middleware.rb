@@ -8,7 +8,7 @@ module HireFire
   # When a token is present, records a queue-time sample (milliseconds) under the process
   # {HireFire::Configuration#http_name} and starts the dispatcher. Explicit http registration is
   # optional. When +log_queue_metrics+ is true, also prints a 1.x-compatible
-  # +[hirefire:router] queue=Nms+ line to stdout (no token required; Logplex QueueTime BC).
+  # +[hirefire:router] queue=Nms+ line to stdout (no token required, Logplex QueueTime BC).
   # Failures in this path are logged and swallowed so the host app is unaffected.
   class Middleware
     REQUEST_QUEUE_TIME_LIMIT = 60_000

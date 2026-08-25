@@ -17,8 +17,8 @@ module HireFire
           #
           # @param queues [Array<String, Symbol>] Queue names to query.
           #   The last argument can be a Hash with :mapper, :min_priority, and/or :max_priority keys.
-          # @option queues [Symbol] :mapper The ORM mapper to use, one of :active_record,
-          #   :active_record_2, or :mongoid (required).
+          # @option queues [Symbol] :mapper The ORM mapper to use, one of :active_record
+          #   or :mongoid (required).
           # @option queues [Integer, nil] :min_priority (nil) The minimum job priority to include in the count.
           #   If not specified, no lower limit is applied.
           # @option queues [Integer, nil] :max_priority (nil) The maximum job priority to include in the count.
@@ -41,13 +41,6 @@ module HireFire
               query = query.where("priority >= ?", options[:min_priority]) if options.key?(:min_priority)
               query = query.where("priority <= ?", options[:max_priority]) if options.key?(:max_priority)
               query = query.where(queue: queues) unless queues.empty?
-              query.count
-            when :active_record_2
-              query = ::Delayed::Job.scoped(
-                conditions: ["run_at <= ? AND failed_at is NULL AND locked_at is NULL", Time.now.utc]
-              )
-              query = query.scoped(conditions: ["priority >= ?", options[:min_priority]]) if options.key?(:min_priority)
-              query = query.scoped(conditions: ["priority <= ?", options[:max_priority]]) if options.key?(:max_priority)
               query.count
             when :mongoid
               query = ::Delayed::Job.where(:failed_at => nil, :locked_at => nil, :run_at.lte => Time.now.utc)

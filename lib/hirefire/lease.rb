@@ -18,6 +18,7 @@ module HireFire
     def initialize
       @process_id = SecureRandom.uuid
       @client = Client.new
+      @mutex = Mutex.new
       @ttl = 15
       @granted = false
       @trace = false
@@ -38,53 +39,48 @@ module HireFire
     end
 
     def demote!
-      @epoch += 1
-      @granted = false
-      @trace = false
-      @job_queues = []
-      @expires_at = Clock.monotonic
-      @next_sample_at = Clock.monotonic
+      @mutex.synchronize { apply_demote }
     end
 
     def sample_if_due
-      reset_after_fork if @owner_pid != Process.pid
-      return unless @granted && Clock.monotonic >= @next_sample_at
+      due = @mutex.synchronize do
+        reset_after_fork if @owner_pid != Process.pid
+        next false unless @granted && Clock.monotonic >= @next_sample_at
 
-      @next_sample_at = Clock.monotonic + @sample_frequency
-      yield
+        @next_sample_at = Clock.monotonic + @sample_frequency
+        true
+      end
+      yield if due
     end
 
     def request_if_due(hold:)
-      reset_after_fork if @owner_pid != Process.pid
-      return unless Clock.monotonic >= @expires_at
+      epoch = nil
+      @mutex.synchronize do
+        reset_after_fork if @owner_pid != Process.pid
+        return unless Clock.monotonic >= @expires_at
 
-      epoch = @epoch
-      @expires_at = Clock.monotonic + @ttl
+        epoch = @epoch
+        @expires_at = Clock.monotonic + @ttl
+      end
 
       begin
         response = @client.request_lease(@process_id)
       rescue
-        return if @epoch != epoch
+        @mutex.synchronize do
+          return if @epoch != epoch
 
-        @granted = false
-        @trace = false
-        @job_queues = []
+          clear_grant
+        end
         raise
       end
 
-      return if @epoch != epoch
-
       if response.is_a?(Net::HTTPUnauthorized)
-        @granted = false
-        @trace = false
-        @job_queues = []
+        @mutex.synchronize { clear_grant if @epoch == epoch }
         return
       end
 
       unless response.is_a?(Net::HTTPSuccess)
-        @granted = false
-        @trace = false
-        @job_queues = []
+        @mutex.synchronize { clear_grant if @epoch == epoch }
         raise Client::RequestError, "Lease request failed with #{response.code} status."
       end
 
@@ -109,31 +105,29 @@ module HireFire
       granted = response["HireFire-Lease-Granted"] == "true"
       grant_body = granted ? parse_grant_body(response.body) : empty_grant_body
 
-      return if @epoch != epoch
-
       hold_ok = !granted || hold.call(grant_body.job_queues)
 
-      return if @epoch != epoch
+      @mutex.synchronize do
+        return if @epoch != epoch
 
-      @sample_frequency = next_sample_frequency
-      @next_sample_at = next_sample_at
-      @ttl = next_ttl
-      @expires_at = next_expires_at
+        @sample_frequency = next_sample_frequency
+        @next_sample_at = next_sample_at
+        @ttl = next_ttl
+        @expires_at = next_expires_at
 
-      if granted && !hold_ok
-        @granted = false
-        @trace = false
-        @job_queues = []
-        @process_id = SecureRandom.uuid
-        Log.safe(HireFire.configuration.logger, :info,
-          "[HireFire] Lease grant dropped: this process cannot sample the plan " \
-          "(no local job-queue samplers and no executable plan adapter).")
-      else
-        was_granted = @granted
-        @granted = granted
-        @trace = granted && grant_body.trace
-        @job_queues = grant_body.job_queues
-        @next_sample_at = Clock.monotonic if granted && !was_granted
+        if granted && !hold_ok
+          clear_grant
+          @process_id = SecureRandom.uuid
+          Log.safe(HireFire.configuration.logger, :info,
+            "[HireFire] Lease grant dropped: this process cannot sample the plan " \
+            "(no local job-queue samplers and no executable plan adapter).")
+        else
+          was_granted = @granted
+          @granted = granted
+          @trace = granted && grant_body.trace
+          @job_queues = grant_body.job_queues
+          @next_sample_at = Clock.monotonic if granted && !was_granted
+        end
       end
     end
 
@@ -215,14 +209,22 @@ module HireFire
       empty_grant_body
     end
 
-    def reset_after_fork
-      @epoch += 1
-      @process_id = SecureRandom.uuid
+    def clear_grant
       @granted = false
       @trace = false
       @job_queues = []
+    end
+
+    def apply_demote
+      @epoch += 1
+      clear_grant
       @expires_at = Clock.monotonic
       @next_sample_at = Clock.monotonic
+    end
+
+    def reset_after_fork
+      apply_demote
+      @process_id = SecureRandom.uuid
       @owner_pid = Process.pid
     end
   end

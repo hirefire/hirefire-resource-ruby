@@ -95,7 +95,7 @@ class HireFire::PlanTest < Minitest::Test
     HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
-  def test_execute_skips_wrk_when_job_strategy_sample_invalid
+  def test_execute_still_samples_wrk_when_job_strategy_sample_invalid
     buffer = HireFire.configuration.buffer
     buffer.flush
     original = HireFire::Plan::ADAPTERS
@@ -124,8 +124,8 @@ class HireFire::PlanTest < Minitest::Test
 
     flushed = buffer.flush
     assert_nil flushed.dig("worker", "jqs")
-    assert_nil flushed.dig("worker", "wrk")
-    refute working_called, "wrk must not run when jqs sample is dropped"
+    assert_equal 3, flushed.dig("worker", "wrk")&.values&.last
+    assert working_called, "wrk still samples when jqs is dropped"
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
@@ -376,7 +376,7 @@ class HireFire::PlanTest < Minitest::Test
       "options" => {}
     )
 
-    assert_equal({amqp_url: "amqp://override.example/vhost"}, captured)
+    assert_equal({reuse_connection: true, amqp_url: "amqp://override.example/vhost"}, captured)
   ensure
     ENV.delete("HIREFIRE_BUNNY_URL")
     HireFire::Plan.send(:remove_const, :ADAPTERS)
@@ -398,7 +398,7 @@ class HireFire::PlanTest < Minitest::Test
       assert_equal({}, macro.plan_options("jql", {"any" => true}))
       assert_equal({}, macro.plan_connection_options) unless macro == HireFire::Macro::Bunny
     end
-    assert_equal({}, HireFire::Macro::Bunny.plan_connection_options)
+    assert_equal({reuse_connection: true}, HireFire::Macro::Bunny.plan_connection_options)
   end
 
   def test_size_only_macros_reject_jql_strategy_support

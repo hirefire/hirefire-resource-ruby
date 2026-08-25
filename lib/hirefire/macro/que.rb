@@ -86,7 +86,7 @@ module HireFire
       def job_queue_latency_v0(*queues)
         queues = normalize_queues(queues, allow_empty: true)
         query = <<~SQL
-          SELECT run_at
+          SELECT EXTRACT(EPOCH FROM (NOW() - run_at)) AS latency
           FROM que_jobs
           WHERE run_at <= NOW()
           #{not_advisory_locked_sql}
@@ -101,7 +101,7 @@ module HireFire
       def job_queue_latency_v1_v2(*queues)
         queues = normalize_queues(queues, allow_empty: true)
         query = <<~SQL
-          SELECT run_at
+          SELECT EXTRACT(EPOCH FROM (NOW() - run_at)) AS latency
           FROM que_jobs
           WHERE run_at <= NOW()
           AND finished_at IS NULL
@@ -198,7 +198,7 @@ module HireFire
 
       def query_job_queue_latency(query, queues)
         result = ::Que.execute(query, queues.to_a).first
-        result ? (Time.now - result[:run_at].to_time) : 0.0
+        result ? (result[:latency] || result["latency"]).to_f : 0.0
       end
 
       def query_job_queue_size(query, queues)

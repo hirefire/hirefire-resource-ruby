@@ -94,6 +94,24 @@ module HireFire
         end
       end
 
+      def before_sample_job_queues
+        return nil unless defined?(::SolidQueue)
+
+        @wave_registered_queues = ::SolidQueue::Queue.all.map(&:name)
+        @wave_paused_queues = ::SolidQueue::Pause.pluck(:queue_name)
+        true
+      end
+
+      def after_sample_job_queues(_token = nil)
+        @wave_registered_queues = nil
+        @wave_paused_queues = nil
+      end
+
+      def reinit_after_fork
+        @wave_registered_queues = nil
+        @wave_paused_queues = nil
+      end
+
       private
 
       def determine_queues(queues)
@@ -111,11 +129,11 @@ module HireFire
       end
 
       def registered_queues
-        ::SolidQueue::Queue.all.map(&:name)
+        @wave_registered_queues || ::SolidQueue::Queue.all.map(&:name)
       end
 
       def paused_queues
-        ::SolidQueue::Pause.pluck(:queue_name)
+        @wave_paused_queues || ::SolidQueue::Pause.pluck(:queue_name)
       end
 
       def expand_wildcards(queues)

@@ -17,8 +17,18 @@ module HireFire
       #
       # @return [Hash]
       def plan_connection_options
+        options = {reuse_connection: true}
         url = presence(ENV["HIREFIRE_BUNNY_URL"]) || presence(ENV["HIREFIRE_AMQP_URL"])
-        url ? {amqp_url: url} : {}
+        options[:amqp_url] = url if url
+        options
+      end
+
+      def reinit_after_fork
+        old = @reused_connection
+        @connection_mutex = Mutex.new
+        @reused_connection = nil
+        @reused_url = nil
+        close_connection(old)
       end
 
       # Calculates the total job queue size using Bunny.
@@ -50,8 +60,9 @@ module HireFire
       # @param connection [Bunny::Session, nil] (optional) An existing, started connection to
       #   reuse. When given, it takes precedence over +amqp_url+: it is left open (the caller owns
       #   it) and only a per-call channel is opened and closed. Otherwise a new connection is opened
-      #   and closed on each call. Reusing a long-lived connection avoids a TCP + AMQP handshake on
-      #   every poll.
+      #   and closed on each call unless +reuse_connection+ is true.
+      # @param reuse_connection [Boolean] when true (the plan path), keep one process-local
+      #   connection and open a fresh channel per call. {#reinit_after_fork} closes it.
       # @return [Integer] Total job queue size.
       # @raise [HireFire::Errors::MissingQueueError] If no queue names are specified.
       # @raise [Bunny::Exception] If a queue does not exist (a passive declare returns a 404) or
@@ -64,13 +75,18 @@ module HireFire
       #   HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url)
       # @example Reuse a long-lived connection across calls
       #   HireFire::Macro::Bunny.job_queue_size(:default, connection: connection)
-      def job_queue_size(*queues, amqp_url: nil, connection: nil)
+      def job_queue_size(*queues, amqp_url: nil, connection: nil, reuse_connection: false)
         require "bunny"
 
         queues = normalize_queues(queues, allow_empty: false)
 
-        owned_connection = connection.nil?
-        connection ||= acquire_connection(amqp_url)
+        if connection.nil? && reuse_connection
+          connection = reused_connection(amqp_url)
+          owned_connection = false
+        else
+          owned_connection = connection.nil?
+          connection ||= acquire_connection(amqp_url)
+        end
         channel = open_channel(connection, close_connection_on_failure: owned_connection)
 
         begin
@@ -110,14 +126,47 @@ module HireFire
       end
 
       def acquire_connection(amqp_url)
-        url = amqp_url ||
+        ::Bunny.new(resolve_amqp_url(amqp_url)).tap(&:start)
+      end
+
+      def resolve_amqp_url(amqp_url)
+        amqp_url ||
           ENV["AMQP_URL"] ||
           ENV["RABBITMQ_URL"] ||
           ENV["RABBITMQ_BIGWIG_URL"] ||
           ENV["CLOUDAMQP_URL"] ||
           "amqp://guest:guest@localhost:5672"
+      end
 
-        ::Bunny.new(url).tap(&:start)
+      def reused_connection(amqp_url)
+        url = resolve_amqp_url(amqp_url)
+        connection_mutex.synchronize do
+          if @reused_connection && @reused_url == url && connection_open?(@reused_connection)
+            return @reused_connection
+          end
+
+          close_connection(@reused_connection)
+          @reused_url = url
+          @reused_connection = acquire_connection(url)
+        end
+      end
+
+      def reset_reused_connection
+        connection_mutex.synchronize do
+          close_connection(@reused_connection)
+          @reused_connection = nil
+          @reused_url = nil
+        end
+      end
+
+      def connection_open?(connection)
+        connection.respond_to?(:open?) && connection.open?
+      rescue ::Bunny::Exception
+        false
+      end
+
+      def connection_mutex
+        @connection_mutex ||= Mutex.new
       end
     end
   end

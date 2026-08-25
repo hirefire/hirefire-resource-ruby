@@ -133,6 +133,50 @@ class HireFire::PlanTest < Minitest::Test
     HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
+  def test_execute_still_samples_wrk_when_job_strategy_raises
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+    original = HireFire::Plan::ADAPTERS
+    original_checks = HireFire::Plan::LIBRARY_CHECKS
+    working_called = false
+    mod = stub_macro do |m|
+      m.define_singleton_method(:job_queue_size) { |*_a, **_o| raise "jqs boom" }
+      m.define_singleton_method(:job_queue_working) do |*_a|
+        working_called = true
+        3
+      end
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
+
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "sidekiq",
+      "strategy" => "jqs",
+      "queues" => ["default"],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert_nil flushed.dig("worker", "jqs")
+    assert_equal 3, flushed.dig("worker", "wrk")&.values&.last
+    assert working_called, "wrk still samples when jqs raises"
+    assert_includes log.string, "Plan sampler for"
+    assert_includes log.string, "raised"
+    assert_includes log.string, "jqs boom"
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
+  end
+
   def test_execute_drops_invalid_wrk_without_clearing_jqs
     buffer = HireFire.configuration.buffer
     buffer.flush

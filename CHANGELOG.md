@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Que latency uses the database clock so a lagging app clock cannot return a negative value.
 - Queue Classic returns the Active Record pool connection after each sample.
 - An oversized support sample-trace is dropped so ordinary metrics still ship.
+- The count of jobs still being processed is still reported when the queue size or latency reading fails.
 
 ## [1.0.8] - 2025-08-04
 

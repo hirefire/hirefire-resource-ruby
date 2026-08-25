@@ -144,6 +144,10 @@ module HireFire
 
       record_sample(name, strategy, value)
       true
+    rescue => e
+      Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " \
+        "#{e.class}: #{e.message}")
+      false
     end
 
     def sample_working(macro, name, queues, live: nil)

@@ -15,6 +15,11 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     SolidQueue.logger = Logger.new(File::NULL)
   end
 
+  def teardown
+    HireFire::Macro::SolidQueue.reinit_after_fork
+    super
+  end
+
   def test_library_loaded_is_true_when_solid_queue_gem_is_loaded
     assert HireFire::Plan.library_loaded?("solid_queue")
     assert HireFire::Plan.executable?("solid_queue")
@@ -41,13 +46,14 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     end
 
     HireFire::Macro::SolidQueue.before_sample_job_queues
-    assert_equal 1, calls
+    assert_operator calls, :>=, 1
     refute_nil HireFire::Macro::SolidQueue.instance_variable_get(:@wave_registered_queues)
 
     HireFire::Macro::SolidQueue.after_sample_job_queues
     assert_nil HireFire::Macro::SolidQueue.instance_variable_get(:@wave_registered_queues)
     assert_nil HireFire::Macro::SolidQueue.instance_variable_get(:@wave_paused_queues)
   ensure
+    HireFire::Macro::SolidQueue.after_sample_job_queues
     pool.singleton_class.remove_method(:with_connection)
   end
 

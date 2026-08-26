@@ -97,8 +97,14 @@ module HireFire
       def before_sample_job_queues
         return nil unless defined?(::SolidQueue)
 
-        @wave_registered_queues = ::SolidQueue::Queue.all.map(&:name)
-        @wave_paused_queues = ::SolidQueue::Pause.pluck(:queue_name)
+        registered = nil
+        paused = nil
+        with_connection do
+          registered = ::SolidQueue::Queue.all.map(&:name)
+          paused = ::SolidQueue::Pause.pluck(:queue_name)
+        end
+        @wave_registered_queues = registered
+        @wave_paused_queues = paused
         true
       end
 
@@ -151,11 +157,14 @@ module HireFire
       end
 
       def ready_latency(queues, now:)
-        now - (
-          ::SolidQueue::ReadyExecution
-            .where(queue_name: queues)
-            .minimum(:created_at) || now
-        )
+        [
+          now - (
+            ::SolidQueue::ReadyExecution
+              .where(queue_name: queues)
+              .minimum(:created_at) || now
+          ),
+          0.0
+        ].max
       end
 
       def ready_size(queues)
@@ -165,12 +174,15 @@ module HireFire
       end
 
       def scheduled_latency(queues, now:)
-        now - (
-          ::SolidQueue::ScheduledExecution
-            .due
-            .where(queue_name: queues)
-            .minimum(:scheduled_at) || now
-        )
+        [
+          now - (
+            ::SolidQueue::ScheduledExecution
+              .due
+              .where(queue_name: queues)
+              .minimum(:scheduled_at) || now
+          ),
+          0.0
+        ].max
       end
 
       def scheduled_size(queues)

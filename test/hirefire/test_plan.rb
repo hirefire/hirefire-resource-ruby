@@ -647,6 +647,50 @@ class HireFire::PlanTest < Minitest::Test
     HireFire::Plan.const_set(:ADAPTERS, original)
   end
 
+  def test_execute_skips_queues_required_adapter_with_empty_queues
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+    original = HireFire::Plan::ADAPTERS
+    original_checks = HireFire::Plan::LIBRARY_CHECKS
+    calls = 0
+    mod = stub_macro do |m|
+      m.define_singleton_method(:queues_required?) { true }
+      m.define_singleton_method(:job_queue_size) { |*_a, **_o|
+        calls += 1
+        4
+      }
+      m.define_singleton_method(:job_queue_working) { |*_a|
+        calls += 1
+        1
+      }
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original.merge("bunny" => mod))
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("bunny" => -> { true }))
+
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+
+    HireFire::Plan.execute(
+      "name" => "mail",
+      "adapter" => "bunny",
+      "strategy" => "jqs",
+      "queues" => [],
+      "options" => {}
+    )
+
+    assert_equal 0, calls
+    assert_empty buffer.flush
+    assert_includes log.string, "requires named queues"
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
+  end
+
   def test_hooks_default_sample_wave_methods_are_noops
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)

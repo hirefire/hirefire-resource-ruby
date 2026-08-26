@@ -2,9 +2,6 @@
 
 require "test_helper"
 
-# Closed-world platform goldens for HireFire::Source::CPU::Usage.
-# Fixture bodies are verbatim extracts from hirefire-resource/cpu-platform-samples.md
-# (capture date 2026-07-27). Do not invent platform samples here.
 class HireFire::Source::CPU::PlatformTest < Minitest::Test
   Usage = HireFire::Source::CPU::Usage
   FIXTURE_ROOT = File.expand_path("../../fixtures/cpu", __FILE__)
@@ -52,10 +49,6 @@ class HireFire::Source::CPU::PlatformTest < Minitest::Test
     File.read(path).lines.reject { |line| line.start_with?("#") }.join.strip
   end
 
-  # Default every Usage.read → nil (no host /proc or cgroup leak), then inject
-  # only the fixture map. Dir.glob never sees the real host. process_seconds is
-  # nil so usage never falls through to the process clock unless a test re-stubs.
-  # processor_count always stubs (default NPROC_SENTINEL).
   def closed_world(reads: {}, proc_paths: [], nproc: NPROC_SENTINEL, clock_ticks: 100)
     Usage.stubs(:read).returns(nil)
     reads.each do |path, content|

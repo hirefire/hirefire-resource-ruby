@@ -12,7 +12,7 @@ module HireFire
       extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
 
-      # HireFire-specific AMQP URL for plan sampling (takes precedence over generic env defaults
+      # HireFire-specific AMQP URL for plan sampling (takes precedence over generic env defaults)
       # inside {#job_queue_size} when passed as +amqp_url:+).
       #
       # @return [Hash]
@@ -27,6 +27,10 @@ module HireFire
         @connection_mutex = Mutex.new
         @reused_connection = nil
         @reused_url = nil
+      end
+
+      def queues_required?
+        true
       end
 
       # Calculates the total job queue size using Bunny.
@@ -79,22 +83,35 @@ module HireFire
 
         queues = normalize_queues(queues, allow_empty: false)
 
-        if connection.nil? && reuse_connection
+        using_reused = connection.nil? && reuse_connection
+        if using_reused
           connection = reused_connection(amqp_url)
           owned_connection = false
         else
           owned_connection = connection.nil?
           connection ||= acquire_connection(amqp_url)
         end
-        channel = open_channel(connection, close_connection_on_failure: owned_connection)
+        channel = nil
 
         begin
+          channel = open_channel(connection, close_connection_on_failure: owned_connection)
           queues.sum { |name| channel.queue(name, passive: true).message_count }
+        rescue
+          discard_reused_connection(connection) if using_reused
+          raise
         ensure
           close_channel(channel)
           close_connection(connection) if owned_connection
         end
       end
+
+      SAMPLE_CONNECTION_OPTIONS = {
+        connection_timeout: 5,
+        continuation_timeout: 5_000,
+        read_timeout: 5,
+        write_timeout: 5,
+        automatically_recover: false
+      }.freeze
 
       private
 
@@ -125,7 +142,13 @@ module HireFire
       end
 
       def acquire_connection(amqp_url)
-        ::Bunny.new(resolve_amqp_url(amqp_url)).tap(&:start)
+        session = nil
+        session = ::Bunny.new(resolve_amqp_url(amqp_url), SAMPLE_CONNECTION_OPTIONS)
+        session.start
+        session
+      rescue
+        close_connection(session)
+        raise
       end
 
       def resolve_amqp_url(amqp_url)
@@ -145,8 +168,21 @@ module HireFire
           end
 
           close_connection(@reused_connection)
+          @reused_connection = nil
+          @reused_url = nil
+          session = acquire_connection(url)
           @reused_url = url
-          @reused_connection = acquire_connection(url)
+          @reused_connection = session
+        end
+      end
+
+      def discard_reused_connection(connection)
+        connection_mutex.synchronize do
+          next unless @reused_connection.equal?(connection)
+
+          close_connection(@reused_connection)
+          @reused_connection = nil
+          @reused_url = nil
         end
       end
 

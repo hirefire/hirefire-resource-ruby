@@ -51,7 +51,7 @@ module HireFire
             end
 
             if (job = query.first)
-              Time.now - job.run_at
+              [Time.now - job.run_at, 0.0].max
             else
               0.0
             end

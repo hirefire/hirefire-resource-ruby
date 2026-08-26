@@ -156,6 +156,40 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_in_delta 90, hirefire, LATENCY_DELTA
   end
 
+  def test_job_queue_latency_malformed_timestamp_is_zero_not_epoch
+    plant_queue_job("default", enqueued_at: "not-a-time")
+
+    assert_in_delta 0.0, enqueued_only_latency(:default), 0.001
+  end
+
+  def test_job_queue_latency_corrupt_live_json_skips_that_queue
+    plant_queue_job("default", enqueued_at: Time.now.to_f - 180)
+    plant_raw_queue_payload("broken", "not-json{")
+
+    hirefire = enqueued_only_latency(:default, :broken)
+    assert_in_delta 180, hirefire, LATENCY_DELTA
+  end
+
+  def test_job_queue_latency_non_hash_live_json_skips_that_queue
+    plant_queue_job("default", enqueued_at: Time.now.to_f - 120)
+    plant_raw_queue_payload("broken", "[1,2,3]")
+
+    hirefire = enqueued_only_latency(:default, :broken)
+    assert_in_delta 120, hirefire, LATENCY_DELTA
+  end
+
+  def test_job_queue_latency_future_float_is_zero
+    plant_queue_job("default", enqueued_at: Time.now.to_f + 60)
+
+    assert_in_delta 0.0, enqueued_only_latency(:default), 0.001
+  end
+
+  def test_job_queue_latency_future_integer_ms_is_zero
+    plant_queue_job("default", enqueued_at: ((Time.now.to_f + 60) * 1000).round)
+
+    assert_in_delta 0.0, enqueued_only_latency(:default), 0.001
+  end
+
   def test_job_queue_latency_falls_back_to_integer_millisecond_created_at
     plant_queue_job("default", enqueued_at: nil, created_at: ((Time.now.to_f - 90) * 1000).round)
 
@@ -463,6 +497,27 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal HireFire::Macro::Sidekiq.job_queue_size(:default), jqs_value
     assert_operator wrk_value, :>, 0
     assert_equal jqs_value, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: true)
+  end
+
+  def test_plan_execute_sidekiq_jql_records_wrk_when_primary_timestamp_is_invalid
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    plant_queue_job("default", enqueued_at: "not-a-time")
+    enqueue_working(queue: "default", run_at: Time.now.to_i - 20)
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "sidekiq",
+      "strategy" => "jql",
+      "queues" => ["default"],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert_in_delta 0.0, flushed.dig("worker", "jql")&.values&.last.to_f, 0.001
+    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
   end
 
   def test_plan_execute_sidekiq_jql_also_samples_wrk
@@ -912,6 +967,19 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   def oldest_queue_payload(queue)
     raw = Sidekiq.redis { |conn| conn.lindex("queue:#{queue}", -1) }
     raw ? Sidekiq.load_json(raw) : nil
+  end
+
+  def plant_raw_queue_payload(queue, payload)
+    Sidekiq.redis do |connection|
+      case identify_redis_client(connection)
+      when :redis
+        connection.sadd?("queues", queue)
+        connection.lpush("queue:#{queue}", payload)
+      when :redis_client
+        connection.call("sadd", "queues", queue)
+        connection.call("lpush", "queue:#{queue}", payload)
+      end
+    end
   end
 
   def plant_queue_job(queue, enqueued_at:, created_at: nil)

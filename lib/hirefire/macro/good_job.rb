@@ -36,7 +36,7 @@ module HireFire
           query = ready_jobs(*queues).order(Arel.sql("COALESCE(scheduled_at, created_at) ASC"))
 
           if (job = query.first)
-            Time.now - (job.scheduled_at || job.created_at)
+            [Time.now - (job.scheduled_at || job.created_at), 0.0].max
           else
             0.0
           end

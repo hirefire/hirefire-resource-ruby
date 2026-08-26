@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "timeout"
+require "socket"
 
 ENV["AMQP_URL"] ||= "amqp://guest:guest@localhost:#{ENV.fetch("RABBITMQ_PORT", 5672)}"
 
@@ -13,6 +14,11 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     assert HireFire::Plan.library_loaded?("bunny")
     assert HireFire::Plan.executable?("bunny")
     assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
+  end
+
+  def test_queues_required
+    assert HireFire::Macro::Bunny.queues_required?
+    assert HireFire::Plan.queues_required?("bunny")
   end
 
   def test_missing_queues_raises_error
@@ -236,6 +242,44 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
   end
 
+  def test_owned_connection_times_out_on_accepting_blackhole
+    url, stop_blackhole = start_amqp_blackhole
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    raised = nil
+    begin
+      HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url)
+    rescue
+      raised = $!
+    end
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+    assert elapsed < 8, "sample parked for #{elapsed}s (#{raised.inspect})"
+    refute_nil raised, "blackhole handshake must fail the sample"
+    assert_nil HireFire::Macro::Bunny.instance_variable_get(:@reused_connection)
+  ensure
+    stop_blackhole&.call
+    HireFire::Macro::Bunny.reinit_after_fork
+  end
+
+  def test_reused_connection_times_out_on_accepting_blackhole_and_drops_session
+    url, stop_blackhole = start_amqp_blackhole
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    raised = nil
+    begin
+      HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url, reuse_connection: true)
+    rescue
+      raised = $!
+    end
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+    assert elapsed < 8, "sample parked for #{elapsed}s (#{raised.inspect})"
+    refute_nil raised, "blackhole handshake must fail the sample"
+    assert_nil HireFire::Macro::Bunny.instance_variable_get(:@reused_connection)
+  ensure
+    stop_blackhole&.call
+    HireFire::Macro::Bunny.reinit_after_fork
+  end
+
   def test_acquire_connection_env_url_cascade
     keys = %w[AMQP_URL RABBITMQ_URL RABBITMQ_BIGWIG_URL CLOUDAMQP_URL]
     saved = keys.to_h { |k| [k, ENV[k]] }
@@ -277,9 +321,39 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   def expect_bunny_connection(url)
     fake = mock("bunny-#{url}")
     fake.expects(:start).returns(true)
-    ::Bunny.expects(:new).with(url).returns(fake)
+    ::Bunny.expects(:new).with(
+      url,
+      HireFire::Macro::Bunny::SAMPLE_CONNECTION_OPTIONS
+    ).returns(fake)
     result = HireFire::Macro::Bunny.send(:acquire_connection, nil)
     assert_same fake, result
+  end
+
+  def start_amqp_blackhole
+    server = TCPServer.new("127.0.0.1", 0)
+    port = server.addr[1]
+    stop = false
+    thread = Thread.new do
+      until stop
+        begin
+          client = server.accept
+          Thread.new { sleep 30 } unless client.nil?
+        rescue
+          break
+        end
+      end
+    end
+    url = "amqp://guest:guest@127.0.0.1:#{port}"
+    stopper = lambda do
+      stop = true
+      begin
+        server.close
+      rescue
+        nil
+      end
+      thread.kill
+    end
+    [url, stopper]
   end
 
   def publish_confirmed(channel, queue)

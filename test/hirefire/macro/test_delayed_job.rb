@@ -34,6 +34,13 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_latency
   end
 
+  def test_job_queue_latency_clamps_future_run_at_to_zero
+    BasicJob.delay(queue: :default).perform
+    record = Delayed::Job.last
+    record.update!(run_at: 1.minute.from_now, locked_at: nil, failed_at: nil)
+    assert_equal 0.0, HireFire::Macro::Delayed::Job.job_queue_latency(:default)
+  end
+
   def test_job_queue_latency_with_jobs
     BasicJob.delay(queue: :default).perform
     Timecop.freeze(1.minute.ago) { BasicJob.delay(queue: :mailer).perform }

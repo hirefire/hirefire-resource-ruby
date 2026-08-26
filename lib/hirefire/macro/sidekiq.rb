@@ -213,22 +213,37 @@ module HireFire
           end
 
           max_latencies = oldest_jobs.map do |job_payload|
-            job = job_payload ? JSON.parse(job_payload) : {}
-            job_enqueued_latency(job)
+            job_enqueued_latency(parse_live_job(job_payload))
           end
 
           (max_latencies.max || 0.0).to_f
+        end
+
+        def parse_live_job(job_payload)
+          return {} if job_payload.nil? || job_payload == ""
+
+          job = JSON.parse(job_payload)
+          job.is_a?(Hash) ? job : {}
+        rescue JSON::ParserError, TypeError
+          {}
         end
 
         def job_enqueued_latency(job)
           timestamp = job["enqueued_at"] || job["created_at"]
           return 0.0 unless timestamp
 
-          if timestamp.is_a?(Float)
-            Time.now.to_f - timestamp
-          else
-            Time.now.to_f - timestamp.to_f / 1000.0
-          end
+          epoch =
+            case timestamp
+            when Float
+              return 0.0 unless timestamp.finite?
+              timestamp
+            when Integer
+              timestamp / 1000.0
+            else
+              return 0.0
+            end
+
+          [Time.now.to_f - epoch, 0.0].max
         end
 
         def set_latency(set, queues)

@@ -376,8 +376,6 @@ class HireFire::Macro::QueTest < Minitest::Test
     Que.enqueue(*args, **options)
   end
 
-  # Hold a Que-style session advisory lock on a dedicated connection so the macro's
-  # `pg_locks` anti-join sees working jobs.
   def with_advisory_lock(job_id, &block)
     with_advisory_locks(job_id, &block)
   end

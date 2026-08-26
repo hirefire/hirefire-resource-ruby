@@ -21,10 +21,6 @@ module HireFire
           1_073_741_824 => 2.0
         }.freeze
 
-        def total_seconds
-          reading.first
-        end
-
         def reading
           if (seconds = cgroup_v2_seconds)
             [seconds, :cgroup_v2]
@@ -136,8 +132,8 @@ module HireFire
         def render_entitlement
           return unless ENV["RENDER"]
 
-          count = ENV["RENDER_CPU_COUNT"].to_f
-          count if count.positive?
+          count = number(ENV["RENDER_CPU_COUNT"])
+          count if count&.positive?
         end
 
         def processor_count
@@ -151,7 +147,8 @@ module HireFire
         end
 
         def number(value)
-          Float(value, exception: false)
+          parsed = Float(value, exception: false)
+          parsed if parsed&.finite?
         end
       end
     end

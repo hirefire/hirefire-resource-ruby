@@ -62,6 +62,31 @@ module HireFire
       macro.supports_plan_strategy?(strategy)
     end
 
+    def queues_required?(adapter)
+      macro = ADAPTERS[adapter.to_s]
+      return false unless macro
+
+      macro.queues_required?
+    end
+
+    def sampleable_entry?(entry)
+      adapter = entry["adapter"]
+      strategy = entry["strategy"]
+      return false unless executable?(adapter) && supports_strategy?(adapter, strategy)
+      return true unless queues_required?(adapter)
+
+      named_plan_queues?(entry["queues"])
+    end
+
+    def named_plan_queues?(queues)
+      return false unless queues.is_a?(Array)
+
+      queues.any? do |queue|
+        name = queue.to_s.strip
+        !name.empty? && name.bytesize <= MAX_QUEUE_NAME_BYTES
+      end
+    end
+
     def around_job_queue_sample
       tokens = {}
       ADAPTERS.each do |name, macro|
@@ -120,6 +145,12 @@ module HireFire
 
       queues = normalize_queues(entry["queues"], name: name)
       return if queues.nil?
+
+      if queues_required?(adapter) && queues.empty?
+        Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} for #{name.inspect} " \
+          "requires named queues. Entry skipped.")
+        return
+      end
 
       options = macro.plan_options(strategy, entry["options"])
         .merge(macro.plan_connection_options)

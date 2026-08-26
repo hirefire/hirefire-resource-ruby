@@ -1111,6 +1111,36 @@ class HireFire::DispatcherTest < Minitest::Test
     HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
+  def test_hold_lease_false_when_queue_required_entry_has_no_queues
+    HireFire::Plan.stubs(:any_allowlisted_job_queue_library_loaded?).returns(true)
+    HireFire::Plan.stubs(:executable?).with("bunny").returns(true)
+    HireFire::Plan.stubs(:supports_strategy?).with("bunny", "jqs").returns(true)
+
+    stub_lease(granted: true, job_queues: [
+      {"name" => "worker", "strategy" => "jqs", "adapter" => "bunny", "queues" => [], "options" => {}}
+    ])
+
+    dispatcher = HireFire.configuration.dispatcher
+    assert dispatcher.send(:enter_race?)
+    refute dispatcher.send(:hold_lease?, [
+      {"name" => "worker", "strategy" => "jqs", "adapter" => "bunny", "queues" => []}
+    ])
+
+    dispatcher.send(:job_queue_tick)
+    refute dispatcher.instance_variable_get(:@lease).granted?
+  end
+
+  def test_hold_lease_true_when_enumerating_adapter_has_empty_queue_list
+    HireFire::Plan.stubs(:executable?).with("sidekiq").returns(true)
+    HireFire::Plan.stubs(:supports_strategy?).with("sidekiq", "jqs").returns(true)
+
+    dispatcher = HireFire.configuration.dispatcher
+    refute HireFire.configuration.job_queues.any?
+    assert dispatcher.send(:hold_lease?, [
+      {"name" => "worker", "strategy" => "jqs", "adapter" => "sidekiq", "queues" => []}
+    ])
+  end
+
   def test_hold_lease_false_when_only_unsupported_strategy_entries
     HireFire::Plan.stubs(:any_allowlisted_job_queue_library_loaded?).returns(true)
     HireFire::Plan.stubs(:executable?).with("bunny").returns(true)
@@ -1125,6 +1155,59 @@ class HireFire::DispatcherTest < Minitest::Test
 
     dispatcher.send(:job_queue_tick)
     refute dispatcher.instance_variable_get(:@lease).granted?
+  end
+
+  def test_mixed_plan_skips_empty_queues_required_entry_without_invoking_adapter
+    bunny_calls = 0
+    sidekiq_calls = 0
+
+    enumerating = Module.new
+    enumerating.extend(HireFire::Plan::Hooks)
+    enumerating.define_singleton_method(:job_queue_size) { |*_queues, **_options|
+      sidekiq_calls += 1
+      3
+    }
+
+    required = Module.new
+    required.extend(HireFire::Plan::Hooks)
+    required.define_singleton_method(:queues_required?) { true }
+    required.define_singleton_method(:job_queue_size) { |*_queues, **_options|
+      bunny_calls += 1
+      0
+    }
+
+    original = HireFire::Plan::ADAPTERS
+    original_checks = HireFire::Plan::LIBRARY_CHECKS
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => enumerating, "bunny" => required))
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge(
+      "sidekiq" => -> { true },
+      "bunny" => -> { true }
+    ))
+
+    stub_lease(granted: true, job_queues: [
+      {"name" => "worker", "strategy" => "jqs", "adapter" => "sidekiq", "queues" => [], "options" => {}},
+      {"name" => "mail", "strategy" => "jqs", "adapter" => "bunny", "queues" => [], "options" => {}}
+    ])
+
+    dispatcher = HireFire.configuration.dispatcher
+    plan = [
+      {"name" => "worker", "strategy" => "jqs", "adapter" => "sidekiq", "queues" => []},
+      {"name" => "mail", "strategy" => "jqs", "adapter" => "bunny", "queues" => []}
+    ]
+    assert dispatcher.send(:hold_lease?, plan)
+
+    dispatcher.send(:job_queue_tick)
+
+    assert_equal 1, sidekiq_calls
+    assert_equal 0, bunny_calls
+    assert_includes log.string, "requires named queues"
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_start_rejected_while_stopping

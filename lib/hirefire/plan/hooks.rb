@@ -34,6 +34,14 @@ module HireFire
         HireFire::Plan.known_strategy?(strategy)
       end
 
+      # Whether an empty plan queue list is invalid (named queues required).
+      # Enumerating adapters override this to false (empty = all queues).
+      #
+      # @return [Boolean]
+      def queues_required?
+        false
+      end
+
       # Open process-local state for one {HireFire::Dispatcher#sample_job_queues} wave.
       # Default is a no-op. Adapters with sample-scoped caches (e.g. Sidekiq DueCache)
       # override and may return an opaque token for {#after_sample_job_queues}.

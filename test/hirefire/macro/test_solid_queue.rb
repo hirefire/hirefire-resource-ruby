@@ -25,6 +25,32 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     assert_equal 0, HireFire::Macro::SolidQueue.job_queue_latency(:default)
   end
 
+  def test_job_queue_latency_clamps_future_created_at_to_zero
+    BasicJob.perform_later
+    ::SolidQueue::ReadyExecution.where(queue_name: "default").update_all(created_at: 1.minute.from_now)
+    assert_equal 0.0, HireFire::Macro::SolidQueue.job_queue_latency(:default)
+  end
+
+  def test_before_sample_job_queues_uses_connection_pool_and_clears_cache
+    pool = ActiveRecord::Base.connection_pool
+    calls = 0
+    original = pool.method(:with_connection)
+    pool.define_singleton_method(:with_connection) do |**kwargs, &block|
+      calls += 1
+      original.call(**kwargs, &block)
+    end
+
+    HireFire::Macro::SolidQueue.before_sample_job_queues
+    assert_equal 1, calls
+    refute_nil HireFire::Macro::SolidQueue.instance_variable_get(:@wave_registered_queues)
+
+    HireFire::Macro::SolidQueue.after_sample_job_queues
+    assert_nil HireFire::Macro::SolidQueue.instance_variable_get(:@wave_registered_queues)
+    assert_nil HireFire::Macro::SolidQueue.instance_variable_get(:@wave_paused_queues)
+  ensure
+    pool.singleton_class.remove_method(:with_connection)
+  end
+
   def test_job_queue_latency_with_jobs
     BasicJob.perform_later
     Timecop.freeze(1.minute.ago) { BasicJob.set(queue: :mailer).perform_later }

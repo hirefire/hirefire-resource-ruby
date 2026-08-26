@@ -61,6 +61,17 @@ class HireFire::Source::CPUTest < Minitest::Test
     assert_equal({1001 => 33.33}, buffer.flush.dig("clock", "cpu"))
   end
 
+  def test_sample_rounds_exact_half_up_to_two_decimal_places
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [0.01125, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
+
+    collector = HireFire::Source::CPU.new("clock")
+    Timecop.freeze(Time.at(1000)) { collector.sample }
+    Timecop.freeze(Time.at(1001)) { collector.sample }
+
+    assert_equal({1001 => 1.13}, buffer.flush.dig("clock", "cpu"))
+  end
+
   def test_clamps_to_100_percent
     HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [5.0, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
@@ -180,11 +191,6 @@ end
 class HireFire::Source::CPU::UsageTest < Minitest::Test
   Usage = HireFire::Source::CPU::Usage
 
-  def test_total_seconds_prefers_cgroup_v2
-    Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("usage_usec 2500000\nuser_usec 1000000")
-    assert_in_delta 2.5, Usage.total_seconds, 0.0001
-  end
-
   def test_cgroup_v2_zero_usage_is_accepted_not_fallthrough
     Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("usage_usec 0\nuser_usec 0")
     seconds, source = Usage.reading
@@ -200,16 +206,28 @@ class HireFire::Source::CPU::UsageTest < Minitest::Test
     assert_equal :cgroup_v1, source
   end
 
-  def test_total_seconds_falls_back_to_cgroup_v1
-    Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns(nil)
-    Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns("3000000000")
-    assert_in_delta 3.0, Usage.total_seconds, 0.0001
-  end
-
-  def test_total_seconds_falls_through_on_malformed_cgroup_v2
+  def test_reading_falls_through_on_malformed_cgroup_v2
     Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("usage_usec garbage")
     Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns("3000000000")
-    assert_in_delta 3.0, Usage.total_seconds, 0.0001
+    seconds, source = Usage.reading
+    assert_in_delta 3.0, seconds, 0.0001
+    assert_equal :cgroup_v1, source
+  end
+
+  def test_cgroup_v2_nan_usage_falls_through
+    Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("usage_usec NaN")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns("3000000000")
+    seconds, source = Usage.reading
+    assert_in_delta 3.0, seconds, 0.0001
+    assert_equal :cgroup_v1, source
+  end
+
+  def test_cgroup_v2_infinity_usage_falls_through
+    Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("usage_usec Infinity")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns("3000000000")
+    seconds, source = Usage.reading
+    assert_in_delta 3.0, seconds, 0.0001
+    assert_equal :cgroup_v1, source
   end
 
   def test_reading_labels_the_active_source
@@ -257,10 +275,9 @@ class HireFire::Source::CPU::UsageTest < Minitest::Test
     Usage.stubs(:process_seconds).returns(nil)
 
     assert_equal [nil, nil], Usage.reading
-    assert_nil Usage.total_seconds
   end
 
-  def test_total_seconds_falls_back_to_proc_namespace_sum
+  def test_reading_falls_back_to_proc_namespace_sum
     Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns(nil)
     Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns(nil)
     Dir.stubs(:glob).with(Usage::PROC_STAT_GLOB).returns(["/proc/1/stat", "/proc/2/stat"])
@@ -268,7 +285,9 @@ class HireFire::Source::CPU::UsageTest < Minitest::Test
     Usage.stubs(:read).with("/proc/2/stat").returns("2 (puma (worker)) S 1 1 1 0 -1 0 0 0 0 0 150 100 0 0 20 0 1 0 9 0 0")
     Usage.stubs(:clock_ticks).returns(100)
 
-    assert_in_delta 10.0, Usage.total_seconds, 0.0001
+    seconds, source = Usage.reading
+    assert_in_delta 10.0, seconds, 0.0001
+    assert_equal :proc, source
   end
 
   def test_proc_namespace_seconds_nil_without_proc
@@ -281,10 +300,12 @@ class HireFire::Source::CPU::UsageTest < Minitest::Test
     assert_equal 750, Usage.stat_ticks(line)
   end
 
-  def test_total_seconds_falls_back_to_process_clock
+  def test_reading_falls_back_to_process_clock
     Usage.stubs(:read).returns(nil)
     Dir.stubs(:glob).with(Usage::PROC_STAT_GLOB).returns([])
-    assert_kind_of Float, Usage.total_seconds
+    seconds, source = Usage.reading
+    assert_kind_of Float, seconds
+    assert_equal :process, source
   end
 
   def test_available_cpus_reads_cgroup_v2_quota
@@ -301,6 +322,20 @@ class HireFire::Source::CPU::UsageTest < Minitest::Test
 
   def test_available_cpus_falls_through_on_malformed_quota
     Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("abc 100000")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns(nil)
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
+  def test_available_cpus_ignores_nan_v2_quota
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("NaN 100000")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns(nil)
+    assert_equal Etc.nprocessors, Usage.available_cpus
+  end
+
+  def test_available_cpus_ignores_infinity_v2_quota
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("Infinity 100000")
     Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns(nil)
     Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns(nil)
     assert_equal Etc.nprocessors, Usage.available_cpus
@@ -418,6 +453,12 @@ class HireFire::Source::CPU::UsageTest < Minitest::Test
 
     ENV["RENDER_CPU_COUNT"] = "nope"
     assert_equal Etc.nprocessors, Usage.available_cpus
+
+    ENV["RENDER_CPU_COUNT"] = "Infinity"
+    assert_equal Etc.nprocessors, Usage.available_cpus
+
+    ENV["RENDER_CPU_COUNT"] = "NaN"
+    assert_equal Etc.nprocessors, Usage.available_cpus
   end
 
   def test_cgroup_quota_wins_over_render_entitlement
@@ -473,7 +514,9 @@ class HireFire::Source::CPU::UsageTest < Minitest::Test
     Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("user_usec 1000000\nsystem_usec 500000")
     Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns("3000000000")
 
-    assert_in_delta 3.0, Usage.total_seconds, 0.0001
+    seconds, source = Usage.reading
+    assert_in_delta 3.0, seconds, 0.0001
+    assert_equal :cgroup_v1, source
   end
 
   def test_available_cpus_ignores_v1_unlimited_quota

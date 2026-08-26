@@ -27,6 +27,17 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
   end
 
+  def test_job_queue_latency_clamps_future_created_at_to_zero
+    job_id = BasicJob.perform_later.job_id
+    good_job_class.where(active_job_id: job_id).update_all(
+      scheduled_at: nil,
+      created_at: 1.minute.from_now,
+      performed_at: nil,
+      finished_at: nil
+    )
+    assert_equal 0.0, HireFire::Macro::GoodJob.job_queue_latency
+  end
+
   def test_job_queue_latency_with_jobs
     BasicJob.perform_later
     Timecop.freeze(1.minute.ago) { BasicJob.set(queue: :mailer).perform_later }

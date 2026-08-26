@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - The library now pushes metrics to `https://data.hirefire.io`. HireFire no longer polls the app.
-- Request queue time is sampled automatically from HTTP traffic. You do not need a web `dyno` line.
+- Request queue time is sampled from HTTP traffic through the middleware. A web `dyno` line is not required.
 - CPU activity is sampled automatically.
 - Optional token-only setup with `HireFire.boot`. Existing `config.dyno` job queue blocks still work.
 - Count of jobs still being processed (`job_queue_working`) for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
@@ -21,7 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Job queue macros count queued jobs plus scheduled or retry jobs that are due. Jobs already being processed are no longer included in job queue size or job queue latency. Deprecated `.queue` aliases keep their 1.x mix on Good Job and Resque.
+- Metrics are sent only when `HIREFIRE_TOKEN` is set.
+- Job queue metrics are sampled by one process at a time.
+- Job queue macros count queued jobs plus scheduled or retry jobs that are due. Jobs already being processed are no longer included in job queue size or job queue latency.
+- Deprecated `.queue` aliases on Good Job and Resque still count jobs the way they did in 1.x (including jobs already being processed).
 - Sidekiq job queue size (and deprecated `.queue`) no longer includes jobs that are already being processed. Pass `skip_working: false` to include them.
 - Sidekiq job queue latency returns a Float.
 - Required Ruby is 3.1+. Official Rails support is 7+.
@@ -40,22 +43,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Serving `GET /hirefire/:token/info`.
 - Official support for Ruby 2.7 and 3.0.
 - Official support for Sidekiq 6, Good Job 2, Que 0, and Solid Queue 0.
-- `HireFire::Worker` and `HireFire::Web` (and `HireFire::Web::DispatchError`, `HireFire::Worker::InvalidDynoNameError`, `HireFire::Worker::MissingDynoBlockError`). Use `HireFire.configure` / `config.dyno`.
 - `HireFire::Macro::Bunny::ConnectionError`. Bunny connection failures raise `Bunny::Exception`.
-- `HireFire::Configuration::LogQueueMetricsUnsupportedError`.
 
 ### Fixed
 
+- Bunny queue samples now fail within five seconds when RabbitMQ does not complete the handshake, instead of waiting on Bunny's longer defaults.
+- Sidekiq job queue latency ignores malformed timestamps instead of treating them as the Unix epoch, and treats a future timestamp as zero.
 - Sidekiq `server: true` counts due jobs in the current second the same way the client path does.
 - Sidekiq `server: true` skips corrupt schedule or retry members instead of aborting the sample.
-- Sidekiq `server: true` enumerates queues with `SMEMBERS queues` instead of `KEYS queue:*`.
+- Sidekiq `server: true` enumerates queues without scanning Redis keys.
 - Deprecated Sidekiq `.queue(..., skip_working: false)` no longer counts jobs that have not started.
-- Good Job latency orders by `COALESCE(scheduled_at, created_at)` so immediate jobs with a null `scheduled_at` are not sorted last.
-- Good Job detects the `error_event` column from the schema, so Good Job 3.0 to 3.15 no longer queries a missing column.
-- Resque all-queues size uses `Resque.queues` instead of `KEYS queue:*`.
+- Good Job latency orders by the earlier of scheduled and created time so immediate jobs are not sorted last.
+- Good Job 3.0 to 3.15 no longer queries a discard column that those versions do not have.
+- Resque all-queues size uses the queue list Redis already tracks.
 - Resque named-queue size skips corrupt delayed payloads instead of aborting the sample.
 - Que latency uses the database clock so a lagging app clock cannot return a negative value.
-- Queue Classic returns the Active Record pool connection after each sample.
+- Queue Classic returns its database connection to the pool after each sample.
 - A forked child no longer closes the RabbitMQ connection it inherited, so job queue readings in the parent process are not interrupted.
 
 ## [1.0.8] - 2025-08-04

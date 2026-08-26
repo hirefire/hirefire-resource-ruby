@@ -81,6 +81,21 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
     assert_includes log.string, "Redis down"
   end
 
+  def test_raising_sampler_logs_plan_name_override
+    log = StringIO.new
+    HireFire.configure do |config|
+      config.dyno(:worker) { raise "Redis down" }
+    end
+    HireFire.configuration.logger = Logger.new(log)
+    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
+
+    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql", name: "mail")
+
+    assert_includes log.string, '"mail"'
+    refute_includes log.string, '"worker"'
+    assert_includes log.string, "Redis down"
+  end
+
   def test_invalid_sample_values_are_dropped_and_logged
     log = StringIO.new
     values = ["10", nil, -1, Float::INFINITY, Float::NAN, true, false, 7].each

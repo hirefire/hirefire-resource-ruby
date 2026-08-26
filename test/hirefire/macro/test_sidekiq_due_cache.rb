@@ -1940,7 +1940,6 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     end
   end
 
-  # Full reinit after concurrent tests that may Thread#kill while holding the mutex.
   def recover_due_cache_after_concurrency!
     Cache.reinit_after_fork
     Cache.begin_sample!
@@ -1965,7 +1964,6 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     end
   end
 
-  # Monkeypatch private zrange_batch for the block; always restore.
   def with_zrange_batch_hook(hook)
     owner = Cache.singleton_class
     original = owner.instance_method(:zrange_batch)

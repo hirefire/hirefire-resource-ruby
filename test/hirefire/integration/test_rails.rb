@@ -33,9 +33,6 @@ module HireFire
         assert_equal HireFire::Middleware, app.middleware.first.klass
       end
 
-      # Initializer blocks run on the railtie *instance*. Helpers must be instance
-      # methods (not class methods) or every Rails boot raises NoMethodError
-      # (worker dynos load config/environment and hit the same path).
       def test_middleware_already_queued_is_callable_from_railtie_instance
         railtie = HireFire::Railtie.instance
         assert railtie.respond_to?(:middleware_already_queued?, true)
@@ -67,8 +64,6 @@ module HireFire
         HireFire.boot
       end
 
-      # Fresh Rails app process: token present before initialize! so the railtie
-      # after_initialize path boots (not a manual HireFire.boot after init).
       def test_railtie_after_initialize_auto_boots_when_token_set_before_init
         Dir.mktmpdir("hirefire-railtie-boot") do |dir|
           marker = File.join(dir, "booted")

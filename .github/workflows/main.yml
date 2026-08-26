@@ -70,18 +70,38 @@ jobs:
           POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       mongodb:
         image: mongo:7
         ports:
           - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       redis:
         image: redis:7
         ports:
           - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       rabbitmq:
         image: rabbitmq:3
         ports:
           - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     strategy:
       fail-fast: false
       matrix:
@@ -154,6 +174,15 @@ jobs:
         with:
           ruby-version: "4.0"
           bundler-cache: true
+      - name: Verify tag is on master
+        run: |
+          git fetch --depth=1 origin master
+          tagged="$(git rev-parse HEAD)"
+          master="$(git rev-parse origin/master)"
+          if [ "$tagged" != "$master" ]; then
+            echo "Tag must point at origin/master ($master), got $tagged"
+            exit 1
+          fi
       - name: Verify tag matches package version
         env:
           TAG: ${{ github.ref_name }}

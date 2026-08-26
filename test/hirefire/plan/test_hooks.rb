@@ -71,4 +71,8 @@ class HireFire::Plan::HooksTest < Minitest::Test
     refute @helper.supports_plan_strategy?("rpm")
     refute @helper.supports_plan_strategy?("unknown")
   end
+
+  def test_default_queues_required_is_false
+    refute @helper.queues_required?
+  end
 end

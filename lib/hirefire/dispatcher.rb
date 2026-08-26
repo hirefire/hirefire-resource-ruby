@@ -32,6 +32,7 @@ module HireFire
       @unknown_adapter_warned = {}
       @unsupported_strategy_warned = {}
       @unknown_strategy_warned = {}
+      @empty_queues_warned = {}
     end
 
     # Starts the dispatcher loops.
@@ -260,6 +261,7 @@ module HireFire
       @unknown_adapter_warned = {}
       @unsupported_strategy_warned = {}
       @unknown_strategy_warned = {}
+      @empty_queues_warned = {}
     end
 
     def enter_race?
@@ -270,9 +272,7 @@ module HireFire
       return true if configuration.job_queues.any?
 
       plan_job_queues.any? do |entry|
-        adapter_present?(entry) &&
-          Plan.executable?(entry["adapter"]) &&
-          Plan.supports_strategy?(entry["adapter"], entry["strategy"])
+        adapter_present?(entry) && Plan.sampleable_entry?(entry)
       end
     end
 
@@ -313,6 +313,11 @@ module HireFire
       if Plan.executable?(adapter)
         unless Plan.supports_strategy?(adapter, strategy)
           warn_unsupported_strategy_once(name, adapter, strategy)
+          return
+        end
+
+        if Plan.queues_required?(adapter) && !Plan.named_plan_queues?(entry["queues"])
+          warn_empty_queues_once(name, adapter)
           return
         end
 
@@ -392,6 +397,13 @@ module HireFire
 
       Log.safe(logger, :error, "[HireFire] Unknown plan strategy #{strategy.inspect} for " \
         "#{name.inspect}. Entry skipped.")
+    end
+
+    def warn_empty_queues_once(name, adapter)
+      return if remember_warn(@empty_queues_warned, "#{name}\0#{adapter}")
+
+      Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} for #{name.inspect} " \
+        "requires named queues. Entry skipped.")
     end
 
     def adapter_present?(entry)

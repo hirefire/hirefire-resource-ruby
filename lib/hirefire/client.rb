@@ -65,6 +65,7 @@ module HireFire
     private
 
     def execute(uri, request)
+      retried = false
       @mutex.synchronize do
         reused = reusable?(uri)
         connection(uri).request(request)
@@ -73,7 +74,10 @@ module HireFire
         raise RequestError, "Request timed out."
       rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError, Net::HTTPBadResponse, Net::ProtocolError => e
         reset_connection
-        retry if reused && stale_connection?(e)
+        if reused && !retried && stale_connection?(e)
+          retried = true
+          retry
+        end
         raise RequestError, "Network error (#{e.class}: #{e.message})."
       end
     end

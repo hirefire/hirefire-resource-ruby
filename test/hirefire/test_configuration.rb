@@ -93,6 +93,15 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_includes error.message, "128"
   end
 
+  def test_dyno_name_limit_counts_utf8_bytes
+    accepted = "é" * 64
+    too_long = "é" * 65
+
+    @configuration.dyno(accepted) { 1 }
+    assert_equal accepted, @configuration.job_queues.first.name
+    assert_raises(ArgumentError) { @configuration.dyno(too_long) { 1 } }
+  end
+
   def test_using_default_logger_flag
     configuration = HireFire::Configuration.new
     assert configuration.using_default_logger?

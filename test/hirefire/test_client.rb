@@ -384,12 +384,14 @@ class HireFire::ClientTest < Minitest::Test
   def test_does_not_retry_twice_on_persistent_stale_errors
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
     client.submit_samples("[]")
+    WebMock.reset_executed_requests!
 
-    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+    request = stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .to_raise(Errno::ECONNRESET).then
       .to_raise(Errno::ECONNRESET)
 
     assert_raises(HireFire::Client::RequestError) { client.submit_samples("[]") }
+    assert_requested request, times: 2
   end
 
   def test_reconnects_when_host_or_port_changes

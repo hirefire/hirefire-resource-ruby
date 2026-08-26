@@ -1478,6 +1478,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
   def test_ensure_job_queue_loop_is_noop_without_enter_race
     HireFire::Plan.stubs(:any_allowlisted_job_queue_library_loaded?).returns(false)
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
     dispatcher = configure_web_only
     assert dispatcher.start
     assert_nil dispatcher.instance_variable_get(:@job_queue_thread)

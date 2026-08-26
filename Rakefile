@@ -4,7 +4,7 @@ require "bundler/gem_tasks"
 require "standard/rake"
 
 # Test files per appraisal *family*. Cell names and dependency pins live only in
-# Appraisals (SSOT). CI uses `appraisal list`; local `rake test:*` parses the same file.
+# Appraisals (SSOT). CI uses `appraisal list`. Local `rake test:*` parses the same file.
 FAMILY_TEST_FILES = {
   "bunny" => [
     "macro/test_bunny.rb"

@@ -70,7 +70,7 @@ end
 
 appraise "resque_3" do
   gem "resque", "~> 3"
-  # 1.9+ is the first line that allows resque 3; it requires Ruby >= 3.2 (CI excludes 3.1).
+  # 1.9+ is the first line that allows resque 3. It requires Ruby >= 3.2 (CI excludes 3.1).
   gem "resque-retry", "~> 1.9"
   gem "resque-scheduler", "~> 5"
 end

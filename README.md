@@ -53,12 +53,14 @@ Requires [Docker](https://www.docker.com/) and [mise](https://mise.jdx.dev/). Po
 
 ## Release
 
-1. Update `HireFire::VERSION` in `lib/hirefire/version.rb`.
+1. Update `HireFire::VERSION` in `lib/hirefire/version.rb` (prerelease: RubyGems
+   form, e.g. `2.0.0.rc1`).
 2. If root `Gemfile` or gemspec development dependencies changed, update root `Gemfile.lock` with `bundle install`. Appraisal `gemfiles/*.gemfile.lock` files are gitignored so CI re-resolves each matrix cell to the latest minor/patch on its major.
 3. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` (today's date) and add a fresh empty `## [Unreleased]` above it.
 4. Commit changes with `git commit`.
-5. Create a `git tag` matching the new version (e.g., `v2.0.0`).
+5. Create a `git tag` matching the new version (e.g., `v2.0.0` or `v2.0.0.rc1`).
 6. Push the new git tag. Continuous Integration will handle the distribution process.
+   Prereleases are not installed by default (`gem install` needs `--pre` or a pin).
 
 ## License
 

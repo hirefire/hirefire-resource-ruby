@@ -37,7 +37,7 @@ The public API is documented with YARD. Published gems are on [rubydoc.info](htt
 
 Since 2011, HireFire has helped over 1,500 companies autoscale more than 5,000 [Heroku] applications across 10,000+ web and worker dynos.
 
-HireFire autoscales web and worker processes based on the metrics that match the work: request queue time or requests per minute for web, job queue latency or job queue size for workers, and CPU activity for any compute-bound processes. Capacity follows demand, so you scale up when the app is busy and down when it is idle.
+HireFire autoscales web and worker processes based on the metrics collected from applications, such as request queue time or requests per minute for web, job queue latency or job queue size for workers, and CPU activity for any compute-bound processes. Process counts stay dynamic rather than remaining fixed at peak cost.
 
 Learn more at the [home page][HireFire].
 

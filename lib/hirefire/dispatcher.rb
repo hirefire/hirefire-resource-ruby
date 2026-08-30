@@ -16,6 +16,8 @@ module HireFire
       @client = Client.new
       @lease = Lease.new
       @mutex = Mutex.new
+      @loop_wait = Thread::ConditionVariable.new
+      @join_timeout = JOIN_TIMEOUT
       @running = false
       @stopping = false
       @stopping_flush = false
@@ -69,6 +71,7 @@ module HireFire
 
         @generation += 1
         generation = @generation
+        @loop_wait.broadcast
         @thread = Thread.new { loop_until_stopped(generation) { tick(generation) } }
         if enter_race?
           @job_queue_thread = Thread.new { loop_until_stopped(generation) { job_queue_tick(generation) } }
@@ -109,9 +112,10 @@ module HireFire
 
     # Stops the dispatcher loops and closes transport resources.
     #
-    # Joins local loop threads for up to {JOIN_TIMEOUT} seconds each. A hung sampler is
-    # abandoned rather than killed. A later {#start} increments the loop generation so an
-    # abandoned thread cannot resume work. Concurrent {#start} is rejected until close finishes.
+    # Wakes interval waiters, then joins local loop threads for up to {JOIN_TIMEOUT}
+    # seconds each. A hung sampler is abandoned rather than killed. A later {#start}
+    # increments the loop generation so an abandoned thread cannot resume work.
+    # Concurrent {#start} is rejected until close finishes.
     #
     # @param flush [Boolean] when +true+ (default), best-effort final metric flush before close.
     #   Prefork parents pass +false+ so the master does not claim empty web liveness after workers
@@ -127,6 +131,7 @@ module HireFire
         @stopping = true
         @stopping_flush = flush
         @running = false
+        @loop_wait.broadcast
         threads = [@thread, @job_queue_thread].compact if @pid == Process.pid
         @thread = nil
         @job_queue_thread = nil
@@ -184,6 +189,7 @@ module HireFire
         @job_queue_thread = nil
         @pid = nil
         @generation += 1
+        @loop_wait.broadcast
       end
       buffer.reinit_after_fork
       Plan.reinit_macros_after_fork
@@ -206,7 +212,11 @@ module HireFire
     end
 
     def loop_active?(generation)
-      @mutex.synchronize { @running && !@stopping && @pid == Process.pid && @generation == generation }
+      @mutex.synchronize { loop_active_locked?(generation) }
+    end
+
+    def loop_active_locked?(generation)
+      @running && !@stopping && @pid == Process.pid && @generation == generation
     end
 
     def loop_until_stopped(generation)
@@ -216,15 +226,23 @@ module HireFire
         rescue => e
           Log.safe(logger, :error, "[HireFire] #{e.class}: #{e.message}")
         end
-        sleep 1
+        wait_loop_interval(generation)
+      end
+    end
+
+    # Interruptible 1s gap between ticks. Do not replace with Kernel#sleep:
+    # stop would wait out the remainder, and a frozen clock can hang sleep.
+    def wait_loop_interval(generation)
+      @mutex.synchronize do
+        @loop_wait.wait(@mutex, 1) if loop_active_locked?(generation)
       end
     end
 
     def join_loop_thread(thread)
-      return if thread.join(JOIN_TIMEOUT)
+      return if thread.join(@join_timeout)
 
       Log.safe(logger, :warn,
-        "[HireFire] Dispatcher loop did not stop within #{JOIN_TIMEOUT}s. Abandoning thread.")
+        "[HireFire] Dispatcher loop did not stop within #{@join_timeout}s. Abandoning thread.")
     end
 
     def tick(generation = nil)

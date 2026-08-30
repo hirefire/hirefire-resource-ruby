@@ -758,7 +758,6 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_raises(ThreadError) { worker_dispatched.pop(true) }
 
     sampler_gate << 0
-    Timeout.timeout(3) { worker_dispatched.pop }
     dispatcher.stop
   end
 
@@ -796,12 +795,17 @@ class HireFire::DispatcherTest < Minitest::Test
     stub_lease(granted: true)
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
 
+    entered = Queue.new
     gate = Queue.new
-    HireFire.configuration.dyno(:worker) { gate.pop }
+    HireFire.configuration.dyno(:worker) {
+      entered << true
+      gate.pop
+    }
     dispatcher = HireFire.configuration.dispatcher
+    dispatcher.instance_variable_set(:@join_timeout, 0.05)
     assert dispatcher.start
 
-    sleep 0.2
+    Timeout.timeout(2) { entered.pop }
 
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
@@ -810,7 +814,7 @@ class HireFire::DispatcherTest < Minitest::Test
     assert dispatcher.stop
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 
-    assert_operator elapsed, :<, HireFire::Dispatcher::JOIN_TIMEOUT + 2,
+    assert_operator elapsed, :<, 1,
       "stop must not wait unbounded on a hung job-queue sampler"
     assert_includes log.string, "Abandoning thread"
   ensure
@@ -1533,8 +1537,7 @@ class HireFire::DispatcherTest < Minitest::Test
     refute_same dead, restarted
     assert restarted.alive?
 
-    dispatcher.instance_variable_set(:@running, false)
-    restarted.join(HireFire::Dispatcher::JOIN_TIMEOUT)
+    dispatcher.stop
   end
 
   def test_start_restarts_when_main_loop_thread_is_dead

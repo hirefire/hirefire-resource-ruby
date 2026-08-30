@@ -1,9 +1,6 @@
 ## HireFire Integration Library for Ruby Applications
 
-This gem integrates Ruby applications with HireFire's autoscalers on Heroku. It
-reports app metrics so HireFire can scale web and worker processes based on
-Request Queue Time, Requests Per Minute, CPU Activity, Job Queue Latency, and
-Job Queue Size.
+This gem integrates Ruby applications running on [Heroku] with [HireFire]'s autoscalers. It collects HTTP, CPU, and job metrics so HireFire can scale web and worker processes based on Request Queue Time, Requests Per Minute, CPU Activity, Job Queue Latency, and Job Queue Size.
 
 **Supported runtimes:**
 
@@ -27,21 +24,13 @@ Job Queue Size.
 - Queue Classic 4+
 - Bunny 2+ (size only, no job queue latency)
 
-Ruby 3.1+ is required and tested for the library core, Rack, Rails 7, Sidekiq 7, Bunny, and Resque 2. Worker-library cells that boot through Rails 8 in CI run on Ruby 3.2+. Older versions may still work, but are not officially supported.
+Ruby 3.1+ is required and tested for the library core, Rack, Rails 7, Sinatra, Hanami 2, Sidekiq 7, Bunny, and Resque 2. Rails 8, Sidekiq 8, and Resque 3 require Ruby 3.2+. Hanami 3 requires Ruby 3.3+. Solid Queue, Good Job, Delayed Job, Que, and Queue Classic are tested with Rails 8 and follow that Ruby 3.2+ floor.
+
+The test suite runs against these minimum versions and the current latest release of each runtime and library. Older versions may still work, but are not officially supported.
 
 **Documentation:**
 
 The public API is documented with YARD. Published gems are on [rubydoc.info](https://www.rubydoc.info/gems/hirefire-resource). Locally: `bundle exec rake doc`. Changelog lives in [CHANGELOG.md](CHANGELOG.md).
-
----
-
-Since 2011, HireFire has helped over 1,500 companies autoscale more than 5,000 [Heroku] applications across 10,000+ web and worker dynos.
-
-HireFire autoscales web and worker processes based on the metrics collected from applications, such as request queue time or requests per minute for web, job queue latency or job queue size for workers, and CPU activity for any compute-bound processes. Process counts stay dynamic rather than remaining fixed at peak cost.
-
-Learn more at the [home page][HireFire].
-
----
 
 ## Development
 
@@ -53,14 +42,12 @@ Requires [Docker](https://www.docker.com/) and [mise](https://mise.jdx.dev/). Po
 
 ## Release
 
-1. Update `HireFire::VERSION` in `lib/hirefire/version.rb` (prerelease: RubyGems
-   form, e.g. `2.0.0.rc1`).
+1. Update `HireFire::VERSION` in `lib/hirefire/version.rb` (prerelease: RubyGems form, e.g. `2.0.0.rc1`).
 2. If root `Gemfile` or gemspec development dependencies changed, update root `Gemfile.lock` with `bundle install`. Appraisal `gemfiles/*.gemfile.lock` files are gitignored so CI re-resolves each matrix cell to the latest minor/patch on its major.
 3. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` (today's date) and add a fresh empty `## [Unreleased]` above it.
 4. Commit changes with `git commit`.
 5. Create a `git tag` matching the new version (e.g., `v2.0.0` or `v2.0.0.rc1`).
-6. Push the new git tag. Continuous Integration will handle the distribution process.
-   Prereleases are not installed by default (`gem install` needs `--pre` or a pin).
+6. Push the new git tag. Continuous Integration will handle the distribution process. Prereleases are not installed by default (`gem install` needs `--pre` or a pin).
 
 ## License
 

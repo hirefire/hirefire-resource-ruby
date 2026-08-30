@@ -2,8 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
@@ -18,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Support Ruby 3.4 and 4.0.
 - Support Hanami 3.
 - Support Mongoid 9 for Delayed Job.
-- `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` again so a caller can reuse a long-lived Bunny session. A forked child drops the inherited session without closing it, so the parent keeps sampling.
+- `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` again so a caller can reuse a long-lived Bunny session.
 
 ### Changed
 
@@ -33,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Deprecated
 
 - If you use Logplex Request Queue Time, `config.log_queue_metrics = true` is deprecated. It still prints `[hirefire:router] queue=<N>ms`, so Logplex Request Queue Time keeps working. Switch to HireFire Request Queue Time (push, no logdrain):
-  - Install hirefire-resource 2.0.0 or newer
   - Remove `config.log_queue_metrics = true`
   - In the HireFire UI, change the manager from `Logplex - Request Queue Time` to `HireFire - Request Queue Time`
   - Ensure `HIREFIRE_TOKEN` is set in the Heroku app env
@@ -42,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Removed
 
 - Serving `GET /hirefire/:token/info`.
+- `POST` of request queue time JSON to `logdrain.hirefire.io`.
 - Official support for Ruby 2.7 and 3.0.
 - Official support for Sidekiq 6, Good Job 2, Que 0, and Solid Queue 0.
 - `HireFire::Macro::Bunny::ConnectionError`. Bunny connection failures raise `Bunny::Exception`.

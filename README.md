@@ -1,9 +1,9 @@
 ## HireFire Integration Library for Ruby Applications
 
 This gem integrates Ruby applications with HireFire's autoscalers on Heroku. It
-reports app metrics so HireFire can scale web and worker processes from Request
-Queue Time, Requests Per Minute, CPU Activity, Job Queue Latency, and Job Queue
-Size.
+reports app metrics so HireFire can scale web and worker processes based on
+Request Queue Time, Requests Per Minute, CPU Activity, Job Queue Latency, and
+Job Queue Size.
 
 **Supported runtimes:**
 

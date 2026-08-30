@@ -31,7 +31,7 @@ Ruby 3.1+ is required and tested for the library core, Rack, Rails 7, Sidekiq 7,
 
 **Documentation:**
 
-Public API prose is YARD on the consumer-facing surface. Published gems are browsable on [rubydoc.info](https://www.rubydoc.info/gems/hirefire-resource). Locally: `bundle exec rake doc`. Changelog lives in [CHANGELOG.md](CHANGELOG.md).
+The public API is documented with YARD. Published gems are on [rubydoc.info](https://www.rubydoc.info/gems/hirefire-resource). Locally: `bundle exec rake doc`. Changelog lives in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

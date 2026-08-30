@@ -1,9 +1,9 @@
 ## HireFire Integration Library for Ruby Applications
 
-This library integrates Ruby applications with HireFire's autoscalers on Heroku, Render, and other platforms.
-It reports app metrics so HireFire can autoscale web and worker processes. That
-unlocks strategies such as Request Queue Time, Requests Per Minute, CPU Activity,
-Job Queue Latency, and Job Queue Size. Set `HIREFIRE_TOKEN` for the library to run.
+This gem integrates Ruby applications with HireFire's autoscalers on Heroku. It
+reports app metrics so HireFire can autoscale web and worker processes, unlocking
+metric-based autoscaling such as Request Queue Time, Requests Per Minute, CPU
+Activity, Job Queue Latency, and Job Queue Size.
 
 **Supported runtimes:**
 
@@ -37,7 +37,7 @@ Public API prose is YARD on the consumer-facing surface. Published gems are brow
 
 Since 2011, HireFire has helped over 1,500 companies autoscale more than 5,000 [Heroku] applications across 10,000+ web and worker dynos.
 
-HireFire autoscales both web and worker processes, on every plan tier, using whichever signal fits the workload: request queue time or requests per minute for web processes, job queue latency or job queue size for worker processes, and CPU Activity for compute-bound processes. Each tracks real demand, so capacity is added when you need it and removed when you don't. You pay only for what you use.
+HireFire autoscales web and worker processes based on the metrics that match the work: request queue time or requests per minute for web, job queue latency or job queue size for workers, and CPU activity for any compute-bound processes. Capacity follows demand, so you scale up when the app is busy and down when it is idle.
 
 Learn more at the [home page][HireFire].
 

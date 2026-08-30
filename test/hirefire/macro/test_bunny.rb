@@ -243,41 +243,45 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   end
 
   def test_owned_connection_times_out_on_accepting_blackhole
-    url, stop_blackhole = start_amqp_blackhole
-    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    raised = nil
-    begin
-      HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url)
-    rescue
-      raised = $!
-    end
-    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+    with_fast_sample_timeouts do
+      url, stop_blackhole = start_amqp_blackhole
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      raised = nil
+      begin
+        HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url)
+      rescue
+        raised = $!
+      end
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 
-    assert elapsed < 8, "sample parked for #{elapsed}s (#{raised.inspect})"
-    refute_nil raised, "blackhole handshake must fail the sample"
-    assert_nil HireFire::Macro::Bunny.instance_variable_get(:@reused_connection)
-  ensure
-    stop_blackhole&.call
-    HireFire::Macro::Bunny.reinit_after_fork
+      assert elapsed < 8, "sample parked for #{elapsed}s (#{raised.inspect})"
+      refute_nil raised, "blackhole handshake must fail the sample"
+      assert_nil HireFire::Macro::Bunny.instance_variable_get(:@reused_connection)
+    ensure
+      stop_blackhole&.call
+      HireFire::Macro::Bunny.reinit_after_fork
+    end
   end
 
   def test_reused_connection_times_out_on_accepting_blackhole_and_drops_session
-    url, stop_blackhole = start_amqp_blackhole
-    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    raised = nil
-    begin
-      HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url, reuse_connection: true)
-    rescue
-      raised = $!
-    end
-    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+    with_fast_sample_timeouts do
+      url, stop_blackhole = start_amqp_blackhole
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      raised = nil
+      begin
+        HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url, reuse_connection: true)
+      rescue
+        raised = $!
+      end
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 
-    assert elapsed < 8, "sample parked for #{elapsed}s (#{raised.inspect})"
-    refute_nil raised, "blackhole handshake must fail the sample"
-    assert_nil HireFire::Macro::Bunny.instance_variable_get(:@reused_connection)
-  ensure
-    stop_blackhole&.call
-    HireFire::Macro::Bunny.reinit_after_fork
+      assert elapsed < 8, "sample parked for #{elapsed}s (#{raised.inspect})"
+      refute_nil raised, "blackhole handshake must fail the sample"
+      assert_nil HireFire::Macro::Bunny.instance_variable_get(:@reused_connection)
+    ensure
+      stop_blackhole&.call
+      HireFire::Macro::Bunny.reinit_after_fork
+    end
   end
 
   def test_acquire_connection_env_url_cascade
@@ -327,6 +331,24 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     ).returns(fake)
     result = HireFire::Macro::Bunny.send(:acquire_connection, nil)
     assert_same fake, result
+  end
+
+  # A blackhole never answers, so the sample always parks for the full
+  # read timeout. Shrink it: same code path, no 5s stall per test.
+  def with_fast_sample_timeouts
+    options = HireFire::Macro::Bunny::SAMPLE_CONNECTION_OPTIONS
+    fast = options.merge(
+      connection_timeout: 1,
+      continuation_timeout: 1_000,
+      read_timeout: 1,
+      write_timeout: 1
+    )
+    HireFire::Macro::Bunny.send(:remove_const, :SAMPLE_CONNECTION_OPTIONS)
+    HireFire::Macro::Bunny.const_set(:SAMPLE_CONNECTION_OPTIONS, fast)
+    yield
+  ensure
+    HireFire::Macro::Bunny.send(:remove_const, :SAMPLE_CONNECTION_OPTIONS)
+    HireFire::Macro::Bunny.const_set(:SAMPLE_CONNECTION_OPTIONS, options)
   end
 
   def start_amqp_blackhole

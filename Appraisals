@@ -109,3 +109,7 @@ end
 appraise "hanami_2" do
   gem "hanami-router", "~> 2", require: false
 end
+
+appraise "hanami_3" do
+  gem "hanami-router", "~> 3", require: false
+end

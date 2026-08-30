@@ -115,6 +115,7 @@ jobs:
         exclude:
           # Ruby 3.1 cannot install these cells. Rails 8, Sidekiq 8, and resque-retry 1.9
           # (resque_3) require Ruby >= 3.2, and the worker appraisals below pin rails ~> 8.
+          # hanami-router 3 requires Ruby >= 3.3.
           - ruby-version: "3.1"
             appraisal: rails_8
           - ruby-version: "3.1"
@@ -137,6 +138,10 @@ jobs:
             appraisal: delayed_job_active_record_4
           - ruby-version: "3.1"
             appraisal: delayed_job_mongoid_3
+          - ruby-version: "3.1"
+            appraisal: hanami_3
+          - ruby-version: "3.2"
+            appraisal: hanami_3
     name: ${{ matrix.appraisal }} (Ruby ${{ matrix.ruby-version }})
     steps:
       - name: Check out repository

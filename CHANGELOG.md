@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Count of jobs still being processed (`job_queue_working`) for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
 - Support Resque 3, Bunny 3.x, and resque-scheduler 5.
 - Support Ruby 3.4 and 4.0.
+- Support Hanami 3.
 - Support Mongoid 9 for Delayed Job.
 - `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` again so a caller can reuse a long-lived Bunny session. A forked child drops the inherited session without closing it, so the parent keeps sampling.
 

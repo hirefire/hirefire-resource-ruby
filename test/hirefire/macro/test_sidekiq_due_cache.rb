@@ -1116,81 +1116,83 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   end
 
   def test_waiter_timed_condition_wait_then_observes_fill
-    plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
+    with_due_cache_constants(FILL_WAIT_SECONDS: 0.2) do
+      plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
 
-    mid = Queue.new
-    release = Queue.new
-    waiter_entered_wait = Queue.new
-    wait_timeouts = []
-    wait_returns = 0
-    wait_mu = Mutex.new
-    zrange_count = 0
-    count_mu = Mutex.new
-    filler_size = waiter_size = nil
-    errors = []
-    filler = waiter = nil
+      mid = Queue.new
+      release = Queue.new
+      waiter_entered_wait = Queue.new
+      wait_timeouts = []
+      wait_returns = 0
+      wait_mu = Mutex.new
+      zrange_count = 0
+      count_mu = Mutex.new
+      filler_size = waiter_size = nil
+      errors = []
+      filler = waiter = nil
 
-    condition = Cache.send(:condition)
-    original_wait = condition.method(:wait)
-    condition.define_singleton_method(:wait) do |mutex, timeout = nil|
-      wait_timeouts << timeout
-      waiter_entered_wait << true
-      result = original_wait.call(mutex, timeout)
-      wait_mu.synchronize { wait_returns += 1 }
-      result
-    end
-
-    with_zrange_batch_hook(->(_set, _rank, &original) {
-      n = count_mu.synchronize {
-        zrange_count += 1
-        zrange_count
-      }
-      if n == 1
-        mid << true
-        release.pop
+      condition = Cache.send(:condition)
+      original_wait = condition.method(:wait)
+      condition.define_singleton_method(:wait) do |mutex, timeout = nil|
+        wait_timeouts << timeout
+        waiter_entered_wait << true
+        result = original_wait.call(mutex, timeout)
+        wait_mu.synchronize { wait_returns += 1 }
+        result
       end
-      original.call
-    }) do
-      filler = Thread.new {
-        begin
-          filler_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
-        rescue => e
-          errors << e
-        end
-      }
-      Timeout.timeout(2) { mid.pop }
 
-      waiter = Thread.new {
-        begin
-          waiter_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
-        rescue => e
-          errors << e
+      with_zrange_batch_hook(->(_set, _rank, &original) {
+        n = count_mu.synchronize {
+          zrange_count += 1
+          zrange_count
+        }
+        if n == 1
+          mid << true
+          release.pop
         end
-      }
-      Timeout.timeout(2) { waiter_entered_wait.pop }
-      deadline = Time.now + Cache::FILL_WAIT_SECONDS + 0.25
-      sleep [deadline - Time.now, 0].max until wait_mu.synchronize { wait_returns } >= 1 || Time.now > deadline
-      assert wait_mu.synchronize { wait_returns } >= 1,
-        "waiter must return from timed wait at least once, timeouts=#{wait_timeouts.inspect}"
-      assert_equal 1, count_mu.synchronize { zrange_count },
-        "after timed wake, non-stuck fill must keep waiter non-filler"
-      release << true
+        original.call
+      }) do
+        filler = Thread.new {
+          begin
+            filler_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+          rescue => e
+            errors << e
+          end
+        }
+        Timeout.timeout(2) { mid.pop }
 
-      Timeout.timeout(Cache::FILL_WAIT_SECONDS + 3) {
-        filler.join
-        waiter.join
-      }
-      assert_empty errors
-      assert_equal 1, filler_size
-      assert_equal 1, waiter_size
-      assert wait_timeouts.any? { |t| t == Cache::FILL_WAIT_SECONDS },
-        "waiter must call condition.wait with FILL_WAIT_SECONDS, got #{wait_timeouts.inspect}"
-      assert_equal 2, zrange_count, "timed waiter must not steal a second walk before FILL_STUCK"
+        waiter = Thread.new {
+          begin
+            waiter_size = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+          rescue => e
+            errors << e
+          end
+        }
+        Timeout.timeout(2) { waiter_entered_wait.pop }
+        deadline = Time.now + Cache::FILL_WAIT_SECONDS + 0.25
+        sleep [deadline - Time.now, 0].max until wait_mu.synchronize { wait_returns } >= 1 || Time.now > deadline
+        assert wait_mu.synchronize { wait_returns } >= 1,
+          "waiter must return from timed wait at least once, timeouts=#{wait_timeouts.inspect}"
+        assert_equal 1, count_mu.synchronize { zrange_count },
+          "after timed wake, non-stuck fill must keep waiter non-filler"
+        release << true
+
+        Timeout.timeout(Cache::FILL_WAIT_SECONDS + 3) {
+          filler.join
+          waiter.join
+        }
+        assert_empty errors
+        assert_equal 1, filler_size
+        assert_equal 1, waiter_size
+        assert wait_timeouts.any? { |t| t == Cache::FILL_WAIT_SECONDS },
+          "waiter must call condition.wait with FILL_WAIT_SECONDS, got #{wait_timeouts.inspect}"
+        assert_equal 2, zrange_count, "timed waiter must not steal a second walk before FILL_STUCK"
+      end
+    ensure
+      release << true if defined?(release) && release
+      [filler, waiter].each { |t| join_or_kill(t) }
+      recover_due_cache_after_concurrency!
     end
-  ensure
-    release << true if defined?(release) && release
-    [filler, waiter].each { |t| join_or_kill(t) }
-    recover_due_cache_after_concurrency!
   end
 
   def test_release_fill_broadcast_wakes_waiter_before_fill_wait
@@ -1794,49 +1796,51 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   end
 
   def test_batch_boundary_multi_batch_rank_and_resume
-    batch = Cache::BATCH
-    now = Time.now.to_f
-    plant_sorted_set_jobs_bulk(
-      "schedule",
-      count: batch,
-      queue: "foreign",
-      score_start: now - 500,
-      score_step: 0.001,
-      enqueued_at: now
-    )
-    plant_sorted_set_job("schedule", queue: "target", score: now - 10, enqueued_at: now)
+    with_due_cache_constants(BATCH: 50) do
+      batch = Cache::BATCH
+      now = Time.now.to_f
+      plant_sorted_set_jobs_bulk(
+        "schedule",
+        count: batch,
+        queue: "foreign",
+        score_start: now - 500,
+        score_step: 0.001,
+        enqueued_at: now
+      )
+      plant_sorted_set_job("schedule", queue: "target", score: now - 10, enqueued_at: now)
 
-    Cache.trace = true
-    Cache.clear_trace!
-    assert_in_delta 10, HireFire::Macro::Sidekiq.job_queue_latency(:target, skip_retries: true), LATENCY_DELTA
-    starts = schedule_start_ranks
-    assert_includes starts, 0
-    assert_includes starts, batch, "must open a second ZRANGE at BATCH boundary, got #{starts.inspect}"
-    assert_equal [0, batch], starts
+      Cache.trace = true
+      Cache.clear_trace!
+      assert_in_delta 10, HireFire::Macro::Sidekiq.job_queue_latency(:target, skip_retries: true), LATENCY_DELTA
+      starts = schedule_start_ranks
+      assert_includes starts, 0
+      assert_includes starts, batch, "must open a second ZRANGE at BATCH boundary, got #{starts.inspect}"
+      assert_equal [0, batch], starts
 
-    reset_wave!
-    flush_sidekiq_redis
-    Cache.trace = true
-    plant_sorted_set_job("schedule", queue: "foreign", score: now - 600, enqueued_at: now, jid: "earlyforeign01")
-    plant_sorted_set_jobs_bulk(
-      "schedule",
-      count: batch,
-      queue: "foreign",
-      score_start: now - 500,
-      score_step: 0.001,
-      enqueued_at: now
-    )
-    plant_sorted_set_job("schedule", queue: "target", score: now - 10, enqueued_at: now, jid: "targetqueue01")
+      reset_wave!
+      flush_sidekiq_redis
+      Cache.trace = true
+      plant_sorted_set_job("schedule", queue: "foreign", score: now - 600, enqueued_at: now, jid: "earlyforeign01")
+      plant_sorted_set_jobs_bulk(
+        "schedule",
+        count: batch,
+        queue: "foreign",
+        score_start: now - 500,
+        score_step: 0.001,
+        enqueued_at: now
+      )
+      plant_sorted_set_job("schedule", queue: "target", score: now - 10, enqueued_at: now, jid: "targetqueue01")
 
-    HireFire::Macro::Sidekiq.job_queue_latency(:foreign, skip_retries: true)
-    assert_equal [0], schedule_start_ranks
-    cursor = Cache.peek("schedule").cursor_rank
-    assert_equal 1, cursor
+      HireFire::Macro::Sidekiq.job_queue_latency(:foreign, skip_retries: true)
+      assert_equal [0], schedule_start_ranks
+      cursor = Cache.peek("schedule").cursor_rank
+      assert_equal 1, cursor
 
-    Cache.clear_trace!
-    assert_in_delta 10, HireFire::Macro::Sidekiq.job_queue_latency(:target, skip_retries: true), LATENCY_DELTA
-    resume_starts = schedule_start_ranks
-    assert_equal [1, 1 + batch], resume_starts, "resume must cross a full BATCH after cursor"
+      Cache.clear_trace!
+      assert_in_delta 10, HireFire::Macro::Sidekiq.job_queue_latency(:target, skip_retries: true), LATENCY_DELTA
+      resume_starts = schedule_start_ranks
+      assert_equal [1, 1 + batch], resume_starts, "resume must cross a full BATCH after cursor"
+    end
   end
 
   def test_reinit_after_fork_clears_filling_and_generation
@@ -1973,6 +1977,23 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     yield
   ensure
     owner.define_method(:zrange_batch, original) if original
+  end
+
+  # FILL_WAIT_SECONDS (1s) and BATCH (1000) size production fills. Tests that
+  # park on the fill wait or cross a batch boundary exercise the same code
+  # path with smaller values, so swap the constants for the test's duration.
+  def with_due_cache_constants(overrides)
+    originals = overrides.to_h { |name, _| [name, Cache.const_get(name)] }
+    originals.each do |name, value|
+      Cache.send(:remove_const, name)
+      Cache.const_set(name, overrides[name])
+    end
+    yield
+  ensure
+    originals.each do |name, value|
+      Cache.send(:remove_const, name)
+      Cache.const_set(name, value)
+    end
   end
 
   def plant_sorted_set_jobs_bulk(set_name, count:, queue:, score_start:, score_step:, enqueued_at:)

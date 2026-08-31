@@ -18,7 +18,7 @@ module HireFire
       @mutex.synchronize do
         series = series_for(name, strategy)
         prune(series, timestamp)
-        if strategy == "rqt"
+        if Strategy.rqt?(strategy)
           bucket = series[timestamp] ||= {sum: 0.0, count: 0}
           return if bucket[:count] >= SAMPLE_COUNT_LIMIT
 
@@ -49,7 +49,7 @@ module HireFire
 
     def repopulate(name, strategy, data)
       strategy = strategy.to_s
-      return unless strategy == "rqt"
+      return unless Strategy.rqt?(strategy)
 
       now = Time.now.to_i
       @mutex.synchronize do

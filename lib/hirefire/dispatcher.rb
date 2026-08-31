@@ -496,10 +496,10 @@ module HireFire
 
     def repopulate_rqt(data)
       data.each do |name, strategies|
-        series = strategies["rqt"]
+        series = strategies[Strategy::RQT]
         next unless series&.any?
 
-        buffer.repopulate(name, "rqt", series)
+        buffer.repopulate(name, Strategy::RQT, series)
       end
     end
 
@@ -542,7 +542,7 @@ module HireFire
         strategies.each do |strategy, series|
           strategy = strategy.to_s
           next if series.nil? || series.empty?
-          next if strategy == "rqt" && name == http_name
+          next if Strategy.rqt?(strategy) && name == http_name
 
           merge_metrics(entries_by_name, name, strategy, series)
         end
@@ -580,14 +580,14 @@ module HireFire
     def append_http_rqt!(entries_by_name, data, http_name)
       return nil unless http_name
 
-      rqt_buckets = data.dig(http_name, "rqt") || {}
+      rqt_buckets = data.dig(http_name, Strategy::RQT) || {}
 
       if configuration.rqt_enabled? && configuration.rqt_liveness?
         payload_rqt = backfill_rqt_seconds(rqt_buckets)
-        merge_metrics(entries_by_name, http_name, "rqt", payload_rqt)
+        merge_metrics(entries_by_name, http_name, Strategy::RQT, payload_rqt)
         payload_rqt.keys.max
       elsif rqt_buckets.any?
-        merge_metrics(entries_by_name, http_name, "rqt", rqt_buckets)
+        merge_metrics(entries_by_name, http_name, Strategy::RQT, rqt_buckets)
         nil
       end
     end
@@ -599,7 +599,7 @@ module HireFire
       dest = entries_by_name[name][strategy]
 
       series_buckets.each do |second, bucket|
-        if strategy == "rqt"
+        if Strategy.rqt?(strategy)
           if dest[second].nil?
             dest[second] = copy_rqt_bucket(bucket)
           else
@@ -634,7 +634,7 @@ module HireFire
     end
 
     def encode_leaf(strategy, bucket)
-      if strategy == "rqt"
+      if Strategy.rqt?(strategy)
         sum, count = rqt_parts(bucket)
         return [] if count == 0
 

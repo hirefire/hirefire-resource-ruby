@@ -10,7 +10,7 @@ module HireFire
       end
 
       def sample(request_queue_time)
-        HireFire.configuration.buffer.sample(@name, "rqt", request_queue_time)
+        HireFire.configuration.buffer.sample(@name, Strategy::RQT, request_queue_time)
       end
     end
   end

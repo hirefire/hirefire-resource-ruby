@@ -5,9 +5,7 @@ require "test_helper"
 class HireFire::Source::CPU::PlatformTest < Minitest::Test
   Usage = HireFire::Source::CPU::Usage
   FIXTURE_ROOT = File.expand_path("../../fixtures/cpu", __FILE__)
-
   NPROC_SENTINEL = 97
-
   CEDAR_DEDICATED = %w[
     performance_m
     performance_l

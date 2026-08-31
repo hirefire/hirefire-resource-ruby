@@ -15,7 +15,6 @@ module HireFire
         CGROUP_V1_PERIOD = "/sys/fs/cgroup/cpu/cpu.cfs_period_us"
         CEDAR_MEMORY_LIMIT = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
         PROC_STAT_GLOB = "/proc/[0-9]*/stat"
-
         CEDAR_SHARED_ENTITLEMENTS = {
           536_870_912 => 1.0,
           1_073_741_824 => 2.0

@@ -2,9 +2,6 @@
 
 class CreateGoodJobs < ActiveRecord::Migration[8.0]
   def change
-    # Uncomment for Postgres v12 or earlier to enable gen_random_uuid() support
-    # enable_extension 'pgcrypto'
-
     create_table :good_jobs, id: :uuid do |t|
       t.text :queue_name
       t.integer :priority

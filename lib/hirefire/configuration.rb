@@ -3,29 +3,9 @@
 require "logger"
 
 module HireFire
-  # Holds process-wide settings (token, logger) and optional local declarations via {#dyno}.
-  #
-  # Always-on sources (request queue time on the HTTP middleware path, and CPU when process
-  # identity resolves) do not require an explicit {#dyno} declaration. Local job-queue sampler
-  # blocks remain the escape hatch for custom probes and legacy root installs until lease plans
-  # cover them fully.
-  #
-  # @!attribute [rw] logger
-  #   Logger used for HireFire diagnostic messages. Defaults to a stdout logger. Set to +nil+
-  #   (or a logger missing the log methods) to silence diagnostics.
-  #   @return [#error, #warn, #info, nil]
-  # @!attribute [rw] log_queue_metrics
-  #   Deprecated. When true, middleware still prints +[hirefire:router] queue=…ms+ to
-  #   stdout so Logplex Request Queue Time keeps working. Setting true once-warns to
-  #   switch to HireFire Request Queue Time (push to data.hirefire.io) with +HIREFIRE_TOKEN+.
-  #   @return [Boolean]
   class Configuration
-    # Raised when {#dyno} cannot resolve a source because a name was given without a sampler
-    # block (except bare +"web"+, which is a no-op for backwards compatibility).
     class MissingSamplerError < StandardError; end
 
-    # Raised when a dyno name was already declared for the same source kind (names are compared
-    # case-insensitively).
     class DuplicateDynoError < StandardError; end
 
     attr_reader :http, :job_queues, :log_queue_metrics, :logger
@@ -46,10 +26,6 @@ module HireFire
       @http_active = false
     end
 
-    # Assign a logger. +nil+ silences diagnostics (same as a logger missing log methods).
-    #
-    # @param value [#error, #warn, #info, nil]
-    # @return [void]
     def logger=(value)
       @logger = value
       @default_logger = false
@@ -59,26 +35,11 @@ module HireFire
       @default_logger
     end
 
-    # Legacy flag. When true, middleware still prints +[hirefire:router] queue=…ms+
-    # to stdout so Logplex Request Queue Time keeps working (1.x BC). Setting true
-    # also once-warns to switch to HireFire Request Queue Time.
-    #
-    # @param value [Object] truthy enables stdout emit on each measured request
-    # @return [void]
     def log_queue_metrics=(value)
       @log_queue_metrics = !!value
       warn_log_queue_metrics_once if @log_queue_metrics
     end
 
-    # The HireFire API token. Returns the value assigned in code when it is not +nil+, else the
-    # +HIREFIRE_TOKEN+ environment variable, else +nil+. An empty string (in code or from the env)
-    # is treated as absent (+nil+), so it neither enables reporting nor is sent on the wire.
-    # Assigning +nil+ clears the in-code value so the environment variable is consulted again.
-    # Assigning an empty string forces the token off even when +HIREFIRE_TOKEN+ is set. A non-empty
-    # token present when {HireFire.configure} or {HireFire.boot} runs starts the dispatcher and
-    # enables reporting.
-    #
-    # @return [String, nil]
     def token
       value = @token.nil? ? ENV["HIREFIRE_TOKEN"] : @token
       return nil if value.nil?
@@ -87,27 +48,6 @@ module HireFire
       value unless value.empty?
     end
 
-    # Declares a process by dyno name (Heroku Procfile-shaped).
-    #
-    # A sampler block registers a local job-queue source (+jql+ / +jqs+ under the lease plan
-    # strategy). Prefer zero-config ({HireFire.boot} / railtie + token) for request queue time
-    # and CPU, and lease plan adapters in the HireFire UI for managed job queues. Use {#dyno}
-    # with a sampler for custom probes or strategy-only (custom configuration) plan entries.
-    #
-    # Bare +dyno(:web)+ (no block, name +"web"+ case-insensitive) is deprecated. It is
-    # accepted so 1.x configs do not break, but it does nothing. Request queue time is
-    # sampled automatically from HTTP traffic. A once-per-process warning says the line
-    # can be removed. +dyno(:web) { … }+ still registers a job-queue sampler under +"web"+.
-    #
-    # @param name [String, Symbol] the process name. Must be non-empty.
-    # @yield a sampler returning the current job-queue metric (a non-negative, finite number).
-    # @return [void]
-    # @raise [ArgumentError] the name is empty.
-    # @raise [MissingSamplerError] a name other than +"web"+ given without a sampler.
-    # @raise [DuplicateDynoError] the name was already declared for the same source kind.
-    # @example
-    #   config.dyno(:web) # no-op BC, safe to remove
-    #   config.dyno(:worker) { HireFire::Macro::Sidekiq.job_queue_size(:default) }
     def dyno(name, &sampler)
       name = coerce_name!(name)
 
@@ -128,24 +68,14 @@ module HireFire
         "Bare config.dyno(:web) is a no-op and can be removed."
     end
 
-    # In-memory metric buffer that accumulates samples between dispatcher flushes.
-    #
-    # @return [HireFire::Buffer]
     def buffer
       @buffer || @mutex.synchronize { @buffer ||= Buffer.new }
     end
 
-    # Periodic reporter that samples job queues and CPU and flushes buffered metrics to the API.
-    #
-    # @return [HireFire::Dispatcher]
     def dispatcher
       @dispatcher || @mutex.synchronize { @dispatcher ||= Dispatcher.new }
     end
 
-    # Stops the dispatcher if one was started.
-    #
-    # @param flush [Boolean] forwarded to {HireFire::Dispatcher#stop}
-    # @return [void]
     def stop_dispatcher(flush: true)
       @dispatcher&.stop(flush: flush)
     end

@@ -1979,9 +1979,6 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     owner.define_method(:zrange_batch, original) if original
   end
 
-  # FILL_WAIT_SECONDS (1s) and BATCH (1000) size production fills. Tests that
-  # park on the fill wait or cross a batch boundary exercise the same code
-  # path with smaller values, so swap the constants for the test's duration.
   def with_due_cache_constants(overrides)
     originals = overrides.to_h { |name, _| [name, Cache.const_get(name)] }
     originals.each do |name, value|

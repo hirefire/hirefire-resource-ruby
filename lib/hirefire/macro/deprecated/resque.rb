@@ -3,25 +3,7 @@
 module HireFire
   module Macro
     module Deprecated
-      # Provides backward compatibility with the deprecated Resque macro.
-      # For new implementations, refer to {HireFire::Macro::Resque}.
       module Resque
-        # Retrieves the total number of jobs in the specified Resque queue(s).
-        #
-        # Legacy behavior: live list lengths plus in-progress worker payloads for the
-        # given queues. Does **not** count delayed/scheduled jobs. Prefer
-        # {HireFire::Macro::Resque.job_queue_size}, which is waiting-only (live + due
-        # delayed, no working).
-        #
-        # @param queues [Array<String, Symbol>] Queue names to count jobs in.
-        #   Pass an empty array or no arguments to count jobs in all queues.
-        # @return [Integer] Total number of jobs in the specified queues.
-        # @example Counting jobs in all queues
-        #   HireFire::Macro::Resque.queue
-        # @example Counting jobs in the "default" queue
-        #   HireFire::Macro::Resque.queue("default")
-        # @example Counting jobs in both "default" and "critical" queues
-        #   HireFire::Macro::Resque.queue("default", "critical")
         def queue(*queues)
           queues = queues.flatten.map(&:to_s)
           queues = ::Resque.queues if queues.empty?

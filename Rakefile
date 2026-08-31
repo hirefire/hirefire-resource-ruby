@@ -3,8 +3,6 @@
 require "bundler/gem_tasks"
 require "standard/rake"
 
-# Test files per appraisal *family*. Cell names and dependency pins live only in
-# Appraisals (SSOT). CI uses `appraisal list`. Local `rake test:*` parses the same file.
 FAMILY_TEST_FILES = {
   "bunny" => [
     "macro/test_bunny.rb"
@@ -100,30 +98,8 @@ task :test do
   end
 end
 
-desc "Generate documentation"
-task :doc do
-  sh "yard"
-end
-
-namespace :doc do
-  desc "Open documentation"
-  task :open do
-    sh "open doc/index.html"
-  end
-
-  desc "Run documentation server"
-  task :server do
-    sh "yard server --reload"
-  end
-end
-
-desc "Fail if YARD emits warnings"
-task "doc:check" do
-  sh "bundle exec yard doc --fail-on-warning --no-progress"
-end
-
-desc "Run checks: standard and YARD"
-task check: ["standard", "doc:check"]
+desc "Run checks: standard"
+task check: ["standard"]
 
 desc "Run formatters: standard:fix"
 task format: ["standard:fix"]

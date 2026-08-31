@@ -13,23 +13,6 @@ module HireFire
 
       VERSION_1_0_0 = Gem::Version.new("1.0.0")
 
-      # Calculates the maximum job queue latency using Que. If no queues are specified, it
-      # measures latency across all available queues.
-      #
-      # Waiting set only: due unfinished/unexpired jobs (v1+) that are not session
-      # advisory-locked. Locked (working) jobs are excluded. Future `run_at` is not measured.
-      # Retries with `error_count > 0` still count when due and unlocked (do not copy Que AR
-      # `ready`, which drops errored rows).
-      #
-      # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
-      #   measurement. If not provided, latency is measured across all queues.
-      # @return [Float] Maximum job queue latency in seconds.
-      # @example Calculate latency across all queues
-      #   HireFire::Macro::Que.job_queue_latency
-      # @example Calculate latency for the "default" queue
-      #   HireFire::Macro::Que.job_queue_latency(:default)
-      # @example Calculate latency across "default" and "mailer" queues
-      #   HireFire::Macro::Que.job_queue_latency(:default, :mailer)
       def job_queue_latency(*queues)
         if version < VERSION_1_0_0
           job_queue_latency_v0(*queues)
@@ -38,23 +21,6 @@ module HireFire
         end
       end
 
-      # Calculates the total job queue size using Que. If no queues are specified, it
-      # measures size across all available queues.
-      #
-      # Waiting set only: due unfinished/unexpired jobs (v1+) that are not session
-      # advisory-locked. Locked (working) jobs are excluded. Future `run_at` is not counted.
-      # Retries with `error_count > 0` still count when due and unlocked (do not copy Que AR
-      # `ready`, which drops errored rows). No `skip_working` flag.
-      #
-      # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
-      #   If not provided, size is measured across all queues.
-      # @return [Integer] Total job queue size (waiting set: due + not advisory-locked).
-      # @example Calculate size across all queues
-      #   HireFire::Macro::Que.job_queue_size
-      # @example Calculate size for the "default" queue
-      #   HireFire::Macro::Que.job_queue_size(:default)
-      # @example Calculate size across "default" and "mailer" queues
-      #   HireFire::Macro::Que.job_queue_size(:default, :mailer)
       def job_queue_size(*queues)
         if version < VERSION_1_0_0
           job_queue_size_v0(*queues)
@@ -63,16 +29,6 @@ module HireFire
         end
       end
 
-      # Counts in-flight (working) jobs: unfinished/unexpired (v1+) rows that hold a
-      # session advisory lock on the job id (same +pg_locks+ predicate used to
-      # exclude working from waiting). Never folded into JQL/JQS. Plan records under +wrk+.
-      #
-      # @param queues [Array<String, Symbol>] (optional) Queue names. Empty = all.
-      # @return [Integer] In-flight advisory-locked job count.
-      # @example All queues
-      #   HireFire::Macro::Que.job_queue_working
-      # @example Named queues
-      #   HireFire::Macro::Que.job_queue_working(:default, :mailer)
       def job_queue_working(*queues)
         if version < VERSION_1_0_0
           job_queue_working_v0(*queues)

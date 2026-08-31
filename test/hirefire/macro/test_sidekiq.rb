@@ -368,17 +368,17 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   def test_job_queue_size_with_jobs_using_client_lookup
     populate_queue
 
-    assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size # 3 live + 1 schedule + 1 retry
-    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(skip_scheduled: true) # 3 live + 1 retry
-    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true) # 3 live + 1 schedule
-    assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(skip_working: true) # same as default
-    assert_equal 6, HireFire::Macro::Sidekiq.job_queue_size(skip_working: false) # +1 working
-    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default) # 1 live + 1 schedule + 1 retry
-    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical) # +1 critical live
+    assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size
+    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(skip_scheduled: true)
+    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true)
+    assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(skip_working: true)
+    assert_equal 6, HireFire::Macro::Sidekiq.job_queue_size(skip_working: false)
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default)
+    assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical)
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, skip_scheduled: true)
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, skip_retries: true)
     assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, skip_working: true)
-    assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, skip_working: false) # +working on default
+    assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, skip_working: false)
   end
 
   def test_job_queue_size_with_jobs_using_server_lookup

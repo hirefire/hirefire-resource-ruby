@@ -26,127 +26,38 @@ module HireFire
         }.freeze
       }.freeze
 
-      # Filter and coerce lease-plan +options+ for Sidekiq sampling.
-      #
-      # @param strategy [String] +"jql"+ or +"jqs"+
-      # @param options [Object] raw plan options (Hash or ignored)
-      # @return [Hash]
       def plan_options(strategy, options)
         extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
       end
 
-      # Open DueCache for one Dispatcher sample wave (all plan + dyno Sidekiq macros).
-      # No-op when the Sidekiq gem is not loaded.
-      #
-      # @return [Integer, nil] wave token for {#after_sample_job_queues}
       def before_sample_job_queues
         return nil unless defined?(::Sidekiq)
 
         DueCache.begin_sample!
       end
 
-      # Close DueCache for the wave token from {#before_sample_job_queues}.
-      #
-      # @param token [Integer, nil]
-      # @return [void]
       def after_sample_job_queues(token = nil)
         return unless defined?(::Sidekiq)
 
         DueCache.end_sample!(token)
       end
 
-      # Reset DueCache after fork / abandoned inherited state.
-      #
-      # @return [void]
       def reinit_after_fork
         DueCache.reinit_after_fork
       end
 
-      # Calculates the maximum job queue latency using Sidekiq. If no queues are specified, it
-      # measures latency across all available queues.
-      #
-      # Client schedule/retry due walks share a process-local rank cache scoped to one
-      # Dispatcher sample wave so many named samplers amortize one ascending walk per set.
-      # Outside a sample wave (console or one-off), each call walks cold. Empty queue list
-      # (all queues) uses a cheap first-score due read and never walks/decodes due members.
-      #
-      # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
-      #   measurement. If not provided, latency is measured across all queues.
-      # @param options [Hash] Options to control and filter the latency calculation.
-      # @option options [Boolean] :skip_retries (false) If true, skips the RetrySet in latency calculation.
-      # @option options [Boolean] :skip_scheduled (false) If true, skips the ScheduledSet in latency calculation.
-      # @return [Float] Maximum job queue latency in seconds.
-      # @example Calculate latency across all queues
-      #   HireFire::Macro::Sidekiq.job_queue_latency
-      # @example Calculate latency for the "default" queue
-      #   HireFire::Macro::Sidekiq.job_queue_latency(:default)
-      # @example Calculate maximum latency across "default" and "mailer" queues
-      #   HireFire::Macro::Sidekiq.job_queue_latency(:default, :mailer)
-      # @example Calculate latency for the "default" queue, excluding scheduled jobs
-      #   HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true)
-      # @example Calculate latency for the "default" queue, excluding retries
-      #   HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
       def job_queue_latency(*queues, **options)
         JobQueueLatency.call(*queues, **options)
       end
 
-      # Calculates the total job queue size using Sidekiq. If no queues are specified, it measures
-      # size across all available queues.
-      #
-      # Client schedule/retry due walks share a process-local rank cache scoped to one Dispatcher
-      # sample wave. Outside a sample wave (console or one-off), each call walks cold. Due counts
-      # are served only after the due region is complete for that fill (except a call-local
-      # +max_scheduled+ walk budget on named queues). Empty queue list (all queues) uses +ZCOUNT+
-      # for due size and never walks/decodes due members (+max_scheduled+ is ignored there).
-      # +server: true+ uses Lua and does not read or write the cache.
-      #
-      # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
-      #   If not provided, size is measured across all queues.
-      # @param options [Hash] Options to control and filter the count.
-      # @option options [Boolean] :server (false) If true, counts jobs server-side using Lua scripting.
-      # @option options [Boolean] :skip_retries (false) If true, skips counting jobs in retry queues.
-      # @option options [Boolean] :skip_scheduled (false) If true, skips counting jobs in scheduled queues.
-      # @option options [Boolean] :skip_working (true) If true (default), skips counting running jobs.
-      #   Pass +false+ to include in-flight work (kept through 2.0).
-      # @option options [Integer, nil] :max_scheduled (nil) Walk budget for schedule dues on named-queue
-      #   client walks and on +server: true+. Ignored for client all-queues (+ZCOUNT+). nil means no limit.
-      # @return [Integer] Total job queue size (waiting set: live + due scheduled + due retry by default).
-      # @example Calculate size across all queues
-      #   HireFire::Macro::Sidekiq.job_queue_size
-      # @example Calculate size for the "default" queue
-      #   HireFire::Macro::Sidekiq.job_queue_size(:default)
-      # @example Calculate size across "default" and "mailer" queues
-      #   HireFire::Macro::Sidekiq.job_queue_size(:default, :mailer)
-      # @example Calculate size for the "default" queue, excluding scheduled jobs
-      #   HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true)
-      # @example Calculate size for the "default" queue, excluding retries
-      #   HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true)
-      # @example Calculate size for the "default" queue, including running jobs
-      #   HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: false)
-      # @example Calculate size for the "default" queue using server-side aggregation
-      #   HireFire::Macro::Sidekiq.job_queue_size(:default, server: true)
-      # @example Cap named schedule walk at 100_000 dues
-      #   HireFire::Macro::Sidekiq.job_queue_size(:default, max_scheduled: 100_000)
       def job_queue_size(*queues, **options)
         JobQueueSize.call(*queues, **options)
       end
 
-      # Counts in-flight (working) jobs for the requested queues. Empty queue list
-      # means all queues. Uses Sidekiq WorkSet / process work hashes (same filter as
-      # +job_queue_size(..., skip_working: false)+ working contribution). Never folded
-      # into JQL/JQS waiting samples. Plan path records this under nested strategy +wrk+.
-      #
-      # @param queues [Array<String, Symbol>] (optional) Queue names. Empty = all.
-      # @return [Integer] In-flight job count (run_at ≤ now).
-      # @example All queues
-      #   HireFire::Macro::Sidekiq.job_queue_working
-      # @example Named queues only
-      #   HireFire::Macro::Sidekiq.job_queue_working(:default, :mailer)
       def job_queue_working(*queues)
         JobQueueWorking.call(*queues)
       end
 
-      # @!visibility private
       module Common
         private
 
@@ -168,7 +79,6 @@ module HireFire
         end
       end
 
-      # @!visibility private
       module JobQueueWorking
         extend Common
         extend HireFire::Utility
@@ -182,7 +92,6 @@ module HireFire
         end
       end
 
-      # @!visibility private
       module JobQueueLatency
         extend Common
         extend HireFire::Utility
@@ -251,7 +160,6 @@ module HireFire
         end
       end
 
-      # @!visibility private
       module JobQueueSize
         extend Common
         extend HireFire::Utility

@@ -39,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
+- YARD documentation in the gem and on rubydoc.info. The README and changelog are the integrator docs.
 - Serving `GET /hirefire/:token/info`.
 - `POST` of request queue time JSON to `logdrain.hirefire.io`.
 - Official support for Ruby 2.7 and 3.0.

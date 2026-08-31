@@ -15,22 +15,6 @@ module HireFire
       extend HireFire::Macro::Deprecated::GoodJob
       extend self
 
-      # Calculates the maximum job queue latency using GoodJob. If no queues are specified, it
-      # measures latency across all available queues.
-      #
-      # Counts only ready (queued) jobs: +finished_at+ and +performed_at+ both null, due to run
-      # (+scheduled_at+ in the past or null). Terminal rows (including discard-before-run) and
-      # currently running jobs are excluded.
-      #
-      # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
-      #   measurement. If not provided, latency is measured across all queues.
-      # @return [Float] Maximum job queue latency in seconds.
-      # @example Calculate latency across all queues
-      #   HireFire::Macro::GoodJob.job_queue_latency
-      # @example Calculate latency for the "default" queue
-      #   HireFire::Macro::GoodJob.job_queue_latency(:default)
-      # @example Calculate latency across "default" and "mailer" queues
-      #   HireFire::Macro::GoodJob.job_queue_latency(:default, :mailer)
       def job_queue_latency(*queues)
         with_connection do
           query = ready_jobs(*queues).order(Arel.sql("COALESCE(scheduled_at, created_at) ASC"))
@@ -43,37 +27,12 @@ module HireFire
         end
       end
 
-      # Calculates the total job queue size using GoodJob. If no queues are specified, it
-      # measures size across all available queues.
-      #
-      # Counts only ready (queued) jobs: +finished_at+ and +performed_at+ both null, due to run
-      # (+scheduled_at+ in the past or null). Terminal rows (including discard-before-run) and
-      # currently running jobs are excluded.
-      #
-      # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
-      #   If not provided, size is measured across all queues.
-      # @return [Integer] Total job queue size.
-      # @example Calculate size across all queues
-      #   HireFire::Macro::GoodJob.job_queue_size
-      # @example Calculate size for the "default" queue
-      #   HireFire::Macro::GoodJob.job_queue_size(:default)
-      # @example Calculate size across "default" and "mailer" queues
-      #   HireFire::Macro::GoodJob.job_queue_size(:default, :mailer)
       def job_queue_size(*queues)
         with_connection do
           ready_jobs(*queues).count
         end
       end
 
-      # Counts in-flight (working) jobs: +performed_at+ set and +finished_at+ null.
-      # Never folded into JQL/JQS. Plan records under +wrk+.
-      #
-      # @param queues [Array<String, Symbol>] (optional) Queue names. Empty = all.
-      # @return [Integer] In-flight running job count.
-      # @example All queues
-      #   HireFire::Macro::GoodJob.job_queue_working
-      # @example Named queues
-      #   HireFire::Macro::GoodJob.job_queue_working(:default, :mailer)
       def job_queue_working(*queues)
         with_connection do
           working_jobs(*queues).count

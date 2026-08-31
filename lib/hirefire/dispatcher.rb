@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 module HireFire
-  # Periodic reporter that samples job queues and CPU and flushes buffered metrics to the API.
   class Dispatcher
     RQT_BACKFILL_LIMIT = 60
     PAYLOAD_SIZE_LIMIT = 32_768
@@ -37,10 +36,6 @@ module HireFire
       @empty_queues_warned = {}
     end
 
-    # Starts the dispatcher loops.
-    #
-    # @return [Boolean] +true+ when started. +false+ if already running in this process, or if
-    #   starting the loops failed (the failure is logged).
     def start
       return false if healthy_running?
 
@@ -90,9 +85,6 @@ module HireFire
       false
     end
 
-    # Ensures the job-queue loop is running when lease race entry becomes true after a late configure.
-    #
-    # @return [void]
     def ensure_job_queue_loop
       return if @job_queue_thread&.alive? && @running && @pid == Process.pid && !@stopping
       return unless enter_race?
@@ -110,17 +102,6 @@ module HireFire
       Log.safe(logger, :error, "[HireFire] Could not start job-queue loop: #{e.message}")
     end
 
-    # Stops the dispatcher loops and closes transport resources.
-    #
-    # Wakes interval waiters, then joins local loop threads for up to {JOIN_TIMEOUT}
-    # seconds each. A hung sampler is abandoned rather than killed. A later {#start}
-    # increments the loop generation so an abandoned thread cannot resume work.
-    # Concurrent {#start} is rejected until close finishes.
-    #
-    # @param flush [Boolean] when +true+ (default), best-effort final metric flush before close.
-    #   Prefork parents pass +false+ so the master does not claim empty web liveness after workers
-    #   take over.
-    # @return [Boolean] +true+ once the dispatcher has stopped, +false+ when it was not running.
     def stop(flush: true)
       threads = nil
 
@@ -168,18 +149,10 @@ module HireFire
       end
     end
 
-    # Whether the dispatcher is currently running in this process.
-    #
-    # @return [Boolean]
     def running?
       @mutex.synchronize { healthy_running_locked? }
     end
 
-    # Child-side cleanup after a fork that does not restart reporting (job-only / Resque-style).
-    # Clears inherited loop flags, buffer, and lease so +at_exit+ cannot flush the parent's
-    # samples from the short-lived child.
-    #
-    # @return [void]
     def abandon_inherited_state!
       @mutex.synchronize do
         @running = false
@@ -230,8 +203,6 @@ module HireFire
       end
     end
 
-    # Interruptible 1s gap between ticks. Do not replace with Kernel#sleep:
-    # stop would wait out the remainder, and a frozen clock can hang sleep.
     def wait_loop_interval(generation)
       @mutex.synchronize do
         @loop_wait.wait(@mutex, 1) if loop_active_locked?(generation)

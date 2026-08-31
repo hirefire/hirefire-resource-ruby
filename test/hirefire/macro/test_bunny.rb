@@ -333,10 +333,6 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     assert_same fake, result
   end
 
-  # A blackhole never answers, so the sample always parks for the full
-  # read timeout. Shrink it: same code path, no 5s stall per test.
-  # connection_timeout stays at 1: the blackhole accepts instantly, so it
-  # never fires. read/write fire at the configured value every time.
   def with_fast_sample_timeouts
     options = HireFire::Macro::Bunny::SAMPLE_CONNECTION_OPTIONS
     fast = options.merge(

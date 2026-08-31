@@ -12,10 +12,6 @@ module HireFire
       extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
 
-      # HireFire-specific AMQP URL for plan sampling (takes precedence over generic env defaults)
-      # inside {#job_queue_size} when passed as +amqp_url:+).
-      #
-      # @return [Hash]
       def plan_connection_options
         options = {reuse_connection: true}
         url = presence(ENV["HIREFIRE_BUNNY_URL"]) || presence(ENV["HIREFIRE_AMQP_URL"])
@@ -33,51 +29,6 @@ module HireFire
         true
       end
 
-      # Calculates the total job queue size using Bunny.
-      #
-      # If an `amqp_url` is not provided, the method attempts to establish a connection using a
-      # hierarchy of environment variables for the RabbitMQ URL. It checks the following environment
-      # variables in order: `AMQP_URL`, `RABBITMQ_URL`, `RABBITMQ_BIGWIG_URL`, `CLOUDAMQP_URL`. If
-      # none of these variables are set, it defaults to a local RabbitMQ instance at
-      # "amqp://guest:guest@localhost:5672".
-      #
-      # @note It's important to separate jobs scheduled for future execution into a different queue
-      #   from the regular queue. This is because including them in the regular queue can interfere
-      #   with the accurate counting of jobs that are currently scheduled to run, leading to
-      #   premature upscaling. If you want to be able to schedule jobs to run in the future,
-      #   consider using the Delayed Message Plugin for RabbitMQ.
-      #
-      # @note The method relies on the `message_count` metric to determine the number of "Ready" messages
-      #   in the queue. When using auto-acknowledgment, messages are acknowledged immediately upon delivery,
-      #   causing the `message_count` to drop to zero, even if the consumer is processing messages. To ensure
-      #   accurate metrics:
-      #   - Enable manual acknowledgment (`manual_ack: true`) so that RabbitMQ tracks unacknowledged messages.
-      #   - Set a reasonable prefetch limit (`channel.prefetch(x)`) to control the number of messages delivered
-      #     to the consumer, allowing a measurable backlog to remain in the "Ready" state.
-      #   This configuration ensures accurate scaling metrics and prevents premature depletion of the queue.
-      #
-      # @param queues [Array<String, Symbol>] Names of the queues for size measurement.
-      # @param amqp_url [String, nil] (optional) RabbitMQ URL for establishing a new connection.
-      #   Ignored when +connection+ is given.
-      # @param connection [Bunny::Session, nil] (optional) An existing, started connection to
-      #   reuse. When given, it takes precedence over +amqp_url+: it is left open (the caller owns
-      #   it) and only a per-call channel is opened and closed. Otherwise a new connection is opened
-      #   and closed on each call unless +reuse_connection+ is true.
-      # @param reuse_connection [Boolean] when true (the plan path), keep one process-local
-      #   connection and open a fresh channel per call. {#reinit_after_fork} drops the
-      #   inherited reference in a forked child without closing the session.
-      # @return [Integer] Total job queue size.
-      # @raise [HireFire::Errors::MissingQueueError] If no queue names are specified.
-      # @raise [Bunny::Exception] If a queue does not exist (a passive declare returns a 404) or
-      #   the connection cannot be established.
-      # @example Retrieve job queue size for the "default" queue
-      #   HireFire::Macro::Bunny.job_queue_size(:default)
-      # @example Retrieve job queue size across "default" and "mailer" queues
-      #   HireFire::Macro::Bunny.job_queue_size(:default, :mailer)
-      # @example Use a new connection on each call using an AMQP URL
-      #   HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: url)
-      # @example Reuse a long-lived connection across calls
-      #   HireFire::Macro::Bunny.job_queue_size(:default, connection: connection)
       def job_queue_size(*queues, amqp_url: nil, connection: nil, reuse_connection: false)
         require "bunny"
 

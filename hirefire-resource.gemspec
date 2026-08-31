@@ -13,7 +13,7 @@ Gem::Specification.new do |spec|
   spec.description = "Integrates Ruby applications with HireFire autoscalers by pushing app metrics."
   spec.license = "MIT"
   spec.metadata["homepage_uri"] = "https://hirefire.io"
-  spec.metadata["documentation_uri"] = "https://www.rubydoc.info/gems/hirefire-resource"
+  spec.metadata["documentation_uri"] = "https://github.com/hirefire/hirefire-resource-ruby/blob/master/README.md"
   spec.metadata["changelog_uri"] = "https://github.com/hirefire/hirefire-resource-ruby/blob/master/CHANGELOG.md"
   spec.metadata["source_code_uri"] = "https://github.com/hirefire/hirefire-resource-ruby"
   spec.metadata["bug_tracker_uri"] = "https://github.com/hirefire/hirefire-resource-ruby/issues"

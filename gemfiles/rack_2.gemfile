@@ -8,7 +8,6 @@ gem "standardrb"
 gem "webmock"
 gem "mocha"
 gem "timecop"
-gem "yard"
 gem "rack", "~> 2"
 gem "simplecov", require: false
 gem "base64"

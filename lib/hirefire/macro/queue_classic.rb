@@ -13,21 +13,6 @@ module HireFire
       extend HireFire::Plan::Hooks
       extend self
 
-      # Calculates the maximum job queue latency using Queue Classic. If no queues are specified, it
-      # measures latency across all available queues.
-      #
-      # Waiting set only: due jobs (`scheduled_at` ≤ now) that are unlocked (`locked_at` null).
-      # Locked (working) jobs are excluded. Future `scheduled_at` is not measured.
-      #
-      # @param queues [Array<String, Symbol>] (optional) Names of the queues for latency
-      #   measurement. If not provided, latency is measured across all queues.
-      # @return [Float] Maximum job queue latency in seconds.
-      # @example Calculate latency across all queues
-      #   HireFire::Macro::QC.job_queue_latency
-      # @example Calculate latency for the "default" queue
-      #   HireFire::Macro::QC.job_queue_latency(:default)
-      # @example Calculate latency across "default" and "mailer" queues
-      #   HireFire::Macro::QC.job_queue_latency(:default, :mailer)
       def job_queue_latency(*queues)
         with_connection do |connection|
           queues = normalize_queues(queues, allow_empty: true)
@@ -45,21 +30,6 @@ module HireFire
         end
       end
 
-      # Calculates the total job queue size using Queue Classic. If no queues are specified, it
-      # measures size across all available queues.
-      #
-      # Waiting set only: due jobs (`scheduled_at` ≤ now) that are unlocked (`locked_at` null).
-      # Locked (working) jobs are excluded. Future `scheduled_at` is not counted.
-      #
-      # @param queues [Array<String, Symbol>] (optional) Names of the queues for size measurement.
-      #   If not provided, size is measured across all queues.
-      # @return [Integer] Total job queue size (waiting set: due + unlocked).
-      # @example Calculate size across all queues
-      #   HireFire::Macro::QC.job_queue_size
-      # @example Calculate size for the "default" queue
-      #   HireFire::Macro::QC.job_queue_size(:default)
-      # @example Calculate size across "default" and "mailer" queues
-      #   HireFire::Macro::QC.job_queue_size(:default, :mailer)
       def job_queue_size(*queues)
         with_connection do |connection|
           queues = normalize_queues(queues, allow_empty: true)
@@ -74,15 +44,6 @@ module HireFire
         end
       end
 
-      # Counts in-flight (working) jobs: +locked_at+ set. Never folded into JQL/JQS.
-      # Plan records under +wrk+.
-      #
-      # @param queues [Array<String, Symbol>] (optional) Queue names. Empty = all.
-      # @return [Integer] In-flight locked job count.
-      # @example All queues
-      #   HireFire::Macro::QC.job_queue_working
-      # @example Named queues
-      #   HireFire::Macro::QC.job_queue_working(:default, :mailer)
       def job_queue_working(*queues)
         with_connection do |connection|
           queues = normalize_queues(queues, allow_empty: true)

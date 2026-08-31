@@ -30,7 +30,7 @@ The test suite runs against these minimum versions and the current latest releas
 
 **Documentation:**
 
-The public API is documented with YARD. Published gems are on [rubydoc.info](https://www.rubydoc.info/gems/hirefire-resource). Locally: `bundle exec rake doc`. Changelog lives in [CHANGELOG.md](CHANGELOG.md).
+Changelog lives in [CHANGELOG.md](CHANGELOG.md).
 
 ## Development
 

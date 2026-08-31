@@ -3,31 +3,7 @@
 module HireFire
   module Macro
     module Deprecated
-      # Provides backward compatibility with the deprecated Bunny macro.
-      # For new implementations, refer to {HireFire::Macro::Bunny}.
       module Bunny
-        # Retrieves the total number of jobs in the specified queue(s).
-        #
-        # This method allows querying multiple queues and supports both existing and new RabbitMQ
-        # connections. By default, queues are considered durable unless specified otherwise.
-        #
-        # @param queues [Array<String, Symbol>] Queue names to query.
-        #   The last argument can be a Hash with either :connection or :amqp_url.
-        # @option queues [Bunny::Session, nil] :connection An existing RabbitMQ connection.
-        # @option queues [String, nil] :amqp_url RabbitMQ URL for initializing a new connection.
-        # @option queues [Boolean] :durable (true) Set to false for non-durable queues.
-        # @option queues [Integer, nil] :"x-max-priority" (nil) The maximum priority level for the queue.
-        #   If specified, it overrides the default priority settings for the queue.
-        # @return [Integer] Total number of jobs in the specified queues.
-        # @raise [ArgumentError] Raises an error if neither :connection nor :amqp_url are provided.
-        # @example Querying the default queue using an existing RabbitMQ connection
-        #   HireFire::Macro::Bunny.queue("default", connection: connection)
-        # @example Querying the default queue using a new RabbitMQ connection
-        #   HireFire::Macro::Bunny.queue("default", amqp_url: url)
-        # @example Querying the "default" and "critical" non-durable queues
-        #   HireFire::Macro::Bunny.queue("default", "critical", amqp_url: url, durable: false)
-        # @example Querying a priority queue
-        #   HireFire::Macro::Bunny.queue("priority_queue", connection: connection, "x-max-priority": 10)
         def queue(*queues)
           require "bunny"
 
@@ -60,7 +36,6 @@ module HireFire
           end
         end
 
-        # @!visibility private
         module Private
           extend self
 

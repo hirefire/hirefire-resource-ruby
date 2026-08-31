@@ -1,12 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Assert the built gem ships LICENSE, README, and CHANGELOG.
-#
-# Run after `rake build`. Used by GitHub Actions `check` and `publish`.
-# Selects the gem for HireFire::VERSION so leftover pkg/ files from older
-# versions are ignored.
-
 require "rubygems/package"
 require_relative "../lib/hirefire/version"
 

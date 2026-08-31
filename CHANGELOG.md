@@ -17,7 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Support Ruby 3.4 and 4.0.
 - Support Hanami 3.
 - Support Mongoid 9 for Delayed Job.
-- `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` again so a caller can reuse a long-lived Bunny session.
+- `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` so a caller can reuse a long-lived Bunny session.
 
 ### Changed
 

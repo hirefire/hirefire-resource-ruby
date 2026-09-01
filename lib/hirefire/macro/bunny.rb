@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../plan/hooks"
+require_relative "../plan/size_only"
 require_relative "deprecated/bunny"
 
 module HireFire
@@ -9,6 +10,7 @@ module HireFire
       extend HireFire::Macro::Deprecated::Bunny
       extend HireFire::Utility
       extend HireFire::Plan::Hooks
+      extend HireFire::Plan::SizeOnly
       extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
 

@@ -1080,7 +1080,7 @@ class HireFire::DispatcherTest < Minitest::Test
     calls = 0
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
-    mod.extend(HireFire::Errors::JobQueueLatencyUnsupported)
+    mod.extend(HireFire::Plan::SizeOnly)
     mod.define_singleton_method(:job_queue_size) { |*_queues, **_options| 1 }
     mod.define_singleton_method(:job_queue_latency) do |*_queues, **_options|
       calls += 1
@@ -2071,7 +2071,7 @@ class HireFire::DispatcherTest < Minitest::Test
     latency_calls = 0
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
-    mod.extend(HireFire::Errors::JobQueueLatencyUnsupported)
+    mod.extend(HireFire::Plan::SizeOnly)
     mod.define_singleton_method(:job_queue_size) { |*_queues, **_options|
       size_calls += 1
       9
@@ -2116,7 +2116,7 @@ class HireFire::DispatcherTest < Minitest::Test
   def test_unsupported_strategy_once_log_is_isolated_per_name_adapter_strategy
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
-    mod.extend(HireFire::Errors::JobQueueLatencyUnsupported)
+    mod.extend(HireFire::Plan::SizeOnly)
     mod.define_singleton_method(:job_queue_size) { |*_queues, **_options| 1 }
 
     original = HireFire::Plan::ADAPTERS

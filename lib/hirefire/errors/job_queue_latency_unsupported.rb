@@ -7,10 +7,6 @@ module HireFire
         raise HireFire::Errors::JobQueueLatencyUnsupportedError,
           "#{name} currently does not support job queue latency measurements."
       end
-
-      def supports_plan_strategy?(strategy)
-        strategy.to_s == "jqs"
-      end
     end
   end
 end

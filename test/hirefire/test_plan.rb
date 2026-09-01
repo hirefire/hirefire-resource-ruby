@@ -233,7 +233,7 @@ class HireFire::PlanTest < Minitest::Test
     original_checks = HireFire::Plan::LIBRARY_CHECKS
     called = false
     mod = stub_macro do |m|
-      m.extend(HireFire::Errors::JobQueueLatencyUnsupported)
+      m.extend(HireFire::Plan::SizeOnly)
       m.define_singleton_method(:job_queue_size) { |*_queues, **_options|
         called = true
         1

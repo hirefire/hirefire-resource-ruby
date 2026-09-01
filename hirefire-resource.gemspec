@@ -9,8 +9,8 @@ Gem::Specification.new do |spec|
   spec.authors = ["Michael van Rooijen"]
   spec.email = ["support@hirefire.io"]
   spec.homepage = "https://hirefire.io"
-  spec.summary = "HireFire integration library for Ruby applications"
-  spec.description = "Integrates Ruby applications with HireFire autoscalers by pushing app metrics."
+  spec.summary = "Application metric collection for HireFire autoscalers"
+  spec.description = spec.summary
   spec.license = "MIT"
   spec.metadata["homepage_uri"] = "https://hirefire.io"
   spec.metadata["documentation_uri"] = "https://github.com/hirefire/hirefire-resource-ruby/blob/master/README.md"

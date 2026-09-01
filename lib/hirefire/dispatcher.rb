@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "json"
+
 module HireFire
   class Dispatcher
     RQT_BACKFILL_LIMIT = 60
@@ -181,7 +183,7 @@ module HireFire
     end
 
     def healthy_running_locked?
-      @running && !@stopping && @pid == Process.pid && @thread&.alive?
+      healthy_running?
     end
 
     def loop_active?(generation)

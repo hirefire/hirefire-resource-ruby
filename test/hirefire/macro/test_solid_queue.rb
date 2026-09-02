@@ -46,7 +46,11 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     end
 
     HireFire::Macro::SolidQueue.before_sample_job_queues
+    assert_equal :pending, HireFire::Macro::SolidQueue.instance_variable_get(:@wave_registered_queues)
+
+    HireFire::Macro::SolidQueue.send(:registered_queues)
     assert_operator calls, :>=, 1
+    refute_equal :pending, HireFire::Macro::SolidQueue.instance_variable_get(:@wave_registered_queues)
     refute_nil HireFire::Macro::SolidQueue.instance_variable_get(:@wave_registered_queues)
 
     HireFire::Macro::SolidQueue.after_sample_job_queues

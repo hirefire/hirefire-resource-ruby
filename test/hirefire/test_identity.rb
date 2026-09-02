@@ -39,6 +39,16 @@ class HireFire::IdentityTest < Minitest::Test
     assert_equal "my-worker", HireFire::Identity.resolve
   end
 
+  def test_resolves_fir_worker_latency_hyphen_name
+    ENV["DYNO"] = "worker-latency-6d7f788ddb-cdct6"
+    assert_equal "worker-latency", HireFire::Identity.resolve
+  end
+
+  def test_cedar_worker_latency_dot_suffix_keeps_underscore
+    ENV["DYNO"] = "worker_latency.1"
+    assert_equal "worker_latency", HireFire::Identity.resolve
+  end
+
   def test_falls_back_to_render_service_name
     ENV["RENDER_SERVICE_NAME"] = "background-worker"
     assert_equal "background-worker", HireFire::Identity.resolve
@@ -183,6 +193,13 @@ class HireFire::IdentityTest < Minitest::Test
       refute HireFire::Identity.heroku_web_process?, dyno
       refute HireFire::Identity.platform_http_role?, dyno
     end
+  end
+
+  def test_heroku_web_process_rejects_fir_web_worker_hyphen_name
+    ENV["DYNO"] = "web-worker-5fb9c979-lft2l"
+    assert_equal "web-worker", HireFire::Identity.resolve
+    refute HireFire::Identity.heroku_web_process?
+    refute HireFire::Identity.platform_http_role?
   end
 
   def test_heroku_web_process_rejects_fir_worker

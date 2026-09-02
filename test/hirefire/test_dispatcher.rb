@@ -370,6 +370,29 @@ class HireFire::DispatcherTest < Minitest::Test
     assert(bodies[0].any? { |e| e["name"] == "worker" && e.dig("metrics", "jql", "1000") == 42 })
   end
 
+  def test_hyphen_dyno_samples_and_dispatches_name_as_is
+    stub_lease(granted: true, job_queues: [
+      {"name" => "worker-latency", "strategy" => "jql", "adapter" => nil, "queues" => [], "options" => {}}
+    ])
+    bodies = capture_ingest_bodies
+    ENV["DYNO"] = "worker-latency-6d7f788ddb-cdct6"
+
+    Timecop.freeze Time.at(1000) do
+      HireFire.configuration.dyno("worker-latency") { 7 }
+      HireFire.configuration.dyno(:"worker-size") { 3 }
+      dispatcher = HireFire.configuration.dispatcher
+      dispatcher.send(:job_queue_tick)
+      dispatcher.send(:tick)
+    end
+
+    names = bodies.fetch(0).map { |e| e["name"] }
+    assert_includes names, "worker-latency"
+    refute_includes names, "worker"
+    entry = bodies[0].find { |e| e["name"] == "worker-latency" }
+    assert_equal 7, entry.dig("metrics", "jql", "1000")
+    refute_includes log.string, "local sampler is ignored"
+  end
+
   def test_combined_web_and_worker_dispatch
     stub_lease(granted: true)
 

@@ -64,6 +64,15 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_equal 2.46, job_queues[1].sample
   end
 
+  def test_dyno_accepts_hyphenated_name_string_and_symbol
+    @configuration.dyno("worker-latency") { 1.5 }
+    @configuration.dyno(:"worker-size") { 2 }
+    names = @configuration.job_queues.map(&:name)
+    assert_equal ["worker-latency", "worker-size"], names
+    assert_equal 1.5, @configuration.job_queues.find_by_name("worker-latency").sample
+    assert_equal 2, @configuration.job_queues.find_by_name(:"worker-size").sample
+  end
+
   def test_dyno_without_block_raises_for_a_non_web_name
     assert_raises(HireFire::Configuration::MissingSamplerError) do
       @configuration.dyno(:worker)

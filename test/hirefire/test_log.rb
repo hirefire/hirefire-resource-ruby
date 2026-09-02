@@ -28,6 +28,13 @@ class HireFire::LogTest < Minitest::Test
     assert_nil HireFire::Log.safe(nil, :error, "boom")
   end
 
+  def test_format_error_strips_url_userinfo
+    error = RuntimeError.new("redis://user:secret@127.0.0.1:6379/0 failed")
+    text = HireFire::Log.format_error(error)
+    refute_includes text, "secret"
+    assert_includes text, "redis://***@127.0.0.1:6379/0"
+  end
+
   def test_safe_returns_logger_result_on_success
     logger = Object.new
     logger.define_singleton_method(:info) { |msg| "logged:#{msg}" }

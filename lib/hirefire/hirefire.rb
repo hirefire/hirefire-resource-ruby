@@ -77,7 +77,7 @@ end
 HireFire.install_fork_hooks!
 
 at_exit do
-  HireFire.configuration.stop_dispatcher
+  HireFire.instance_variable_get(:@configuration)&.stop_dispatcher
 rescue
   nil
 end

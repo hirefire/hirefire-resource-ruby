@@ -14,16 +14,15 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   def setup
     super
+    @zrange_starts = []
+    install_zrange_recorder
     Cache.clear_all
     Cache.begin_sample!
-    Cache.trace = false
-    Cache.clear_trace!
     flush_sidekiq_redis
   end
 
   def teardown
-    Cache.trace = false
-    Cache.clear_trace!
+    uninstall_zrange_recorder
     Cache.end_sample!
     Cache.clear_all
     super
@@ -33,8 +32,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Timecop.freeze(Time.now - 300) { enqueue_scheduled(queue: "mailer") }
     Timecop.freeze(Time.now - 100) { enqueue_scheduled(queue: "default") }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
 
     assert_in_delta 300, HireFire::Macro::Sidekiq.job_queue_latency(:mailer, skip_retries: true), LATENCY_DELTA
     first_starts = schedule_start_ranks
@@ -42,7 +40,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     prior_cursor = Cache.peek("schedule").cursor_rank
     assert_equal 1, prior_cursor, "mailer is rank 0; resume cursor is 1"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_in_delta 100, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true), LATENCY_DELTA
     second_starts = schedule_start_ranks
     assert_equal [prior_cursor], second_starts, "resume must open exactly at prior cursor"
@@ -54,9 +52,8 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       Timecop.freeze(Time.now - (1000 - i * 10)) { enqueue_scheduled(queue: "q#{i}") }
     end
 
-    Cache.trace = true
     n.times do |i|
-      Cache.clear_trace!
+      clear_zrange_starts!
       age = HireFire::Macro::Sidekiq.job_queue_latency(:"q#{i}", skip_retries: true)
       assert_in_delta 1000 - i * 10, age, LATENCY_DELTA
       starts = schedule_start_ranks
@@ -71,7 +68,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       end
     end
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     n.times do |i|
       HireFire::Macro::Sidekiq.job_queue_latency(:"q#{i}", skip_retries: true)
     end
@@ -81,8 +78,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   def test_end_sample_clears_maps_and_next_wave_restarts_at_rank_zero
     plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 50, enqueued_at: Time.now.to_f)
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_includes schedule_start_ranks, 0
 
@@ -107,7 +103,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_empty wiped.size.keys
     assert_equal 1, wiped.generation, "new wave resets generation_seq to a fresh epoch"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     starts = schedule_start_ranks
     assert_includes starts, 0, "after new begin_sample!, walk must restart at rank 0"
@@ -121,8 +117,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   def test_out_of_band_macro_after_end_sample_does_not_free_hit
     plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 50, enqueued_at: Time.now.to_f)
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert Cache.peek("schedule").complete
 
@@ -130,12 +125,12 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     refute Cache.sample_active?
     assert_nil Cache.peek("schedule")
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     starts = schedule_start_ranks
     assert_includes starts, 0, "out-of-band call must cold-walk, not free-hit prior wave"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_includes schedule_start_ranks, 0, "second out-of-band call must cold-walk again"
   end
@@ -154,8 +149,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Cache.begin_sample!
     assert_nil Cache.peek("schedule"), "second begin_sample! must clear prior wave maps"
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
     starts = schedule_start_ranks
     assert_equal [0], starts, "second wave must open ZRANGE at rank 0, not resume cursor #{first_cursor}"
@@ -166,16 +160,15 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   def test_within_sample_wave_complete_jqs_issues_no_zrange
     3.times { |i| plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10 - i, enqueued_at: Time.now.to_f) }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_includes schedule_start_ranks, 0, "first named fill must start at rank 0"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_empty schedule_start_ranks, "complete named cache must not rewalk within sample wave"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
     assert_empty schedule_start_ranks, "all-queues JQS must not rank-walk due ZSET"
   end
@@ -186,8 +179,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Timecop.freeze(Time.now - 100) { enqueue_scheduled(queue: "default") }
     Timecop.freeze(Time.now - 50) { enqueue_scheduled(queue: "mailer") }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
 
     assert_in_delta 100, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true), LATENCY_DELTA
     partial = Cache.peek("schedule")
@@ -199,13 +191,13 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     prior_cursor = partial.cursor_rank
     assert_equal 3, prior_cursor, "foreign, foreign, default then early-stop"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
     assert_empty schedule_start_ranks, "all-queues JQS must not rank-walk"
     assert_equal prior_cursor, Cache.peek("schedule").cursor_rank
     refute Cache.peek("schedule").complete
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     size = HireFire::Macro::Sidekiq.job_queue_size(:mailer, skip_retries: true, skip_working: true)
     assert_equal 1, size
     cache = Cache.peek("schedule")
@@ -220,8 +212,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     5.times { |i| Timecop.freeze(Time.now - 400 + i) { enqueue_scheduled(queue: "foreign") } }
     3.times { |i| Timecop.freeze(Time.now - 30 + i) { enqueue_scheduled(queue: "target") } }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     HireFire::Macro::Sidekiq.job_queue_latency(:foreign, skip_retries: true)
     partial = Cache.peek("schedule")
     refute partial.complete
@@ -229,7 +220,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     prior_cursor = partial.cursor_rank
     assert_equal 2, prior_cursor, "zzz_last then first foreign"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     size = HireFire::Macro::Sidekiq.job_queue_size(:target, skip_retries: true, skip_working: true)
     assert_equal 3, size, "named JQS must return full multi-due count, not early-stop at 1"
     assert Cache.peek("schedule").complete, "uncapped named JQS must finish due region"
@@ -241,8 +232,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     5.times { |i| plant_sorted_set_job("schedule", queue: "foreign", score: Time.now.to_f - 100 - i, enqueued_at: Time.now.to_f) }
     plant_sorted_set_job("schedule", queue: "later", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     HireFire::Macro::Sidekiq.job_queue_latency(:foreign, skip_retries: true)
     partial = Cache.peek("schedule")
     refute partial.complete
@@ -250,7 +240,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     prior_cursor = partial.cursor_rank
     assert_equal 1, prior_cursor
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     size = HireFire::Macro::Sidekiq.job_queue_size(:foreign, skip_retries: true, skip_working: true)
     assert_equal 5, size, "must not return partial size[q] as final JQS"
     assert Cache.peek("schedule").complete
@@ -262,22 +252,21 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Timecop.freeze(Time.now - 400) { enqueue_scheduled(queue: "foreign") }
     Timecop.freeze(Time.now - 100) { enqueue_scheduled(queue: "default") }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_in_delta 100, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true), LATENCY_DELTA
     partial = Cache.peek("schedule")
     assert partial.oldest_at.key?("foreign"), "walk must opportunistically record foreign"
     refute partial.complete
     assert_includes schedule_start_ranks, 0, "first walk must open at rank 0"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     foreign_age = HireFire::Macro::Sidekiq.job_queue_latency(:foreign, skip_retries: true)
     assert_in_delta 400, foreign_age, LATENCY_DELTA
     assert_empty schedule_start_ranks, "satisfied opportunistic hit must issue zero ZRANGE"
 
     HireFire::Macro::Sidekiq.job_queue_size(:foreign, skip_retries: true, skip_working: true)
     assert Cache.peek("schedule").complete
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:foreign, skip_retries: true, skip_working: true)
     assert_empty schedule_start_ranks
   end
@@ -288,14 +277,13 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Timecop.freeze(frozen) do
       plant_sorted_set_job("schedule", queue: "default", score: score, enqueued_at: frozen.to_f)
 
-      Cache.trace = true
-      Cache.clear_trace!
+      clear_zrange_starts!
       first = HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
       assert_in_delta 20, first, LATENCY_DELTA
       assert_includes schedule_start_ranks, 0, "first fill must produce traced ZRANGE"
       assert_in_delta score, Cache.peek("schedule").oldest_at["default"], 1e-3
 
-      Cache.clear_trace!
+      clear_zrange_starts!
       Timecop.freeze(frozen + 10) do
         second = HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
         assert_in_delta 30, second, LATENCY_DELTA
@@ -310,8 +298,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Timecop.freeze(Time.now - 100) { enqueue_scheduled(queue: "default") }
     Timecop.freeze(Time.now - 50) { enqueue_scheduled(queue: "low") }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     latency = HireFire::Macro::Sidekiq.job_queue_latency(:default, :mailer, skip_retries: true)
     assert_in_delta 400, latency, LATENCY_DELTA
 
@@ -328,13 +315,12 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Timecop.freeze(Time.now - 250) { enqueue_scheduled(queue: "mailer") }
     Timecop.freeze(Time.now - 80) { enqueue_scheduled(queue: "default") }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_in_delta 250, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true), LATENCY_DELTA
     assert_empty schedule_start_ranks, "all-queues JQL must not rank-walk / decode due members"
     assert_nil Cache.peek("schedule"), "all-queues path must not write DueCache"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_in_delta 250, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true), LATENCY_DELTA
     assert_empty schedule_start_ranks
   end
@@ -344,27 +330,25 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     2.times { |i| plant_sorted_set_job("schedule", queue: "mailer", score: Time.now.to_f - 10 - i, enqueued_at: Time.now.to_f) }
     plant_sorted_set_job("schedule", queue: "future", score: Time.now.to_f + 60, enqueued_at: Time.now.to_f)
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
     assert_empty schedule_start_ranks, "all-queues JQS must not rank-walk due ZSET"
     assert_nil Cache.peek("schedule"), "all-queues path must not write DueCache"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
     assert_empty schedule_start_ranks
   end
 
   def test_all_queues_jqs_and_jql_empty_and_future_only
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
     assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true)
     assert_empty schedule_start_ranks
     assert_nil Cache.peek("schedule")
 
     enqueue_scheduled_future
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
     assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(skip_retries: true)
     assert_empty schedule_start_ranks
@@ -373,8 +357,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   def test_all_queues_jqs_ignores_max_scheduled_walk_budget
     5.times { |i| plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10 - i, enqueued_at: Time.now.to_f) }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(
       max_scheduled: 3,
       skip_retries: true,
@@ -383,7 +366,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_empty schedule_start_ranks
     assert_nil Cache.peek("schedule")
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(
       max_scheduled: 0,
       skip_retries: true,
@@ -397,8 +380,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Timecop.freeze(Time.now - 40) { enqueue_retry(queue: "mailer") }
     enqueue_retry_future
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(skip_scheduled: true, skip_working: true)
     assert_in_delta 120, HireFire::Macro::Sidekiq.job_queue_latency(skip_scheduled: true), LATENCY_DELTA
     assert_empty retry_start_ranks
@@ -409,21 +391,19 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Timecop.freeze(Time.now - 100) { enqueue_scheduled(queue: "default") }
     Timecop.freeze(Time.now - 80) { enqueue_retry(queue: "default") }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     age_retry_only = HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true)
     assert_in_delta 80, age_retry_only, LATENCY_DELTA
-    ranks = Cache.zrange_start_ranks
+    ranks = zrange_start_ranks
     assert ranks.none? { |e| e[:set_name] == "schedule" }, "skip_scheduled must not walk schedule"
     assert ranks.any? { |e| e[:set_name] == "retry" }
     assert_nil Cache.peek("schedule"), "skip_scheduled must not publish schedule cache"
     refute_nil Cache.peek("retry")
 
     reset_wave!
-    Cache.trace = true
     age_schedule_only = HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
     assert_in_delta 100, age_schedule_only, LATENCY_DELTA
-    ranks = Cache.zrange_start_ranks
+    ranks = zrange_start_ranks
     assert ranks.none? { |e| e[:set_name] == "retry" }, "skip_retries must not walk retry"
     assert ranks.any? { |e| e[:set_name] == "schedule" }
     assert_nil Cache.peek("retry"), "skip_retries must not publish retry cache"
@@ -434,15 +414,14 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Timecop.freeze(Time.now - 300) { enqueue_retry(queue: "mailer") }
     Timecop.freeze(Time.now - 100) { enqueue_retry(queue: "default") }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_in_delta 300, HireFire::Macro::Sidekiq.job_queue_latency(:mailer, skip_scheduled: true), LATENCY_DELTA
     first_starts = retry_start_ranks
     assert_includes first_starts, 0, "first retry JQL must start at rank 0"
     prior_cursor = Cache.peek("retry").cursor_rank
     assert_equal 1, prior_cursor
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_in_delta 100, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true), LATENCY_DELTA
     second_starts = retry_start_ranks
     assert_equal [prior_cursor], second_starts, "retry resume must open exactly at prior cursor"
@@ -452,8 +431,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     5.times { |i| plant_sorted_set_job("schedule", queue: "foreign", score: Time.now.to_f - 100 - i, enqueued_at: Time.now.to_f) }
     4.times { |i| plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10 - i, enqueued_at: Time.now.to_f) }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     capped = HireFire::Macro::Sidekiq.job_queue_size(
       :default,
       max_scheduled: 2,
@@ -467,7 +445,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     prior_cursor = cache.cursor_rank
     assert prior_cursor > 0
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     full = HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_equal 4, full
     starts = schedule_start_ranks
@@ -479,8 +457,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     3.times { plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f) }
     enqueue
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     size = HireFire::Macro::Sidekiq.job_queue_size(
       :default,
       max_scheduled: 0,
@@ -497,8 +474,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert Cache.peek("schedule").complete
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(
       :default,
       max_scheduled: 3,
@@ -512,8 +488,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     3.times { |i| plant_sorted_set_job("schedule", queue: "a", score: Time.now.to_f - 30 - i, enqueued_at: Time.now.to_f) }
     2.times { |i| plant_sorted_set_job("schedule", queue: "b", score: Time.now.to_f - 5 - i, enqueued_at: Time.now.to_f) }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     HireFire::Macro::Sidekiq.job_queue_latency(:a, skip_retries: true)
     cache = Cache.peek("schedule")
     refute cache.complete
@@ -521,7 +496,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_includes schedule_start_ranks, 0, "seed setup must open at rank 0"
     prior_cursor = cache.cursor_rank
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     size = HireFire::Macro::Sidekiq.job_queue_size(
       max_scheduled: 2,
       skip_retries: true,
@@ -543,8 +518,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal 1, cache.size["default"]
     assert cache.total_due > cache.size["default"], "foreign dues inflate total_due past named size"
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     capped = HireFire::Macro::Sidekiq.job_queue_size(
       :default,
       max_scheduled: 2,
@@ -560,8 +534,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     4.times { |i| plant_sorted_set_job("schedule", queue: "default", score: Time.now.to_f - 40 - i, enqueued_at: Time.now.to_f) }
     3.times { |i| plant_sorted_set_job("retry", queue: "default", score: Time.now.to_f - 20 - i, enqueued_at: Time.now.to_f) }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     size = HireFire::Macro::Sidekiq.job_queue_size(
       :default,
       max_scheduled: 1,
@@ -575,14 +548,13 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert retry_cache.complete
     assert_equal 3, retry_cache.total_due
 
-    ranks = Cache.zrange_start_ranks
+    ranks = zrange_start_ranks
     assert ranks.any? { |e| e[:set_name] == "schedule" }
     assert ranks.any? { |e| e[:set_name] == "retry" }
   end
 
   def test_named_empty_and_only_future_complete_with_zeros
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
     cache = Cache.peek("schedule")
@@ -590,27 +562,25 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal 0, cache.total_due
     assert_includes schedule_start_ranks, 0, "empty named walk must still open once (empty ZRANGE)"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
     assert_empty schedule_start_ranks, "complete empty cache must not rewalk"
 
     reset_wave!
     enqueue_scheduled_future
-    Cache.trace = true
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
     assert Cache.peek("schedule").complete
     assert_includes schedule_start_ranks, 0
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_empty schedule_start_ranks, "only-future complete must not rewalk"
   end
 
   def test_named_retry_empty_and_only_future_complete_with_zeros
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true, skip_working: true)
     assert_equal 0.0, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_scheduled: true)
     cache = Cache.peek("retry")
@@ -618,18 +588,17 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal 0, cache.total_due
     assert_includes retry_start_ranks, 0
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true, skip_working: true)
     assert_empty retry_start_ranks, "complete empty retry must not rewalk"
 
     reset_wave!
     enqueue_retry_future
-    Cache.trace = true
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true, skip_working: true)
     assert Cache.peek("retry").complete
     assert_includes retry_start_ranks, 0
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true, skip_working: true)
     assert_empty retry_start_ranks, "only-future retry complete must not rewalk"
   end
@@ -638,13 +607,12 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Timecop.freeze(Time.now - 200) { enqueue_scheduled(queue: "default") }
     Timecop.freeze(Time.now - 150) { enqueue_retry(queue: "default") }
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_in_delta 200, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
     assert_includes schedule_start_ranks, 0
     assert_includes retry_start_ranks, 0
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_in_delta 200, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
     assert_empty schedule_start_ranks, "second unskipped JQL must free-hit schedule"
     assert_empty retry_start_ranks, "second unskipped JQL must free-hit retry"
@@ -667,8 +635,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert Cache.peek("schedule").complete
     due_total = Cache.peek("schedule").total_due
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     Timecop.freeze(Time.now - 500) { enqueue }
     assert_equal due_total + 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert_empty schedule_start_ranks, "live LLEN must not rewalk warm complete due cache"
@@ -699,8 +666,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     total = warm.total_due
     gen = warm.generation
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     size = HireFire::Macro::Sidekiq.job_queue_size(server: true, skip_working: true)
     assert_equal 2, size
     assert_same warm, Cache.peek("schedule"), "server path must not replace warm cache object"
@@ -761,19 +727,18 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     plant_sorted_set_job("schedule", queue: "b", score: score, enqueued_at: Time.now.to_f, jid: "bbbbbbbbbbbb")
     plant_sorted_set_job("schedule", queue: "c", score: score + 1, enqueued_at: Time.now.to_f, jid: "cccccccccccc")
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     HireFire::Macro::Sidekiq.job_queue_latency(:a, skip_retries: true)
     assert_equal [0], schedule_start_ranks
     cursor_after_a = Cache.peek("schedule").cursor_rank
     assert_equal 1, cursor_after_a, "known order: a is rank 0, resume at 1"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_in_delta 100, HireFire::Macro::Sidekiq.job_queue_latency(:b, skip_retries: true), LATENCY_DELTA
     b_starts = schedule_start_ranks
     assert_equal [cursor_after_a], b_starts, "exact start_rank must continue at prior cursor"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:c, skip_retries: true, skip_working: true)
     jqs_starts = schedule_start_ranks
     assert jqs_starts.min > 0, "named JQS must continue from cursor, got #{jqs_starts.inspect}"
@@ -889,8 +854,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     plant_sorted_set_job("schedule", queue: "a", score: Time.now.to_f - 20, enqueued_at: Time.now.to_f)
     plant_sorted_set_job("schedule", queue: "b", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     size = HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
     assert_equal 5, size, "all-queues ZCOUNT counts due scores without JSON filter"
     assert_empty schedule_start_ranks
@@ -1461,8 +1425,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal 0, fresh.total_due
     refute fresh.complete
 
-    Cache.clear_trace!
-    Cache.trace = true
+    clear_zrange_starts!
     latency = HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true)
     assert_in_delta 10, latency, LATENCY_DELTA
     assert_includes schedule_start_ranks, 0, "post-TOCTOU latency must cold-open at rank 0"
@@ -1509,8 +1472,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     plant_sorted_set_job("schedule", queue: "a", score: Time.now.to_f - 50, enqueued_at: Time.now.to_f)
     plant_sorted_set_job("schedule", queue: "b", score: Time.now.to_f - 40, enqueued_at: Time.now.to_f)
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     HireFire::Macro::Sidekiq.job_queue_latency(:a, skip_retries: true)
     first = Cache.peek("schedule")
     refute first.complete
@@ -1519,13 +1481,13 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal 1, cursor, "a is oldest (rank 0), resume cursor is 1"
     assert_equal [0], schedule_start_ranks
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     HireFire::Macro::Sidekiq.job_queue_latency(:a, skip_retries: true)
     assert_same first, Cache.peek("schedule"), "free-hit must keep same registry object"
     assert_equal cursor, Cache.peek("schedule").cursor_rank
     assert_empty schedule_start_ranks, "satisfied :a free-hit issues no ZRANGE"
 
-    Cache.clear_trace!
+    clear_zrange_starts!
     HireFire::Macro::Sidekiq.job_queue_latency(:b, skip_retries: true)
     second = Cache.peek("schedule")
     assert second.oldest_at.key?("b")
@@ -1617,8 +1579,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       }
     ])
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     dispatcher.send(:sample_job_queues)
 
     starts = schedule_start_ranks
@@ -1749,8 +1710,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       assert_nil Cache.peek("schedule"), "stale fill from pre-begin wave must not publish into new wave"
       assert_equal 1, first_size
 
-      Cache.clear_trace!
-      Cache.trace = true
+      clear_zrange_starts!
       assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
       assert_includes schedule_start_ranks, 0
       assert Cache.peek("schedule").complete
@@ -1766,29 +1726,27 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Timecop.freeze(Time.now - 80) { enqueue_retry(queue: "default") }
     enqueue
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     size_retry_only = HireFire::Macro::Sidekiq.job_queue_size(
       :default,
       skip_scheduled: true,
       skip_working: true
     )
     assert_equal 2, size_retry_only
-    ranks = Cache.zrange_start_ranks
+    ranks = zrange_start_ranks
     assert ranks.none? { |e| e[:set_name] == "schedule" }, "JQS skip_scheduled must not walk schedule"
     assert ranks.any? { |e| e[:set_name] == "retry" }
     assert_nil Cache.peek("schedule")
     refute_nil Cache.peek("retry")
 
     reset_wave!
-    Cache.trace = true
     size_schedule_only = HireFire::Macro::Sidekiq.job_queue_size(
       :default,
       skip_retries: true,
       skip_working: true
     )
     assert_equal 2, size_schedule_only
-    ranks = Cache.zrange_start_ranks
+    ranks = zrange_start_ranks
     assert ranks.none? { |e| e[:set_name] == "retry" }, "JQS skip_retries must not walk retry"
     assert ranks.any? { |e| e[:set_name] == "schedule" }
     assert_nil Cache.peek("retry")
@@ -1809,8 +1767,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       )
       plant_sorted_set_job("schedule", queue: "target", score: now - 10, enqueued_at: now)
 
-      Cache.trace = true
-      Cache.clear_trace!
+      clear_zrange_starts!
       assert_in_delta 10, HireFire::Macro::Sidekiq.job_queue_latency(:target, skip_retries: true), LATENCY_DELTA
       starts = schedule_start_ranks
       assert_includes starts, 0
@@ -1819,7 +1776,6 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
       reset_wave!
       flush_sidekiq_redis
-      Cache.trace = true
       plant_sorted_set_job("schedule", queue: "foreign", score: now - 600, enqueued_at: now, jid: "earlyforeign01")
       plant_sorted_set_jobs_bulk(
         "schedule",
@@ -1836,7 +1792,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       cursor = Cache.peek("schedule").cursor_rank
       assert_equal 1, cursor
 
-      Cache.clear_trace!
+      clear_zrange_starts!
       assert_in_delta 10, HireFire::Macro::Sidekiq.job_queue_latency(:target, skip_retries: true), LATENCY_DELTA
       resume_starts = schedule_start_ranks
       assert_equal [1, 1 + batch], resume_starts, "resume must cross a full BATCH after cursor"
@@ -1897,8 +1853,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
     assert Cache.peek("schedule").complete
 
-    Cache.trace = true
-    Cache.clear_trace!
+    clear_zrange_starts!
     assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(
       :default,
       max_scheduled: 2,
@@ -1920,17 +1875,47 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   def reset_wave!
     Cache.clear_all
     Cache.begin_sample!
-    Cache.clear_trace!
+    clear_zrange_starts!
+  end
+
+  def install_zrange_recorder
+    owner = Cache.singleton_class
+    @zrange_batch_original ||= owner.instance_method(:zrange_batch)
+    return if @zrange_recorder_installed
+
+    starts = @zrange_starts
+    original = @zrange_batch_original
+    owner.define_method(:zrange_batch) do |set_name, rank|
+      starts << {set_name: set_name.to_s, start_rank: rank}
+      original.bind_call(self, set_name, rank)
+    end
+    @zrange_recorder_installed = true
+  end
+
+  def uninstall_zrange_recorder
+    return unless @zrange_recorder_installed
+
+    Cache.singleton_class.define_method(:zrange_batch, @zrange_batch_original)
+    @zrange_recorder_installed = false
+  end
+
+  def clear_zrange_starts!
+    @zrange_starts ||= []
+    @zrange_starts.clear
+  end
+
+  def zrange_start_ranks
+    (@zrange_starts || []).dup
   end
 
   def schedule_start_ranks
-    Cache.zrange_start_ranks
+    zrange_start_ranks
       .select { |e| e[:set_name] == "schedule" }
       .map { |e| e[:start_rank] }
   end
 
   def retry_start_ranks
-    Cache.zrange_start_ranks
+    zrange_start_ranks
       .select { |e| e[:set_name] == "retry" }
       .map { |e| e[:start_rank] }
   end
@@ -1947,8 +1932,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   def recover_due_cache_after_concurrency!
     Cache.reinit_after_fork
     Cache.begin_sample!
-    Cache.trace = false
-    Cache.clear_trace!
+    clear_zrange_starts!
   end
 
   def plant_corrupt_sorted_set_members(set_name)
@@ -1970,13 +1954,18 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   def with_zrange_batch_hook(hook)
     owner = Cache.singleton_class
-    original = owner.instance_method(:zrange_batch)
+    real = @zrange_batch_original || owner.instance_method(:zrange_batch)
+    starts = @zrange_starts
     owner.define_method(:zrange_batch) do |set_name, rank|
-      hook.call(set_name, rank) { original.bind_call(self, set_name, rank) }
+      hook.call(set_name, rank) {
+        starts << {set_name: set_name.to_s, start_rank: rank} if starts
+        real.bind_call(self, set_name, rank)
+      }
     end
     yield
   ensure
-    owner.define_method(:zrange_batch, original) if original
+    @zrange_recorder_installed = false
+    install_zrange_recorder
   end
 
   def with_due_cache_constants(overrides)

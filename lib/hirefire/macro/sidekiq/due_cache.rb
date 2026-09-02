@@ -5,24 +5,20 @@ module HireFire
     module Sidekiq
       class DueCache
         BATCH = 1_000
-        TRACE_LIMIT = 1_000
         FILL_WAIT_SECONDS = 1.0
         FILL_STUCK_SECONDS = 5.0
 
         attr_reader :set_name, :oldest_at, :size, :total_due, :complete,
-          :cursor_rank, :now_fill, :global_oldest_at, :generation
+          :cursor_rank, :now_fill, :generation
         attr_writer :complete, :cursor_rank
 
         class << self
-          attr_accessor :trace
-
           def clear_all
             mutex.synchronize do
               @sample_active = false
               @active_wave = nil
               @registry = {}
               @filling = {}
-              @trace_log = []
               @generation_seq = {}
               condition.broadcast
             end
@@ -36,7 +32,6 @@ module HireFire
             @wave_seq = 0
             @registry = {}
             @filling = {}
-            @trace_log = []
             @generation_seq = {}
           end
 
@@ -70,14 +65,6 @@ module HireFire
 
           def sample_active?
             mutex.synchronize { @sample_active == true }
-          end
-
-          def zrange_start_ranks
-            mutex.synchronize { (@trace_log || []).dup }
-          end
-
-          def clear_trace!
-            mutex.synchronize { @trace_log = [] }
           end
 
           def peek(set_name)
@@ -294,16 +281,6 @@ module HireFire
             condition.broadcast
           end
 
-          def record_trace(set_name, start_rank)
-            return unless trace
-
-            mutex.synchronize do
-              @trace_log ||= []
-              @trace_log << {set_name: set_name.to_s, start_rank: start_rank}
-              @trace_log.shift if @trace_log.size > TRACE_LIMIT
-            end
-          end
-
           def walk!(cache, mode:, needed:, max_scheduled:)
             matched_for_cap = matching_count(cache, needed)
 
@@ -314,7 +291,6 @@ module HireFire
             loop do
               rank = cache.cursor_rank
               batch = zrange_batch(cache.set_name, rank)
-              record_trace(cache.set_name, rank)
 
               if batch.empty?
                 cache.complete = true
@@ -389,11 +365,9 @@ module HireFire
           @oldest_at = {}
           @size = Hash.new(0)
           @total_due = 0
-          @global_oldest_at = nil
         end
 
         def record_due(queue, score)
-          @global_oldest_at ||= score
           @oldest_at[queue] ||= score
           @size[queue] += 1
           @total_due += 1
@@ -411,7 +385,6 @@ module HireFire
           size_copy.default = 0
           copy.instance_variable_set(:@size, size_copy)
           copy.instance_variable_set(:@total_due, @total_due)
-          copy.instance_variable_set(:@global_oldest_at, @global_oldest_at)
           copy
         end
       end

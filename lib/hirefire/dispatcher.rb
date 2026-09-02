@@ -45,7 +45,7 @@ module HireFire
 
       @mutex.synchronize do
         return false if @stopping
-        return false if healthy_running_locked?
+        return false if healthy_running?
 
         if @running && @pid == Process.pid && !@thread&.alive?
           @running = false
@@ -152,7 +152,7 @@ module HireFire
     end
 
     def running?
-      @mutex.synchronize { healthy_running_locked? }
+      @mutex.synchronize { healthy_running? }
     end
 
     def abandon_inherited_state!
@@ -182,10 +182,6 @@ module HireFire
       @running && !@stopping && @pid == Process.pid && @thread&.alive?
     end
 
-    def healthy_running_locked?
-      healthy_running?
-    end
-
     def loop_active?(generation)
       @mutex.synchronize { loop_active_locked?(generation) }
     end
@@ -199,7 +195,7 @@ module HireFire
         begin
           yield
         rescue => e
-          Log.safe(logger, :error, "[HireFire] #{e.class}: #{e.message}")
+          Log.safe(logger, :error, "[HireFire] #{Log.format_error(e)}")
         end
         wait_loop_interval(generation)
       end
@@ -415,7 +411,7 @@ module HireFire
     def guard
       yield
     rescue => e
-      Log.safe(logger, :error, "[HireFire] #{e.class}: #{e.message}")
+      Log.safe(logger, :error, "[HireFire] #{Log.format_error(e)}")
     end
 
     def dispatch(generation = nil)
@@ -460,7 +456,7 @@ module HireFire
       if data && (generation.nil? || loop_active?(generation) || handoff_to_final_flush?)
         repopulate_rqt(data)
       end
-      Log.safe(logger, :error, "[HireFire] Dispatch error: #{e.class}: #{e.message}")
+      Log.safe(logger, :error, "[HireFire] Dispatch error: #{Log.format_error(e)}")
     end
 
     def handoff_to_final_flush?

@@ -43,7 +43,7 @@ module HireFire
     end
 
     def library_loaded?(adapter)
-      LIBRARY_CHECKS[adapter.to_s]&.call
+      !!LIBRARY_CHECKS[adapter.to_s]&.call
     end
 
     def executable?(adapter)
@@ -93,8 +93,8 @@ module HireFire
         tokens[name] = macro.before_sample_job_queues
       rescue => e
         Log.safe(logger, :error,
-          "[HireFire] before_sample_job_queues for #{name.inspect} raised " \
-          "#{e.class}: #{e.message}")
+          "[HireFire] before_sample_job_queues for #{name.inspect} raised " +
+          Log.format_error(e))
       end
 
       yield
@@ -103,8 +103,8 @@ module HireFire
         ADAPTERS[name].after_sample_job_queues(token)
       rescue => e
         Log.safe(logger, :error,
-          "[HireFire] after_sample_job_queues for #{name.inspect} raised " \
-          "#{e.class}: #{e.message}")
+          "[HireFire] after_sample_job_queues for #{name.inspect} raised " +
+          Log.format_error(e))
       end
     end
 
@@ -113,8 +113,8 @@ module HireFire
         macro.reinit_after_fork
       rescue => e
         Log.safe(logger, :error,
-          "[HireFire] reinit_after_fork for #{name.inspect} raised " \
-          "#{e.class}: #{e.message}")
+          "[HireFire] reinit_after_fork for #{name.inspect} raised " +
+          Log.format_error(e))
       end
     end
 
@@ -157,8 +157,8 @@ module HireFire
       sample_job_strategy(macro, name, strategy, method_name, queues, options, live: live)
       sample_working(macro, name, queues, live: live) if macro.respond_to?(:job_queue_working)
     rescue => e
-      Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " \
-        "#{e.class}: #{e.message}")
+      Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " +
+        Log.format_error(e))
     end
 
     private
@@ -176,8 +176,8 @@ module HireFire
       record_sample(name, strategy, value)
       true
     rescue => e
-      Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " \
-        "#{e.class}: #{e.message}")
+      Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " +
+        Log.format_error(e))
       false
     end
 
@@ -193,8 +193,8 @@ module HireFire
 
       record_sample(name, "wrk", wrk)
     rescue => e
-      Log.safe(logger, :error, "[HireFire] Plan working sampler for #{name.inspect} raised " \
-        "#{e.class}: #{e.message}")
+      Log.safe(logger, :error, "[HireFire] Plan working sampler for #{name.inspect} raised " +
+        Log.format_error(e))
     end
 
     def record_sample(name, strategy, value)

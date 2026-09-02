@@ -34,7 +34,7 @@ Changelog lives in [CHANGELOG.md](CHANGELOG.md).
 
 ## Development
 
-Requires [Docker](https://www.docker.com/) and [mise](https://mise.jdx.dev/). PostgreSQL, MongoDB, Redis, and RabbitMQ for the macro tests run in containers, and mise installs the pinned Ruby versions from `.tool-versions`. `bin/services up` starts them on Docker-assigned free host ports recorded in a git-ignored `.env` (read by the test suite). `bin/services down` stops them and removes `.env`. Because the ports are assigned fresh at startup, multiple worktrees can run side by side without conflicting with each other or with any system-wide databases.
+Requires [Docker](https://www.docker.com/) and [mise](https://mise.jdx.dev/). PostgreSQL, MongoDB, Redis, and RabbitMQ for the macro tests run in containers, and mise installs the pinned Ruby versions from `.tool-versions` (Ruby 3.1.7 is included so the 3.1 CI cell can run locally). `bin/services up` starts them on Docker-assigned free host ports recorded in a git-ignored `.env` (read by the test suite). `bin/services down` stops them and removes `.env`. Because the ports are assigned fresh at startup, multiple worktrees can run side by side without conflicting with each other or with any system-wide databases.
 
 - Run `bin/setup` to prepare the environment.
 - Run `bin/services up` / `bin/services down` to start / stop PostgreSQL, MongoDB, Redis, and RabbitMQ.

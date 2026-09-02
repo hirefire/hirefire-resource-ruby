@@ -88,7 +88,7 @@ class HireFire::BufferTest < Minitest::Test
     end
   end
 
-  def test_non_rqt_latest_wins_without_replace_kwarg
+  def test_non_rqt_latest_wins
     Timecop.freeze Time.at(100) do
       buffer.sample("worker", "jqs", 1)
       buffer.sample("worker", "jqs", 99)
@@ -118,6 +118,38 @@ class HireFire::BufferTest < Minitest::Test
     data = buffer.flush
     assert_equal 42, data["worker"]["jql"].values.first
     assert_equal 18, data["mailer"]["jqs"].values.first
+  end
+
+  def test_reinit_after_fork_replaces_mutex_and_discards_completed_samples
+    Timecop.freeze Time.at(100) do
+      buffer.sample("web", "rqt", 7)
+      old_mutex = buffer.instance_variable_get(:@mutex)
+      buffer.reinit_after_fork
+      refute_same old_mutex, buffer.instance_variable_get(:@mutex)
+      assert_empty buffer.flush
+    end
+  end
+
+  def test_reinit_after_fork_in_flight_sample_uses_the_new_metrics_hash
+    entered = Queue.new
+    release = Queue.new
+    inner = Mutex.new
+    gate = Object.new
+    gate.define_singleton_method(:synchronize) do |&block|
+      inner.synchronize do
+        entered.push(true)
+        release.pop
+        block.call
+      end
+    end
+    buffer.instance_variable_set(:@mutex, gate)
+    thread = Thread.new { buffer.sample("web", "jqs", 9) }
+    entered.pop
+    buffer.reinit_after_fork
+    release.push(true)
+    thread.join
+    data = buffer.flush
+    assert_equal 9, data.dig("web", "jqs")&.values&.first
   end
 
   def test_flush_returns_and_resets

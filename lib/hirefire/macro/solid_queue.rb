@@ -51,14 +51,8 @@ module HireFire
       def before_sample_job_queues
         return nil unless defined?(::SolidQueue)
 
-        registered = nil
-        paused = nil
-        with_connection do
-          registered = ::SolidQueue::Queue.all.map(&:name)
-          paused = ::SolidQueue::Pause.pluck(:queue_name)
-        end
-        @wave_registered_queues = registered
-        @wave_paused_queues = paused
+        @wave_registered_queues = :pending
+        @wave_paused_queues = :pending
         true
       end
 
@@ -89,11 +83,22 @@ module HireFire
       end
 
       def registered_queues
+        prefetch_wave_lists
         @wave_registered_queues || ::SolidQueue::Queue.all.map(&:name)
       end
 
       def paused_queues
+        prefetch_wave_lists
         @wave_paused_queues || ::SolidQueue::Pause.pluck(:queue_name)
+      end
+
+      def prefetch_wave_lists
+        return unless @wave_registered_queues == :pending
+
+        with_connection do
+          @wave_registered_queues = ::SolidQueue::Queue.all.map(&:name)
+          @wave_paused_queues = ::SolidQueue::Pause.pluck(:queue_name)
+        end
       end
 
       def expand_wildcards(queues)

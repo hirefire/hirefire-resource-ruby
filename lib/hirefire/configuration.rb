@@ -11,10 +11,13 @@ module HireFire
     attr_reader :http, :job_queues, :log_queue_metrics, :logger
     attr_writer :token
 
+    MAX_NAME_BYTES = 128
+
     def initialize
       @http = nil
       @job_queues = Source::JobQueues.new(self)
       @sources_by_name = {}
+      @buffer = nil
       @dispatcher = nil
       @logger = Logger.new($stdout)
       @default_logger = true
@@ -106,12 +109,7 @@ module HireFire
     end
 
     def rqt_liveness?
-      return false unless rqt_enabled?
-
-      identity = soft_identity
-      return false if identity.nil? || http_name.nil?
-
-      identity.casecmp?(http_name)
+      rqt_enabled? && !soft_identity.nil?
     end
 
     def active_cpu_sources
@@ -137,8 +135,6 @@ module HireFire
     end
 
     private
-
-    MAX_NAME_BYTES = 128
 
     def coerce_name!(name)
       name = name.to_s.strip
@@ -216,8 +212,7 @@ module HireFire
 
       @rqt_unresolved_warned = true
       Log.safe(logger, :warn, "[HireFire] Request queue time samples dropped: process identity " \
-        "is unresolved. Set HIREFIRE_SERVICE_NAME, or rely on DYNO / RENDER_SERVICE_NAME where " \
-        "available.")
+        "is unresolved. Set HIREFIRE_SERVICE_NAME or DYNO.")
     end
 
     def warn_heroku_conflict_once
@@ -236,7 +231,7 @@ module HireFire
 
       @cpu_unresolved_warned = true
       Log.safe(logger, :warn, "[HireFire] CPU metrics disabled: process identity is unresolved. " \
-        "Set HIREFIRE_SERVICE_NAME, or rely on DYNO / RENDER_SERVICE_NAME where available.")
+        "Set HIREFIRE_SERVICE_NAME or DYNO.")
     end
   end
 end

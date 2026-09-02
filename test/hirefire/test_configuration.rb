@@ -20,7 +20,7 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_equal custom_logger, @configuration.logger
   end
 
-  def test_web_default_to_nil
+  def test_http_reader_is_always_nil
     assert_nil @configuration.http
   end
 
@@ -197,7 +197,7 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_instance_of HireFire::Dispatcher, @configuration.dispatcher
   end
 
-  def test_rqt_liveness_allowed_when_identity_matches
+  def test_rqt_liveness_when_enabled_and_identity_present
     ENV["DYNO"] = "web.1"
     assert @configuration.rqt_liveness?
   end
@@ -225,11 +225,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     refute @configuration.http_source
     assert_empty @configuration.active_cpu_sources
     assert_equal 1, log.string.scan("Process identity exceeds").size
-  end
-
-  def test_rqt_liveness_matches_case_insensitively
-    ENV["DYNO"] = "Web.1"
-    assert @configuration.rqt_liveness?
   end
 
   def test_bare_web_does_not_arm_rqt

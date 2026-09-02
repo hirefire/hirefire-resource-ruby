@@ -15,14 +15,10 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     refute HireFire::Macro::Sidekiq::DueCache.sample_active?,
       "product suite must never inherit an open sample wave"
     HireFire::Macro::Sidekiq::DueCache.clear_all
-    HireFire::Macro::Sidekiq::DueCache.trace = false
-    HireFire::Macro::Sidekiq::DueCache.clear_trace!
     flush_sidekiq_redis
   end
 
   def teardown
-    HireFire::Macro::Sidekiq::DueCache.trace = false
-    HireFire::Macro::Sidekiq::DueCache.clear_trace!
     HireFire::Macro::Sidekiq::DueCache.clear_all
     super
   end

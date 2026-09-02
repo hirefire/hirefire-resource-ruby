@@ -8,16 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- The library now pushes metrics to `https://data.hirefire.io`. HireFire no longer polls the app.
+- The library now pushes metrics to `https://data.hirefire.io`.
 - Request queue time is sampled from HTTP traffic through the middleware. A web `dyno` line is not required.
 - CPU activity is sampled automatically.
+- Automatic request queue time and CPU sampling need a process identity (`HIREFIRE_SERVICE_NAME` or `DYNO`).
+- Set `HIREFIRE_VERBOSE` to print HireFire diagnostic messages to stdout.
+- `HireFire.reset` and `Configuration#stop_dispatcher` stop the background dispatcher.
 - Optional token-only setup with `HireFire.boot`. Existing `config.dyno` job queue blocks still work.
 - Count of jobs still being processed (`job_queue_working`) for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
 - Support Resque 3, Bunny 3.x, and resque-scheduler 5.
 - Support Ruby 3.4 and 4.0.
 - Support Hanami 3.
 - Support Mongoid 9 for Delayed Job.
-- `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` so a caller can reuse a long-lived Bunny session.
+- `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` so a caller can reuse a long-lived Bunny session, and `reuse_connection:` to keep using that session.
+- `HIREFIRE_BUNNY_URL` and `HIREFIRE_AMQP_URL` set the AMQP URL for Bunny samples.
 
 ### Changed
 
@@ -26,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Job queue macros count queued jobs plus scheduled or retry jobs that are due. Jobs already being processed are no longer included in job queue size or job queue latency.
 - Deprecated `.queue` aliases on Good Job and Resque still count jobs the way they did in 1.x (including jobs already being processed).
 - Sidekiq job queue size (and deprecated `.queue`) no longer includes jobs that are already being processed. Pass `skip_working: false` to include them.
+- Sidekiq `server: true` default `max_scheduled` is `-1` (count due scheduled jobs). 1.x defaulted to `0` (skip scheduled).
 - Sidekiq job queue latency returns a Float.
 - Required Ruby is 3.1+. Official Rails support is 7+.
 
@@ -36,12 +41,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - In the HireFire UI, change the manager from `Logplex - Request Queue Time` to `HireFire - Request Queue Time`
   - Ensure `HIREFIRE_TOKEN` is set in the Heroku app env
 - Bare `config.dyno(:web)` (no sampler) is deprecated. It does nothing. Request queue time is sampled automatically from HTTP traffic. You can remove the line. Leaving it does not break anything.
+- `HireFire::Resource` remains an alias of `HireFire` and will be removed in 3.0.
 
 ### Removed
 
 - YARD documentation in the gem and on rubydoc.info. The README and changelog are the integrator docs.
 - Serving `GET /hirefire/:token/info`.
 - `POST` of request queue time JSON to `logdrain.hirefire.io`.
+- `HIREFIRE_DISPATCH_URL` no longer overrides ingest. The internal override is `HIREFIRE_DATA_URL`.
 - Official support for Ruby 2.7 and 3.0.
 - Official support for Sidekiq 6, Good Job 2, Que 0, and Solid Queue 0.
 - `HireFire::Macro::Bunny::ConnectionError`. Bunny connection failures raise `Bunny::Exception`.
@@ -199,16 +206,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Attempt to fix an issue where the STDOUT IO Stream has been closed for an unknown reason.
-  - This resulted in errors in an application with `log_queue_metrics` enabled after a random period of time.
+- Attempt to fix an issue where the STDOUT IO Stream has been closed for an unknown reason. This resulted in errors in an application with `log_queue_metrics` enabled after a random period of time.
 
 ## [0.7.3] - 2019-11-20
 
 ### Added
 
-- Added priority queue support for bunny message count.
-  - Allows for passing in the `x-max-priority` option when opening up a queue to check the messages remaining.
-  - Usage: `HireFire::Macro::Bunny.queue(queue, amqp_url: url, "x-max-priority": 10 )`
+- Added priority queue support for bunny message count. Allows for passing in the `x-max-priority` option when opening up a queue to check the messages remaining. Usage: `HireFire::Macro::Bunny.queue(queue, amqp_url: url, "x-max-priority": 10 )`.
 
 ## [0.7.2] - 2019-07-13
 
@@ -226,6 +230,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Made `HireFire::Resource.log_queue_metrics` optional. This is now disabled by default.
-  - Enable by setting `log_queue_metrics = true`.
-  - Required when using the `Manager::Web::Logplex::QueueTime` autoscaling strategy.
+- Made `HireFire::Resource.log_queue_metrics` optional. This is now disabled by default. Enable by setting `log_queue_metrics = true`. Required when using the `Manager::Web::Logplex::QueueTime` autoscaling strategy.

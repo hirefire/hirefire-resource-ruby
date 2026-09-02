@@ -427,6 +427,33 @@ class HireFire::DispatcherTest < Minitest::Test
     bodies[0].drop(1).each { |e| refute e.key?("sample_trace") }
   end
 
+  def test_dead_live_omits_remaining_plan_entries_from_sample_trace
+    stub_lease(granted: true, trace: true)
+    bodies = capture_ingest_bodies
+    dispatcher = configure_workers_only
+    dispatcher.instance_variable_get(:@lease).request_if_due(hold: ->(_) { true })
+    measured = {n: 0}
+    wave = HireFire::SampleTraceWave
+    original = wave.instance_method(:measure)
+    wave.define_method(:measure) do |entry, &block|
+      result = original.bind_call(self, entry, &block)
+      measured[:n] += 1
+      result
+    end
+    begin
+      dispatcher.send(:sample_job_queues, live: -> { measured[:n] < 1 })
+      dispatcher.send(:dispatch)
+    ensure
+      wave.define_method(:measure, original)
+    end
+
+    assert_equal 1, bodies.size
+    entry = bodies[0].first
+    assert entry.key?("sample_trace")
+    assert_equal 1, entry["sample_trace"]["ops"].size
+    refute bodies[0].any? { |row| row["name"] == "mailer" && row.dig("metrics", "jql") }
+  end
+
   def test_oversized_sample_trace_is_stripped_so_metrics_still_ship
     stub_lease
     bodies = capture_ingest_bodies

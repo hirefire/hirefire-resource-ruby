@@ -12,6 +12,10 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
 
   LATENCY_DELTA = 2
 
+  def retried_enum
+    3
+  end
+
   def setup
     super
     prepare_database

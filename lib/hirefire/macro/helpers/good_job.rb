@@ -4,10 +4,6 @@ module HireFire
   module Macro
     module Helpers
       module GoodJob
-        def self.included(base)
-          base.send(:private, :good_job_class)
-        end
-
         def self.extended(base)
           privatize_helpers(base)
         end
@@ -17,7 +13,6 @@ module HireFire
             :private_class_method,
             :good_job_class,
             :error_event_supported?,
-            :retried_enum,
             :discarded_enum
           )
         end
@@ -32,10 +27,6 @@ module HireFire
 
         def error_event_supported?
           good_job_class.column_names.include?("error_event")
-        end
-
-        def retried_enum
-          3
         end
 
         def discarded_enum

@@ -3,10 +3,7 @@
 dump.rdb
 .env
 .bundle/
-/.yardoc
-/_yardoc/
 /coverage/
-/doc/
 /pkg/
 *.gem
 /tmp/

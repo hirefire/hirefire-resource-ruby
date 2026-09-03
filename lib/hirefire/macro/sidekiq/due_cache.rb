@@ -7,6 +7,9 @@ module HireFire
         BATCH = 1_000
         FILL_WAIT_SECONDS = 1.0
         FILL_STUCK_SECONDS = 5.0
+        WALK_MEMBER_BUDGET = 50_000
+        WALK_TIME_BUDGET = 2.0
+        WORKING_MEMBER_BUDGET = 20_000
 
         attr_reader :set_name, :oldest_at, :size, :total_due, :complete,
           :cursor_rank, :now_fill, :generation
@@ -17,6 +20,7 @@ module HireFire
             mutex.synchronize do
               @sample_active = false
               @active_wave = nil
+              @working_snapshot = nil
               @registry = {}
               @filling = {}
               @generation_seq = {}
@@ -29,6 +33,7 @@ module HireFire
             @condition = ConditionVariable.new
             @sample_active = false
             @active_wave = nil
+            @working_snapshot = nil
             @wave_seq = 0
             @registry = {}
             @filling = {}
@@ -40,6 +45,7 @@ module HireFire
               @wave_seq = (@wave_seq || 0) + 1
               @active_wave = @wave_seq
               @sample_active = true
+              @working_snapshot = nil
               @registry = {}
               @filling = {}
               @generation_seq = {}
@@ -56,11 +62,26 @@ module HireFire
 
               @sample_active = false
               @active_wave = nil
+              @working_snapshot = nil
               @registry = {}
               @filling = {}
               condition.broadcast
               true
             end
+          end
+
+          def working_jobs
+            mutex.synchronize do
+              return @working_snapshot if @sample_active && @working_snapshot
+            end
+            jobs = read_working_jobs
+            mutex.synchronize do
+              if @sample_active
+                @working_snapshot ||= jobs
+                return @working_snapshot
+              end
+            end
+            jobs
           end
 
           def sample_active?
@@ -283,6 +304,8 @@ module HireFire
 
           def walk!(cache, mode:, needed:, max_scheduled:)
             matched_for_cap = matching_count(cache, needed)
+            members_seen = 0
+            started = monotonic_now
 
             if mode == :jqs && !max_scheduled.nil? && matched_for_cap >= max_scheduled
               return :capped
@@ -298,6 +321,12 @@ module HireFire
               end
 
               batch.each_with_index do |(member, score), i|
+                members_seen += 1
+                if members_seen >= WALK_MEMBER_BUDGET || (monotonic_now - started) >= WALK_TIME_BUDGET
+                  raise HireFire::Errors::SampleIncomplete,
+                    "Sidekiq named #{cache.set_name} walk exceeded budget"
+                end
+
                 score = score.to_f
                 if score > cache.now_fill
                   cache.complete = true
@@ -324,6 +353,23 @@ module HireFire
                 end
               end
             end
+          end
+
+          def read_working_jobs
+            started = monotonic_now
+            jobs = []
+            ::Sidekiq::Workers.new.each do |_key, _tid, job|
+              jobs << job
+              if jobs.size >= WORKING_MEMBER_BUDGET || (monotonic_now - started) >= WALK_TIME_BUDGET
+                raise HireFire::Errors::SampleIncomplete,
+                  "Sidekiq working map exceeded budget"
+              end
+            end
+            jobs
+          end
+
+          def monotonic_now
+            Process.clock_gettime(Process::CLOCK_MONOTONIC)
           end
 
           def zrange_batch(set_name, rank)

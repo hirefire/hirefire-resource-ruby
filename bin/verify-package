@@ -9,11 +9,13 @@ pkg = File.join(root, "pkg")
 abort "no pkg/; run rake build first" unless Dir.exist?(pkg)
 
 version = HireFire::VERSION
-gems = Dir[File.join(pkg, "hirefire-resource-#{version}*.gem")]
-abort "no gem for #{version} in pkg/" if gems.empty?
+path = File.join(pkg, "hirefire-resource-#{version}.gem")
+abort "no gem for #{version} in pkg/ (expected #{File.basename(path)})" unless File.file?(path)
 
-path = gems.max_by { |gem| File.mtime(gem) }
-names = Gem::Package.new(path).contents
+package = Gem::Package.new(path)
+spec_version = package.spec.version.to_s
+abort "gem spec version #{spec_version} != #{version}" unless spec_version == version
+names = package.contents
 
 %w[LICENSE README.md CHANGELOG.md].each do |name|
   abort "gem missing #{name}" unless names.include?(name)

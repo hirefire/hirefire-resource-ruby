@@ -5,7 +5,13 @@ require "timeout"
 
 class HireFireTest < Minitest::Test
   def test_version
-    assert_match(/\A\d+\.\d+\.\d+\z/, HireFire::VERSION)
+    Gem::Version.new(HireFire::VERSION)
+  end
+
+  def test_version_accepts_rubygems_prerelease_form
+    version = Gem::Version.new("2.0.0.rc1")
+    assert version.prerelease?
+    Gem::Version.new(HireFire::VERSION)
   end
 
   def test_configure_yields_configuration

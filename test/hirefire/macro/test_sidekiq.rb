@@ -920,7 +920,67 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Sidekiq.queue(skip_working: false)
   end
 
+  def test_named_due_walk_raises_instead_of_undercounting_when_budget_is_exceeded
+    20.times { enqueue_scheduled }
+    stub_due_cache_const(:WALK_MEMBER_BUDGET, 5) do
+      assert_raises(HireFire::Errors::SampleIncomplete) do
+        HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+      end
+    end
+    assert_equal 20, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+  end
+
+  def test_plan_drops_named_due_sample_when_walk_budget_is_exceeded
+    20.times { enqueue_scheduled }
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    stub_due_cache_const(:WALK_MEMBER_BUDGET, 5) do
+      HireFire::Plan.execute(
+        "name" => "worker",
+        "adapter" => "sidekiq",
+        "strategy" => "jqs",
+        "queues" => ["default"],
+        "options" => {"skip_retries" => true, "skip_working" => true}
+      )
+    end
+    refute HireFire.configuration.buffer.flush.dig("worker", "jqs")
+    assert_includes log.string, "SampleIncomplete"
+  end
+
+  def test_working_map_is_read_once_per_sample_wave
+    enqueue_working(queue: "default")
+    enqueue_working(queue: "mailer")
+    calls = 0
+    original = Sidekiq::Workers.method(:new)
+    Sidekiq::Workers.define_singleton_method(:new) do |*args, **kwargs|
+      calls += 1
+      original.call(*args, **kwargs)
+    end
+
+    HireFire::Macro::Sidekiq.before_sample_job_queues
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_working(:default)
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_working(:mailer)
+    assert_equal 2, HireFire::Macro::Sidekiq.job_queue_working
+    HireFire::Macro::Sidekiq.after_sample_job_queues
+
+    assert_equal 1, calls
+  ensure
+    HireFire::Macro::Sidekiq.after_sample_job_queues
+    Sidekiq::Workers.singleton_class.remove_method(:new)
+  end
+
   private
+
+  def stub_due_cache_const(name, value)
+    cache = HireFire::Macro::Sidekiq::DueCache
+    original = cache.const_get(name)
+    cache.send(:remove_const, name)
+    cache.const_set(name, value)
+    yield
+  ensure
+    cache.send(:remove_const, name)
+    cache.const_set(name, original)
+  end
 
   class SampleWorker
     include Sidekiq::Worker

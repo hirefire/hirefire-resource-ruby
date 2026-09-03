@@ -11,6 +11,8 @@ module HireFire
       extend HireFire::Plan::Hooks
       extend self
 
+      REGISTERED_QUEUE_TTL = 60.0
+
       LATENCY_METHODS = [
         :ready_latency,
         :scheduled_latency
@@ -64,6 +66,8 @@ module HireFire
       def reinit_after_fork
         @wave_registered_queues = nil
         @wave_paused_queues = nil
+        @registered_queue_cache = nil
+        @registered_queue_cache_at = nil
       end
 
       private
@@ -84,7 +88,7 @@ module HireFire
 
       def registered_queues
         prefetch_wave_lists
-        @wave_registered_queues || ::SolidQueue::Queue.all.map(&:name)
+        @wave_registered_queues || cached_registered_queue_names
       end
 
       def paused_queues
@@ -96,9 +100,23 @@ module HireFire
         return unless @wave_registered_queues == :pending
 
         with_connection do
-          @wave_registered_queues = ::SolidQueue::Queue.all.map(&:name)
+          @wave_registered_queues = cached_registered_queue_names
           @wave_paused_queues = ::SolidQueue::Pause.pluck(:queue_name)
         end
+      end
+
+      def cached_registered_queue_names
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        names = @registered_queue_cache
+        cached_at = @registered_queue_cache_at
+        if names && cached_at && (now - cached_at) < REGISTERED_QUEUE_TTL
+          return names
+        end
+
+        names = ::SolidQueue::Queue.all.map(&:name)
+        @registered_queue_cache = names
+        @registered_queue_cache_at = now
+        names
       end
 
       def expand_wildcards(queues)

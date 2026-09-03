@@ -12,7 +12,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Request queue time is sampled from HTTP traffic through the middleware. A web `dyno` line is not required.
 - CPU activity is sampled automatically.
 - Automatic request queue time and CPU sampling need a process identity (`HIREFIRE_SERVICE_NAME` or `DYNO`).
-- Set `HIREFIRE_VERBOSE` to print HireFire diagnostic messages to stdout.
 - `HireFire.reset` and `Configuration#stop_dispatcher` stop the background dispatcher.
 - Optional token-only setup with `HireFire.boot`. Existing `config.dyno` job queue blocks still work.
 - Count of jobs still being processed (`job_queue_working`) for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
@@ -33,6 +32,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Sidekiq `server: true` default `max_scheduled` is `-1` (count due scheduled jobs). 1.x defaulted to `0` (skip scheduled).
 - Sidekiq job queue latency returns a Float.
 - Required Ruby is 3.1+. Official Rails support is 7+.
+- Process names allow any non-empty string up to 128 bytes. The 1.x letter-start charset and 63-character cap are gone.
+- `config.dyno` without a sampler raises `HireFire::Configuration::MissingSamplerError` (1.x raised `HireFire::Worker::MissingDynoBlockError`).
+- `HIREFIRE_VERBOSE` still prints dispatch diagnostics and now also prints sample-path timings.
 
 ### Deprecated
 
@@ -55,6 +57,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Named Sidekiq due and working scans drop an incomplete sample when they exceed a work budget, instead of returning a partial low count. The worker map is read once per sample wave. All-queues due still uses cheap Redis `ZCOUNT`.
+- Named Resque delayed scans drop an incomplete sample when they exceed a work budget, instead of returning a partial low count.
+- Solid Queue remembers the registered queue list for a short time across sample waves. Paused queues are still read every wave.
+- Sampler error logs redact passwords in `user:pass@` connection URLs.
 - Bunny queue samples now fail within five seconds when RabbitMQ does not complete the handshake, instead of waiting on Bunny's longer defaults.
 - Sidekiq job queue latency ignores malformed timestamps instead of treating them as the Unix epoch, and treats a future timestamp as zero.
 - Sidekiq `server: true` counts due jobs in the current second the same way the client path does.

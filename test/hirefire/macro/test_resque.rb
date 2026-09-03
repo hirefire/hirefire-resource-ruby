@@ -158,6 +158,36 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     assert_equal 3, HireFire::Macro::Resque.job_queue_size
   end
 
+  def test_named_delayed_walk_raises_instead_of_undercounting_when_budget_is_exceeded
+    timestamp = Time.now.to_i - 10
+    Resque.redis.zadd("delayed_queue_schedule", timestamp, timestamp)
+    Resque.redis.pipelined do |pipeline|
+      20.times do
+        pipeline.rpush(
+          "delayed:#{timestamp}",
+          Resque.encode("class" => "BasicJob", "args" => [], "queue" => "default")
+        )
+      end
+    end
+
+    stub_resque_const(:WALK_JOB_BUDGET, 5) do
+      assert_raises(HireFire::Errors::SampleIncomplete) do
+        HireFire::Macro::Resque.job_queue_size(:default)
+      end
+    end
+  end
+
+  def stub_resque_const(name, value)
+    mod = HireFire::Macro::Resque
+    original = mod.const_get(name)
+    mod.send(:remove_const, name)
+    mod.const_set(name, value)
+    yield
+  ensure
+    mod.send(:remove_const, name)
+    mod.const_set(name, original)
+  end
+
   def test_all_queues_counts_delayed_payloads_for_unregistered_queues
     timestamp = Time.now.to_i - 10
     Resque.redis.zadd("delayed_queue_schedule", timestamp, timestamp)

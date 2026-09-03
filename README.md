@@ -30,7 +30,7 @@ The test suite runs against these minimum versions and the current latest releas
 
 **Documentation:**
 
-Changelog lives in [CHANGELOG.md](CHANGELOG.md).
+Changelog lives in [CHANGELOG.md](CHANGELOG.md). Setup instructions for supported web frameworks and worker libraries are provided in the HireFire UI during installation.
 
 ## Development
 
@@ -46,7 +46,7 @@ Requires [Docker](https://www.docker.com/) and [mise](https://mise.jdx.dev/). Po
 2. If root `Gemfile` or gemspec development dependencies changed, update root `Gemfile.lock` with `bundle install`. Appraisal `gemfiles/*.gemfile.lock` files are gitignored so CI re-resolves each matrix cell to the latest minor/patch on its major.
 3. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` (today's date) and add a fresh empty `## [Unreleased]` above it.
 4. Commit changes with `git commit`.
-5. Create a `git tag` matching the new version (e.g., `v2.0.0` or `v2.0.0.rc1`).
+5. On `master`, create a `git tag` matching the new version (e.g., `v2.0.0` or `v2.0.0.rc1`). The publish job requires the tag to point at `origin/master`.
 6. Push the new git tag. Continuous Integration will handle the distribution process. Prereleases are not installed by default (`gem install` needs `--pre` or a pin).
 
 ## License

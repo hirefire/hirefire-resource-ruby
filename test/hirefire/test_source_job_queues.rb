@@ -81,6 +81,19 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
     assert_includes log.string, "Redis down"
   end
 
+  def test_raising_sampler_redacts_url_userinfo
+    log = StringIO.new
+    HireFire.configure do |config|
+      config.dyno(:worker) { raise "redis://user:secret@localhost:6379/0 down" }
+    end
+    HireFire.configuration.logger = Logger.new(log)
+    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
+    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql")
+
+    refute_includes log.string, "secret"
+    assert_includes log.string, "://***@"
+  end
+
   def test_raising_sampler_logs_plan_name_override
     log = StringIO.new
     HireFire.configure do |config|

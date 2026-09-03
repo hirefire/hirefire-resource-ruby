@@ -61,6 +61,39 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     pool.singleton_class.remove_method(:with_connection)
   end
 
+  def test_registered_queues_are_cached_across_waves_while_pauses_stay_live
+    BasicJob.perform_later
+    distinct_calls = 0
+    pause_calls = 0
+    original_all = ::SolidQueue::Queue.method(:all)
+    original_pause = ::SolidQueue::Pause.method(:pluck)
+    ::SolidQueue::Queue.define_singleton_method(:all) do |*args, **kwargs, &block|
+      distinct_calls += 1
+      original_all.call(*args, **kwargs, &block)
+    end
+    ::SolidQueue::Pause.define_singleton_method(:pluck) do |*args, **kwargs, &block|
+      pause_calls += 1
+      original_pause.call(*args, **kwargs, &block)
+    end
+
+    2.times do
+      HireFire::Macro::SolidQueue.before_sample_job_queues
+      HireFire::Macro::SolidQueue.job_queue_size
+      HireFire::Macro::SolidQueue.after_sample_job_queues
+    end
+
+    assert_equal 1, distinct_calls
+    assert_equal 2, pause_calls
+  ensure
+    HireFire::Macro::SolidQueue.reinit_after_fork
+    ::SolidQueue::Queue.define_singleton_method(:all) do |*args, **kwargs, &block|
+      original_all.call(*args, **kwargs, &block)
+    end
+    ::SolidQueue::Pause.define_singleton_method(:pluck) do |*args, **kwargs, &block|
+      original_pause.call(*args, **kwargs, &block)
+    end
+  end
+
   def test_job_queue_latency_with_jobs
     BasicJob.perform_later
     Timecop.freeze(1.minute.ago) { BasicJob.set(queue: :mailer).perform_later }

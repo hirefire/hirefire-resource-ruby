@@ -69,7 +69,7 @@ module HireFire
           now = Time.now
           now_as_i = now.to_i
 
-          ::Sidekiq::Workers.new.count do |key, tid, job|
+          DueCache.working_jobs.count do |job|
             if job.is_a?(Hash)
               (queues.empty? || queues.include?(job["queue"])) && job["run_at"] <= now_as_i
             else

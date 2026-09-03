@@ -18,6 +18,8 @@ module HireFire
         :enqueued_size,
         :scheduled_size
       ].freeze
+      WALK_JOB_BUDGET = 50_000
+      WALK_TIME_BUDGET = 2.0
 
       def job_queue_size(*queues)
         queues = normalize_queues(queues, allow_empty: true)
@@ -44,6 +46,8 @@ module HireFire
         total_size = 0
         current_time = Time.now.to_i
         min_score = "-inf"
+        jobs_seen = 0
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
         loop do
           timestamps = ::Resque.redis.zrangebyscore(
@@ -56,11 +60,14 @@ module HireFire
           break if timestamps.empty?
 
           if queues.empty?
-            total_size += ::Resque.redis.pipelined do |pipeline|
+            lengths = ::Resque.redis.pipelined do |pipeline|
               timestamps.each do |timestamp|
                 pipeline.llen("delayed:#{timestamp}")
               end
-            end.sum
+            end
+            jobs_seen += lengths.sum
+            raise_if_walk_budget_exceeded!(jobs_seen, started)
+            total_size += lengths.sum
           else
             timestamps.each do |timestamp|
               job_cursor = 0
@@ -73,6 +80,9 @@ module HireFire
                 )
 
                 break if encoded_jobs.empty?
+
+                jobs_seen += encoded_jobs.size
+                raise_if_walk_budget_exceeded!(jobs_seen, started)
 
                 total_size += encoded_jobs.count do |encoded_job|
                   queue = delayed_job_queue(encoded_job)
@@ -92,6 +102,13 @@ module HireFire
         end
 
         total_size
+      end
+
+      def raise_if_walk_budget_exceeded!(jobs_seen, started)
+        return if jobs_seen < WALK_JOB_BUDGET &&
+          (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) < WALK_TIME_BUDGET
+
+        raise HireFire::Errors::SampleIncomplete, "Resque delayed walk exceeded budget"
       end
 
       def delayed_job_queue(encoded_job)

@@ -46,7 +46,7 @@ module HireFire
         buffer.sample(report_name, strategy, coerce_sample(value))
       rescue => e
         Log.safe(logger, :error, "[HireFire] The sampler for #{report_name.inspect} raised " \
-          "#{e.class}: #{e.message}")
+          "#{Log.format_error(e)}")
       end
 
       private

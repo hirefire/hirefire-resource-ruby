@@ -8,7 +8,7 @@ module HireFire
   module Macro
     module QC
       extend HireFire::Macro::Deprecated::QC
-      extend HireFire::Utility
+      extend HireFire::Macro::Utility
       extend HireFire::Macro::Helpers::ActiveRecordConnection
       extend HireFire::Plan::Hooks
       extend self

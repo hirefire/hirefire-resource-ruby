@@ -8,7 +8,7 @@ module HireFire
   module Macro
     module Resque
       extend HireFire::Macro::Deprecated::Resque
-      extend HireFire::Utility
+      extend HireFire::Macro::Utility
       extend HireFire::Plan::Hooks
       extend HireFire::Plan::SizeOnly
       extend HireFire::Errors::JobQueueLatencyUnsupported

@@ -8,7 +8,7 @@ require_relative "deprecated/good_job"
 module HireFire
   module Macro
     module GoodJob
-      extend HireFire::Utility
+      extend HireFire::Macro::Utility
       extend HireFire::Macro::Helpers::ActiveRecordConnection
       extend HireFire::Plan::Hooks
       extend HireFire::Macro::Helpers::GoodJob

@@ -2,8 +2,8 @@
 
 require "test_helper"
 
-class HireFire::UtilityTest < Minitest::Test
-  include HireFire::Utility
+class HireFire::Macro::UtilityTest < Minitest::Test
+  include HireFire::Macro::Utility
 
   def test_normalizes_symbols_and_strings_to_a_string_set
     assert_equal Set.new(%w[default mailer]),

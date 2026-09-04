@@ -9,7 +9,7 @@ module HireFire
     module Delayed
       module Job
         extend HireFire::Macro::Deprecated::Delayed::Job
-        extend HireFire::Utility
+        extend HireFire::Macro::Utility
         extend HireFire::Macro::Helpers::ActiveRecordConnection
         extend HireFire::Plan::Hooks
         extend self

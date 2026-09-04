@@ -81,7 +81,7 @@ module HireFire
 
       module JobQueueWorking
         extend Common
-        extend HireFire::Utility
+        extend HireFire::Macro::Utility
         extend self
 
         def call(*queues)
@@ -94,7 +94,7 @@ module HireFire
 
       module JobQueueLatency
         extend Common
-        extend HireFire::Utility
+        extend HireFire::Macro::Utility
         extend self
 
         def call(*queues, skip_retries: false, skip_scheduled: false)
@@ -162,7 +162,7 @@ module HireFire
 
       module JobQueueSize
         extend Common
-        extend HireFire::Utility
+        extend HireFire::Macro::Utility
         extend self
 
         SERVER_SIDE_SCRIPT = <<~LUA

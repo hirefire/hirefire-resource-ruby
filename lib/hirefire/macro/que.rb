@@ -7,7 +7,7 @@ module HireFire
   module Macro
     module Que
       extend HireFire::Macro::Deprecated::Que
-      extend HireFire::Utility
+      extend HireFire::Macro::Utility
       extend HireFire::Plan::Hooks
       extend self
 

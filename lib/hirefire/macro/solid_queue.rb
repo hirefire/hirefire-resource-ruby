@@ -6,7 +6,7 @@ require_relative "../plan/hooks"
 module HireFire
   module Macro
     module SolidQueue
-      extend HireFire::Utility
+      extend HireFire::Macro::Utility
       extend HireFire::Macro::Helpers::ActiveRecordConnection
       extend HireFire::Plan::Hooks
       extend self

@@ -8,7 +8,7 @@ module HireFire
   module Macro
     module Bunny
       extend HireFire::Macro::Deprecated::Bunny
-      extend HireFire::Utility
+      extend HireFire::Macro::Utility
       extend HireFire::Plan::Hooks
       extend HireFire::Plan::SizeOnly
       extend HireFire::Errors::JobQueueLatencyUnsupported

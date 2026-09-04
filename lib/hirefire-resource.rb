@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "hirefire/utility"
+require_relative "hirefire/macro/utility"
 
 Dir[File.expand_path("hirefire/**/*.rb", __dir__)].sort.each do |file|
   next if file.end_with?("railtie.rb") && !defined?(Rails::Railtie)

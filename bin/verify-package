@@ -21,4 +21,10 @@ names = package.contents
   abort "gem missing #{name}" unless names.include?(name)
 end
 
+forbidden = names.select do |name|
+  name == "AGENTS.md" || name == ".env" ||
+    name.start_with?("test/", "gemfiles/", "coverage/", "pkg/")
+end
+abort "gem packed forbidden path(s): #{forbidden.join(", ")}" if forbidden.any?
+
 puts "gem ok: #{File.basename(path)}"

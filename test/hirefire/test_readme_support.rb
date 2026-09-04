@@ -33,6 +33,19 @@ class HireFire::ReadmeSupportTest < Minitest::Test
     assert_equal bullets.sort, used.uniq.sort
   end
 
+  def test_readme_setup_and_development_match_the_ship_contract
+    readme = File.read(File.join(ROOT, "README.md"))
+    assert_includes readme, "HireFire UI"
+    assert_includes readme, "Older versions may still work"
+    refute_includes readme, "Render"
+    refute_match(/\bHIREFIRE_TOKEN\b/, readme)
+    %w[Docker mise bin/setup bin/services].each do |token|
+      assert_includes readme, token
+    end
+    assert_includes readme, "On `master`"
+    assert_includes readme, "2.0.0.rc1"
+  end
+
   def test_raised_ruby_floors_are_stated_in_the_readme
     note = support_note
     ruby_versions = workflow_ruby_versions

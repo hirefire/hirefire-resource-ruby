@@ -17,7 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Count of jobs still being processed (`job_queue_working`) for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
 - Support Resque 3, Bunny 3.x, and resque-scheduler 5.
 - Support Ruby 3.4 and 4.0.
-- Support Hanami 3.
+- Support Rails 8, Sinatra 4, and Hanami 3.
 - Support Mongoid 9 for Delayed Job.
 - `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` so a caller can reuse a long-lived Bunny session, and `reuse_connection:` to keep using that session.
 - `HIREFIRE_BUNNY_URL` and `HIREFIRE_AMQP_URL` set the AMQP URL for Bunny samples.
@@ -31,10 +31,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Sidekiq job queue size (and deprecated `.queue`) no longer includes jobs that are already being processed. Pass `skip_working: false` to include them.
 - Sidekiq `server: true` default `max_scheduled` is `-1` (count due scheduled jobs). 1.x defaulted to `0` (skip scheduled).
 - Sidekiq job queue latency returns a Float.
-- Required Ruby is 3.1+. Official Rails support is 7+.
+- Required Ruby is 3.1+. Official Rails support is 7+. Official Sinatra support is 3+. Official Hanami support is 2+.
 - Process names allow any non-empty string up to 128 bytes. The 1.x letter-start charset and 63-character cap are gone.
 - `config.dyno` without a sampler raises `HireFire::Configuration::MissingSamplerError` (1.x raised `HireFire::Worker::MissingDynoBlockError`).
-- `HIREFIRE_VERBOSE` still prints dispatch diagnostics and now also prints sample-path timings.
 
 ### Deprecated
 
@@ -47,33 +46,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
-- YARD documentation in the gem and on rubydoc.info. The README and changelog are the integrator docs.
-- Serving `GET /hirefire/:token/info`.
-- `POST` of request queue time JSON to `logdrain.hirefire.io`.
-- `HIREFIRE_DISPATCH_URL` no longer overrides ingest. The internal override is `HIREFIRE_DATA_URL`.
+- Serving `GET /hirefire/:token/info` and `GET /hirefire` when the token matched.
 - Official support for Ruby 2.7 and 3.0.
 - Official support for Sidekiq 6, Good Job 2, Que 0, and Solid Queue 0.
 - `HireFire::Macro::Bunny::ConnectionError`. Bunny connection failures raise `Bunny::Exception`.
 
 ### Fixed
 
-- Named Sidekiq due and working scans drop an incomplete sample when they exceed a work budget, instead of returning a partial low count. The worker map is read once per sample wave. All-queues due still uses cheap Redis `ZCOUNT`.
-- Named Resque delayed scans drop an incomplete sample when they exceed a work budget, instead of returning a partial low count.
-- Solid Queue remembers the registered queue list for a short time across sample waves. Paused queues are still read every wave.
-- Sampler error logs redact passwords in `user:pass@` connection URLs.
+- Named Sidekiq queue samples that cannot finish in time are dropped instead of returning a partial low count.
+- Named Resque delayed-queue samples that cannot finish in time are dropped instead of returning a partial low count.
 - Bunny queue samples now fail within five seconds when RabbitMQ does not complete the handshake, instead of waiting on Bunny's longer defaults.
 - Sidekiq job queue latency ignores malformed timestamps instead of treating them as the Unix epoch, and treats a future timestamp as zero.
-- Sidekiq `server: true` counts due jobs in the current second the same way the client path does.
+- Sidekiq `server: true` counts scheduled jobs that become due in the current second.
 - Sidekiq `server: true` skips corrupt schedule or retry members instead of aborting the sample.
-- Sidekiq `server: true` enumerates queues without scanning Redis keys.
+- Sidekiq `server: true` no longer scans Redis keys to list queues.
 - Deprecated Sidekiq `.queue(..., skip_working: false)` no longer counts jobs that have not started.
 - Good Job latency orders by the earlier of scheduled and created time so immediate jobs are not sorted last.
 - Good Job 3.0 to 3.15 no longer queries a discard column that those versions do not have.
-- Resque all-queues size uses the queue list Redis already tracks.
+- Resque all-queues size uses Resque's own queue list instead of scanning Redis.
 - Resque named-queue size skips corrupt delayed payloads instead of aborting the sample.
 - Que latency uses the database clock so a lagging app clock cannot return a negative value.
 - Queue Classic returns its database connection to the pool after each sample.
 - A forked child no longer closes the RabbitMQ connection it inherited, so job queue readings in the parent process are not interrupted.
+
+### Security
+
+- Sampler error logs redact passwords in `user:pass@` connection URLs.
 
 ## [1.0.8] - 2025-08-04
 

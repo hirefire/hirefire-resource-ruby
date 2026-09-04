@@ -105,7 +105,7 @@ module HireFire
           latencies << enqueued_latency(queues)
           latencies << set_latency(::Sidekiq::RetrySet.new, queues) unless skip_retries
           latencies << set_latency(::Sidekiq::ScheduledSet.new, queues) unless skip_scheduled
-          latencies.max
+          (latencies.max || 0.0).to_f
         end
 
         private

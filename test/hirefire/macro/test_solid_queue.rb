@@ -27,7 +27,9 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
   end
 
   def test_job_queue_latency_without_jobs
-    assert_equal 0, HireFire::Macro::SolidQueue.job_queue_latency(:default)
+    latency = HireFire::Macro::SolidQueue.job_queue_latency(:default)
+    assert_float_seconds latency
+    assert_equal 0, latency
   end
 
   def test_job_queue_latency_clamps_future_created_at_to_zero
@@ -98,7 +100,9 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     BasicJob.perform_later
     Timecop.freeze(1.minute.ago) { BasicJob.set(queue: :mailer).perform_later }
     assert_in_delta 0, HireFire::Macro::SolidQueue.job_queue_latency(:default), LATENCY_DELTA
-    assert_in_delta 60, HireFire::Macro::SolidQueue.job_queue_latency(:default, :mailer), LATENCY_DELTA
+    latency = HireFire::Macro::SolidQueue.job_queue_latency(:default, :mailer)
+    assert_float_seconds latency
+    assert_in_delta 60, latency, LATENCY_DELTA
   end
 
   def test_job_queue_latency_with_scheduled_job
@@ -175,7 +179,9 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
   end
 
   def test_job_queue_size_without_jobs
-    assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size
+    size = HireFire::Macro::SolidQueue.job_queue_size
+    assert_integer_count size
+    assert_equal 0, size
     assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size(:default)
     assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size(:default, :mailer)
   end
@@ -185,7 +191,9 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     BasicJob.set(queue: :mailer).perform_later
     BasicJob.set(queue: :mailer_notification).perform_later
     BasicJob.set(queue: :mailer_newsletter).perform_later
-    assert_equal 4, HireFire::Macro::SolidQueue.job_queue_size
+    size = HireFire::Macro::SolidQueue.job_queue_size
+    assert_integer_count size
+    assert_equal 4, size
     assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size(:default)
     assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size(:default, :mailer)
     assert_equal 3, HireFire::Macro::SolidQueue.job_queue_size(:"mailer*")
@@ -272,7 +280,9 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
   end
 
   def test_job_queue_working_idle_is_zero
-    assert_equal 0, HireFire::Macro::SolidQueue.job_queue_working
+    working = HireFire::Macro::SolidQueue.job_queue_working
+    assert_integer_count working
+    assert_equal 0, working
     assert_equal 0, HireFire::Macro::SolidQueue.job_queue_working(:default)
   end
 
@@ -280,7 +290,9 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     insert_claimed_job(BasicJob)
     insert_claimed_job(BasicJob, queue: :mailer)
 
-    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_working
+    working = HireFire::Macro::SolidQueue.job_queue_working
+    assert_integer_count working
+    assert_equal 2, working
     assert_equal 1, HireFire::Macro::SolidQueue.job_queue_working(:default)
     assert_equal 1, HireFire::Macro::SolidQueue.job_queue_working(:mailer)
     assert_equal 0, HireFire::Macro::SolidQueue.job_queue_working(:critical)

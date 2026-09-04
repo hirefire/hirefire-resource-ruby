@@ -19,14 +19,18 @@ class HireFire::Macro::QCTest < Minitest::Test
   end
 
   def test_job_queue_latency_without_jobs
-    assert_equal 0, HireFire::Macro::QC.job_queue_latency
+    latency = HireFire::Macro::QC.job_queue_latency
+    assert_float_seconds latency
+    assert_equal 0, latency
   end
 
   def test_job_queue_latency_with_jobs
     QC::Queue.new("default").enqueue_at(1.minute.ago.to_i, "BasicJob.perform")
     QC::Queue.new("default").enqueue("BasicJob.perform")
     QC::Queue.new("mailer").enqueue_at(2.minutes.ago.to_i, "BasicJob.perform")
-    assert_in_delta 120, HireFire::Macro::QC.job_queue_latency, LATENCY_DELTA
+    latency = HireFire::Macro::QC.job_queue_latency
+    assert_float_seconds latency
+    assert_in_delta 120, latency, LATENCY_DELTA
     assert_in_delta 60, HireFire::Macro::QC.job_queue_latency(:default), LATENCY_DELTA
     assert_in_delta 120, HireFire::Macro::QC.job_queue_latency(:default, :mailer), LATENCY_DELTA
   end
@@ -64,14 +68,18 @@ class HireFire::Macro::QCTest < Minitest::Test
   end
 
   def test_job_queue_size_without_jobs
-    assert_equal 0, HireFire::Macro::QC.job_queue_size
+    size = HireFire::Macro::QC.job_queue_size
+    assert_integer_count size
+    assert_equal 0, size
     assert_equal 0, HireFire::Macro::QC.job_queue_size(:default)
   end
 
   def test_job_queue_size_with_jobs
     QC::Queue.new("default").enqueue("BasicJob.perform")
     QC::Queue.new("mailer").enqueue("BasicJob.perform")
-    assert_equal 2, HireFire::Macro::QC.job_queue_size
+    size = HireFire::Macro::QC.job_queue_size
+    assert_integer_count size
+    assert_equal 2, size
     assert_equal 1, HireFire::Macro::QC.job_queue_size(:default)
     assert_equal 2, HireFire::Macro::QC.job_queue_size(:default, :mailer)
   end
@@ -138,7 +146,9 @@ class HireFire::Macro::QCTest < Minitest::Test
   end
 
   def test_job_queue_working_idle_is_zero
-    assert_equal 0, HireFire::Macro::QC.job_queue_working
+    working = HireFire::Macro::QC.job_queue_working
+    assert_integer_count working
+    assert_equal 0, working
     assert_equal 0, HireFire::Macro::QC.job_queue_working(:default)
   end
 
@@ -150,7 +160,9 @@ class HireFire::Macro::QCTest < Minitest::Test
     refute_nil default.lock
     refute_nil mailer.lock
 
-    assert_equal 2, HireFire::Macro::QC.job_queue_working
+    working = HireFire::Macro::QC.job_queue_working
+    assert_integer_count working
+    assert_equal 2, working
     assert_equal 1, HireFire::Macro::QC.job_queue_working(:default)
     assert_equal 1, HireFire::Macro::QC.job_queue_working(:mailer)
     assert_equal 0, HireFire::Macro::QC.job_queue_working(:critical)

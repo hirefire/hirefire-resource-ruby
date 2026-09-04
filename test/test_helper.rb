@@ -84,6 +84,14 @@ class Minitest::Test
     super
   end
 
+  def assert_integer_count(value)
+    assert_kind_of Integer, value
+  end
+
+  def assert_float_seconds(value)
+    assert_kind_of Float, value
+  end
+
   def capture(&block)
     original_stdout = $stdout
     $stdout = StringIO.new

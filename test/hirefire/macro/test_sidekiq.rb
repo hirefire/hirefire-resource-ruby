@@ -44,7 +44,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
   def test_job_queue_latency_without_jobs
     latency = HireFire::Macro::Sidekiq.job_queue_latency
-    assert_kind_of Float, latency
+    assert_float_seconds latency
     assert_in_delta 0, latency, LATENCY_DELTA
   end
 
@@ -57,7 +57,9 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   def test_job_queue_latency_with_jobs
     Timecop.freeze(Time.now - 100) { enqueue }
     Timecop.freeze(Time.now - 200) { enqueue queue: "critical" }
-    assert_in_delta 200, HireFire::Macro::Sidekiq.job_queue_latency, LATENCY_DELTA
+    latency = HireFire::Macro::Sidekiq.job_queue_latency
+    assert_float_seconds latency
+    assert_in_delta 200, latency, LATENCY_DELTA
     assert_in_delta 100, HireFire::Macro::Sidekiq.job_queue_latency(:default), LATENCY_DELTA
     assert_in_delta 200, HireFire::Macro::Sidekiq.job_queue_latency(:default, :critical), LATENCY_DELTA
   end
@@ -352,7 +354,9 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   end
 
   def test_job_queue_size_without_jobs
-    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size
+    size = HireFire::Macro::Sidekiq.job_queue_size
+    assert_integer_count size
+    assert_equal 0, size
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default)
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, :critical, :low)
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_scheduled: true)
@@ -364,7 +368,9 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   def test_job_queue_size_with_jobs_using_client_lookup
     populate_queue
 
-    assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size
+    size = HireFire::Macro::Sidekiq.job_queue_size
+    assert_integer_count size
+    assert_equal 5, size
     assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(skip_scheduled: true)
     assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true)
     assert_equal 5, HireFire::Macro::Sidekiq.job_queue_size(skip_working: true)
@@ -431,7 +437,9 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   end
 
   def test_job_queue_working_idle_is_zero
-    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_working
+    working = HireFire::Macro::Sidekiq.job_queue_working
+    assert_integer_count working
+    assert_equal 0, working
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_working(:default)
   end
 
@@ -439,7 +447,9 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue_working(queue: "default", run_at: Time.now.to_i - 60)
     enqueue_working(queue: "mailer", run_at: Time.now.to_i - 90)
 
-    assert_equal 2, HireFire::Macro::Sidekiq.job_queue_working
+    working = HireFire::Macro::Sidekiq.job_queue_working
+    assert_integer_count working
+    assert_equal 2, working
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_working(:default)
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_working(:mailer)
     assert_equal 0, HireFire::Macro::Sidekiq.job_queue_working(:critical)

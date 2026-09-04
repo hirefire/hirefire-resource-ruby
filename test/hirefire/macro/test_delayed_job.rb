@@ -31,7 +31,9 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
   end
 
   def test_job_queue_latency_without_jobs
-    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_latency
+    latency = HireFire::Macro::Delayed::Job.job_queue_latency
+    assert_float_seconds latency
+    assert_equal 0, latency
   end
 
   def test_job_queue_latency_clamps_future_run_at_to_zero
@@ -44,7 +46,9 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
   def test_job_queue_latency_with_jobs
     BasicJob.delay(queue: :default).perform
     Timecop.freeze(1.minute.ago) { BasicJob.delay(queue: :mailer).perform }
-    assert_in_delta 60, HireFire::Macro::Delayed::Job.job_queue_latency, LATENCY_DELTA
+    latency = HireFire::Macro::Delayed::Job.job_queue_latency
+    assert_float_seconds latency
+    assert_in_delta 60, latency, LATENCY_DELTA
     assert_in_delta 0, HireFire::Macro::Delayed::Job.job_queue_latency(:default), LATENCY_DELTA
     assert_in_delta 60, HireFire::Macro::Delayed::Job.job_queue_latency(:default, :mailer), LATENCY_DELTA
   end
@@ -63,13 +67,17 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
   end
 
   def test_job_queue_size_without_jobs
-    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size
+    size = HireFire::Macro::Delayed::Job.job_queue_size
+    assert_integer_count size
+    assert_equal 0, size
   end
 
   def test_job_queue_size_with_jobs
     BasicJob.delay(queue: :default).perform
     BasicJob.delay(queue: :mailer).perform
-    assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_size
+    size = HireFire::Macro::Delayed::Job.job_queue_size
+    assert_integer_count size
+    assert_equal 2, size
     assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:default)
     assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_size(:default, :mailer)
   end
@@ -166,7 +174,9 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
   end
 
   def test_job_queue_working_idle_is_zero
-    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_working
+    working = HireFire::Macro::Delayed::Job.job_queue_working
+    assert_integer_count working
+    assert_equal 0, working
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_working(:default)
   end
 
@@ -174,7 +184,9 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     BasicJob.delay(queue: :default).perform.update(locked_at: Time.now, locked_by: "worker-1")
     BasicJob.delay(queue: :mailer).perform.update(locked_at: Time.now, locked_by: "worker-2")
 
-    assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_working
+    working = HireFire::Macro::Delayed::Job.job_queue_working
+    assert_integer_count working
+    assert_equal 2, working
     assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_working(:default)
     assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_working(:mailer)
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_working(:critical)

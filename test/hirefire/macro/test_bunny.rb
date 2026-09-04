@@ -47,7 +47,9 @@ class HireFire::Macro::BunnyTest < Minitest::Test
 
   def test_job_queue_size_empty_ready_queue_is_zero
     with_connection(queue: :empty_ready) do |_connection, _channel, queue|
-      assert_equal 0, HireFire::Macro::Bunny.job_queue_size(queue.name, amqp_url: AMQP_URL)
+      size = HireFire::Macro::Bunny.job_queue_size(queue.name, amqp_url: AMQP_URL)
+      assert_integer_count size
+      assert_equal 0, size
     end
   end
 
@@ -387,6 +389,7 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     seen = nil
     while Time.now < deadline
       seen = HireFire::Macro::Bunny.job_queue_size(*queues, **kwargs)
+      assert_integer_count seen
       return if seen == expected
       sleep 0.02
     end

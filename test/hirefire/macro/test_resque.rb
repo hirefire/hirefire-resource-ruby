@@ -38,7 +38,9 @@ class HireFire::Macro::ResqueTest < Minitest::Test
   end
 
   def test_job_queue_size_without_jobs
-    assert_equal 0, HireFire::Macro::Resque.job_queue_size
+    size = HireFire::Macro::Resque.job_queue_size
+    assert_integer_count size
+    assert_equal 0, size
   end
 
   def test_all_queues_ignores_orphan_queue_keys
@@ -52,7 +54,9 @@ class HireFire::Macro::ResqueTest < Minitest::Test
   def test_job_queue_size_with_jobs
     Resque.enqueue_to(:default, BasicJob)
     Resque.enqueue_to(:mailer, BasicJob)
-    assert_equal 2, HireFire::Macro::Resque.job_queue_size
+    size = HireFire::Macro::Resque.job_queue_size
+    assert_integer_count size
+    assert_equal 2, size
     assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
     assert_equal 2, HireFire::Macro::Resque.job_queue_size(:default, :mailer)
   end

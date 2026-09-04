@@ -28,7 +28,9 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   end
 
   def test_job_queue_latency_without_jobs
-    assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
+    latency = HireFire::Macro::GoodJob.job_queue_latency
+    assert_float_seconds latency
+    assert_equal 0, latency
   end
 
   def test_job_queue_latency_clamps_future_created_at_to_zero
@@ -45,7 +47,9 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   def test_job_queue_latency_with_jobs
     BasicJob.perform_later
     Timecop.freeze(1.minute.ago) { BasicJob.set(queue: :mailer).perform_later }
-    assert_in_delta 60, HireFire::Macro::GoodJob.job_queue_latency, LATENCY_DELTA
+    latency = HireFire::Macro::GoodJob.job_queue_latency
+    assert_float_seconds latency
+    assert_in_delta 60, latency, LATENCY_DELTA
     assert_in_delta 0, HireFire::Macro::GoodJob.job_queue_latency(:default), LATENCY_DELTA
     assert_in_delta 60, HireFire::Macro::GoodJob.job_queue_latency(:default, :mailer), LATENCY_DELTA
   end
@@ -102,13 +106,17 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   end
 
   def test_job_queue_size_without_jobs
-    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
+    size = HireFire::Macro::GoodJob.job_queue_size
+    assert_integer_count size
+    assert_equal 0, size
   end
 
   def test_job_queue_size_with_jobs
     BasicJob.perform_later
     BasicJob.set(queue: :mailer).perform_later
-    assert_equal 2, HireFire::Macro::GoodJob.job_queue_size
+    size = HireFire::Macro::GoodJob.job_queue_size
+    assert_integer_count size
+    assert_equal 2, size
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default)
     assert_equal 2, HireFire::Macro::GoodJob.job_queue_size(:default, :mailer)
   end
@@ -209,7 +217,9 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   end
 
   def test_job_queue_working_idle_is_zero
-    assert_equal 0, HireFire::Macro::GoodJob.job_queue_working
+    working = HireFire::Macro::GoodJob.job_queue_working
+    assert_integer_count working
+    assert_equal 0, working
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_working(:default)
   end
 
@@ -219,7 +229,9 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     mark_running(default_id, at: Time.now)
     mark_running(mailer_id, at: Time.now)
 
-    assert_equal 2, HireFire::Macro::GoodJob.job_queue_working
+    working = HireFire::Macro::GoodJob.job_queue_working
+    assert_integer_count working
+    assert_equal 2, working
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_working(:default)
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_working(:mailer)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_working(:critical)

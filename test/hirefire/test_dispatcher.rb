@@ -456,9 +456,9 @@ class HireFire::DispatcherTest < Minitest::Test
     dispatcher = configure_workers_only
     dispatcher.instance_variable_get(:@lease).request_if_due(hold: ->(_) { true })
     measured = {n: 0}
-    wave = HireFire::SampleTraceWave
-    original = wave.instance_method(:measure)
-    wave.define_method(:measure) do |entry, &block|
+    probe = HireFire::Probe
+    original = probe.instance_method(:measure)
+    probe.define_method(:measure) do |entry, &block|
       result = original.bind_call(self, entry, &block)
       measured[:n] += 1
       result
@@ -467,7 +467,7 @@ class HireFire::DispatcherTest < Minitest::Test
       dispatcher.send(:sample_job_queues, live: -> { measured[:n] < 1 })
       dispatcher.send(:dispatch)
     ensure
-      wave.define_method(:measure, original)
+      probe.define_method(:measure, original)
     end
 
     assert_equal 1, bodies.size

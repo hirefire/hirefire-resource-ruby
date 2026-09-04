@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module HireFire
-  class SampleTraceWave
+  class Probe
     def self.start
       new
     end

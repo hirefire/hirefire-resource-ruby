@@ -264,14 +264,14 @@ module HireFire
     end
 
     def sample_job_queues(live: nil)
-      wave = SampleTraceWave.start
+      probe = Probe.start
       Plan.around_job_queue_sample do
         local_job_queues = configuration.job_queues
 
         @lease.job_queues.each do |entry|
           break if live && !live.call
 
-          wave.measure(entry) do
+          probe.measure(entry) do
             if adapter_present?(entry)
               sample_plan_adapter(entry, local_job_queues, live: live)
             else
@@ -280,8 +280,8 @@ module HireFire
           end
         end
       end
-      payload = wave.finish
-      wave.log_to(logger) if verbose?
+      payload = probe.finish
+      probe.log_to(logger) if verbose?
       @pending_sample_trace = payload if @lease.trace?
     end
 

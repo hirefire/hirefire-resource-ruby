@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "hirefire/macro/helpers/good_job"
+require_relative "../helpers/good_job"
 
 module HireFire
   module Macro

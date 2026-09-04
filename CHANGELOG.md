@@ -8,41 +8,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- The library now pushes metrics to `https://data.hirefire.io`.
-- Request queue time is sampled from HTTP traffic through the middleware. A web `dyno` line is not required.
-- CPU activity is sampled automatically.
-- Automatic request queue time and CPU sampling need a process identity (`HIREFIRE_SERVICE_NAME` or `DYNO`).
-- `HireFire.reset` and `Configuration#stop_dispatcher` stop the background dispatcher.
-- Optional token-only setup with `HireFire.boot`. Existing `config.dyno` job queue blocks still work.
-- Count of jobs still being processed (`job_queue_working`) for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
-- Support Resque 3, Bunny 3.x, and resque-scheduler 5.
+- Job metrics are pushed to HireFire instead of being read from a poll of the app.
+- CPU activity is sampled automatically on supported platforms when the process is identified.
+- `HireFire.boot` starts metric collection when a token is set. `HireFire.reset` stops the dispatcher and clears configuration.
+- `config.token` can set the HireFire token in code. 1.x read only `HIREFIRE_TOKEN`.
+- `HIREFIRE_SERVICE_NAME` sets the process name only on platforms that do not detect it automatically. On Heroku, `DYNO` is used.
+- `job_queue_working` reports how many jobs are currently in progress for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
 - Support Ruby 4.0.
 - Support Sinatra 4 and Hanami 3.
+- Support Resque 3 and Bunny 3.
 - Support Mongoid 9 for Delayed Job.
-- `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` so a caller can reuse a long-lived Bunny session, and `reuse_connection:` to keep using that session.
+- `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` and `reuse_connection:`.
 - `HIREFIRE_BUNNY_URL` and `HIREFIRE_AMQP_URL` set the AMQP URL for Bunny samples.
 
 ### Changed
 
-- Metrics are sent only when `HIREFIRE_TOKEN` is set.
-- Job queue metrics are sampled by one process at a time.
-- Job queue macros count queued jobs plus scheduled or retry jobs that are due. Jobs already being processed are no longer included in job queue size or job queue latency.
-- Deprecated `.queue` aliases on Good Job and Resque still count jobs the way they did in 1.x (including jobs already being processed).
-- Sidekiq job queue size (and deprecated `.queue`) no longer includes jobs that are already being processed. Pass `skip_working: false` to include them.
-- Sidekiq `server: true` default `max_scheduled` is `-1` (count due scheduled jobs). 1.x defaulted to `0` (skip scheduled).
-- Sidekiq job queue latency returns a Float.
-- Required Ruby is 3.1+. Official Rails support is 7+. Official Sinatra support is 3+. Official Hanami support is 2+. Official Sidekiq support is 7+. Official Solid Queue support is 1+. Official Good Job support is 3+. Official Que support is 1+.
-- Process names allow any non-empty string up to 128 bytes. The 1.x letter-start charset and 63-character cap are gone.
-- `config.dyno` without a sampler raises `HireFire::Configuration::MissingSamplerError` (1.x raised `HireFire::Worker::MissingDynoBlockError`).
+- Request queue time is sampled automatically from HTTP traffic. `config.dyno(:web)` is not required.
+- Job queue size and latency count only waiting jobs that are due to run. Jobs already being processed, and Solid Queue blocked executions, are no longer included.
+- Sidekiq `job_queue_size` and deprecated `.queue` default `skip_working` to true. Pass `skip_working: false` to include in-flight jobs.
+- Sidekiq `job_queue_latency` returns a Float. 1.x truncated live-queue latency to an Integer.
+- On Rails, HireFire uses `Rails.logger` when `config.logger` is not set.
+- Official Ruby support is 3.1+. Official Sidekiq support is 7+. Official Solid Queue support is 1+. Official Good Job support is 3+. Official Que support is 1+.
+- Process names may be any non-empty string up to 128 bytes. The 1.x letter-start charset and 63-character cap are gone.
+- `config.dyno` without a sampler raises `HireFire::Configuration::MissingSamplerError` except when the name is `web` (1.x raised `HireFire::Worker::MissingDynoBlockError`). Duplicate dyno names raise `DuplicateDynoError`.
 
 ### Deprecated
 
-- If you use Logplex Request Queue Time, `config.log_queue_metrics = true` is deprecated. It still prints `[hirefire:router] queue=<N>ms`, so Logplex Request Queue Time keeps working. Switch to HireFire Request Queue Time (push, no logdrain):
+- When using Logplex Request Queue Time, `config.log_queue_metrics = true` is deprecated. It still prints `[hirefire:router] queue=<N>ms`, so Logplex Request Queue Time keeps working. Switch to HireFire Request Queue Time:
   - Remove `config.log_queue_metrics = true`
   - In the HireFire UI, change the manager from `Logplex - Request Queue Time` to `HireFire - Request Queue Time`
   - Ensure `HIREFIRE_TOKEN` is set in the Heroku app env
-- Bare `config.dyno(:web)` (no sampler) is deprecated. It does nothing. Request queue time is sampled automatically from HTTP traffic. You can remove the line. Leaving it does not break anything.
-- `HireFire::Resource` remains an alias of `HireFire` and will be removed in 3.0.
+- Bare `config.dyno(:web)` (no sampler) is deprecated. It does nothing. Request queue time is sampled automatically from HTTP traffic. The line can be removed. Leaving it does not break anything.
 
 ### Removed
 
@@ -53,25 +49,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Named Sidekiq queue samples that cannot finish in time are dropped instead of returning a partial low count.
-- Named Resque delayed-queue samples that cannot finish in time are dropped instead of returning a partial low count.
-- Bunny queue samples now fail within five seconds when RabbitMQ does not complete the handshake, instead of waiting on Bunny's longer defaults.
+- Request queue time ignores samples older than 60 seconds.
+- Named Sidekiq and Resque scheduled-set samples that cannot finish within a time/job budget are dropped instead of hanging or returning a partial count.
+- Bunny samples fail within five seconds when RabbitMQ does not complete the handshake.
 - Sidekiq job queue latency ignores malformed timestamps instead of treating them as the Unix epoch, and treats a future timestamp as zero.
-- Sidekiq `server: true` counts scheduled jobs that become due in the current second.
-- Sidekiq `server: true` skips corrupt schedule or retry members instead of aborting the sample.
-- Sidekiq `server: true` no longer scans Redis keys to list queues.
-- Deprecated Sidekiq `.queue(..., skip_working: false)` no longer counts jobs that have not started.
+- Sidekiq `server: true` counts scheduled jobs that become due in the current second, and skips corrupt schedule or retry members instead of aborting the sample.
 - Good Job latency orders by the earlier of scheduled and created time so immediate jobs are not sorted last.
 - Good Job 3.0 to 3.15 no longer queries a discard column that those versions do not have.
-- Resque all-queues size uses Resque's own queue list instead of scanning Redis.
+- Resque all-queues size uses Resque's queue list instead of scanning Redis with `KEYS`.
+- Sidekiq `server: true` all-queues listing uses Sidekiq's queue set instead of scanning Redis with `KEYS`.
 - Resque named-queue size skips corrupt delayed payloads instead of aborting the sample.
 - Que latency uses the database clock so a lagging app clock cannot return a negative value.
-- Queue Classic returns its database connection to the pool after each sample.
-- A forked child no longer closes the RabbitMQ connection it inherited, so job queue readings in the parent process are not interrupted.
-
-### Security
-
-- Sampler error logs redact passwords in `user:pass@` connection URLs.
 
 ## [1.0.8] - 2025-08-04
 

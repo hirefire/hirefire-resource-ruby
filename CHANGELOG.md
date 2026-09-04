@@ -16,8 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Optional token-only setup with `HireFire.boot`. Existing `config.dyno` job queue blocks still work.
 - Count of jobs still being processed (`job_queue_working`) for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
 - Support Resque 3, Bunny 3.x, and resque-scheduler 5.
-- Support Ruby 3.4 and 4.0.
-- Support Rails 8, Sinatra 4, and Hanami 3.
+- Support Ruby 4.0.
+- Support Sinatra 4 and Hanami 3.
 - Support Mongoid 9 for Delayed Job.
 - `HireFire::Macro::Bunny.job_queue_size` accepts `connection:` so a caller can reuse a long-lived Bunny session, and `reuse_connection:` to keep using that session.
 - `HIREFIRE_BUNNY_URL` and `HIREFIRE_AMQP_URL` set the AMQP URL for Bunny samples.
@@ -31,7 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Sidekiq job queue size (and deprecated `.queue`) no longer includes jobs that are already being processed. Pass `skip_working: false` to include them.
 - Sidekiq `server: true` default `max_scheduled` is `-1` (count due scheduled jobs). 1.x defaulted to `0` (skip scheduled).
 - Sidekiq job queue latency returns a Float.
-- Required Ruby is 3.1+. Official Rails support is 7+. Official Sinatra support is 3+. Official Hanami support is 2+.
+- Required Ruby is 3.1+. Official Rails support is 7+. Official Sinatra support is 3+. Official Hanami support is 2+. Official Sidekiq support is 7+. Official Solid Queue support is 1+. Official Good Job support is 3+. Official Que support is 1+.
 - Process names allow any non-empty string up to 128 bytes. The 1.x letter-start charset and 63-character cap are gone.
 - `config.dyno` without a sampler raises `HireFire::Configuration::MissingSamplerError` (1.x raised `HireFire::Worker::MissingDynoBlockError`).
 

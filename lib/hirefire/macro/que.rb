@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../plan/hooks"
+require_relative "../utility"
 require_relative "deprecated/que"
 
 module HireFire

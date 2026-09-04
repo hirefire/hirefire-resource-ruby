@@ -2,6 +2,7 @@
 
 require "digest/sha1"
 require_relative "../plan/hooks"
+require_relative "../utility"
 require_relative "deprecated/sidekiq"
 require_relative "sidekiq/due_cache"
 

@@ -56,4 +56,21 @@ class HireFire::Macro::UtilityTest < Minitest::Test
     end
     assert_match(/queue/i, error.message)
   end
+
+  def test_adapter_loads_utility_without_gem_entrypoint
+    lib = File.expand_path("../../lib", __dir__)
+    script = <<~RUBY
+      $LOAD_PATH.unshift #{lib.inspect}
+      require "hirefire/macro/solid_queue"
+      abort("Utility missing") unless defined?(HireFire::Macro::Utility)
+      begin
+        HireFire::Macro::SolidQueue.job_queue_size("default")
+      rescue NameError => e
+        abort(e.full_message) if e.message.match?(/Utility|normalize_queues/)
+      end
+    RUBY
+
+    output = IO.popen(["ruby", "-e", script], err: [:child, :out], &:read)
+    assert_equal 0, $?.exitstatus, output
+  end
 end

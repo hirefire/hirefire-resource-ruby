@@ -572,7 +572,7 @@ module HireFire
           if dest[second].nil?
             dest[second] = copy_rqt_bucket(bucket)
           else
-            sum, count = rqt_parts(bucket)
+            sum, count = Buffer.rqt_parts(bucket)
             dest[second] = {
               sum: dest[second][:sum] + sum,
               count: dest[second][:count] + count
@@ -585,26 +585,13 @@ module HireFire
     end
 
     def copy_rqt_bucket(bucket)
-      sum, count = rqt_parts(bucket)
+      sum, count = Buffer.rqt_parts(bucket)
       {sum: sum, count: count}
-    end
-
-    def rqt_parts(bucket)
-      case bucket
-      when Hash
-        sum = bucket[:sum] || bucket["sum"]
-        count = bucket[:count] || bucket["count"]
-        [sum.to_f, count.to_i]
-      when nil
-        [0.0, 0]
-      else
-        [0.0, 0]
-      end
     end
 
     def encode_leaf(strategy, bucket)
       if Strategy.rqt?(strategy)
-        sum, count = rqt_parts(bucket)
+        sum, count = Buffer.rqt_parts(bucket)
         return [] if count == 0
 
         mean = sum / count

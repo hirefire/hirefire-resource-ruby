@@ -2,6 +2,7 @@
 
 require_relative "../plan/hooks"
 require_relative "../plan/size_only"
+require_relative "../utility"
 require_relative "deprecated/bunny"
 
 module HireFire

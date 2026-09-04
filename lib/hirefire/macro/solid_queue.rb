@@ -2,6 +2,7 @@
 
 require_relative "helpers/active_record_connection"
 require_relative "../plan/hooks"
+require_relative "../utility"
 
 module HireFire
   module Macro

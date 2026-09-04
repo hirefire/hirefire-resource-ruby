@@ -479,6 +479,31 @@ class HireFire::PlanTest < Minitest::Test
 
     assert_empty HireFire.configuration.buffer.flush
     assert_operator log.string.scan("Sample dropped").size, :>=, 7
+    assert_includes log.string, 'String("nope")'
+    assert_includes log.string, 'Integer("-1")'
+
+    recorded = []
+    [7, 1.5].each do |good|
+      mod = stub_macro do |m|
+        m.define_singleton_method(:job_queue_latency) { |*_queues, **_options| good }
+      end
+      HireFire::Plan.send(:remove_const, :ADAPTERS)
+      HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
+      HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+      HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
+
+      HireFire::Plan.execute(
+        "name" => "worker",
+        "adapter" => "sidekiq",
+        "strategy" => "jql",
+        "queues" => [],
+        "options" => {}
+      )
+      recorded.concat(HireFire.configuration.buffer.flush["worker"]["jql"].values)
+    end
+
+    assert_includes recorded, 7
+    assert recorded.any? { |value| (value - 1.5).abs < 0.0001 }
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)

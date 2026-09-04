@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../sample"
+
 module HireFire
   module Source
     class JobQueues
@@ -37,36 +39,19 @@ module HireFire
         value = job_queue.sample
         return if live && !live.call
 
-        unless valid_sample?(value)
+        unless HireFire::Sample.valid?(value)
           Log.safe(logger, :error, "[HireFire] The sampler for #{report_name.inspect} returned " \
-            "#{format_sample_value(value)}, expected a non-negative number. Sample dropped.")
+            "#{HireFire::Sample.format(value)}, expected a non-negative number. Sample dropped.")
           return
         end
 
-        buffer.sample(report_name, strategy, coerce_sample(value))
+        buffer.sample(report_name, strategy, HireFire::Sample.coerce(value))
       rescue => e
         Log.safe(logger, :error, "[HireFire] The sampler for #{report_name.inspect} raised " \
           "#{Log.format_error(e)}")
       end
 
       private
-
-      def valid_sample?(value)
-        value.is_a?(Numeric) && value.finite? && value >= 0
-      end
-
-      def coerce_sample(value)
-        (value.is_a?(Integer) || value.is_a?(Float)) ? value : value.to_f
-      end
-
-      def format_sample_value(value)
-        text = value.class.name
-        preview = value.to_s
-        preview = "#{preview.byteslice(0, 64)}…" if preview.bytesize > 64
-        "#{text}(#{preview.inspect})"
-      rescue
-        value.class.name
-      end
 
       def buffer
         configuration.buffer

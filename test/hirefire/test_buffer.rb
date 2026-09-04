@@ -229,6 +229,24 @@ class HireFire::BufferTest < Minitest::Test
     assert_equal({sum: 5.0, count: 1}, buffer.flush["web"]["rqt"][100])
   end
 
+  def test_repopulate_accepts_mixed_symbol_and_string_keys
+    mixed_symbol_sum = {sum: 3.0}
+    mixed_symbol_sum["count"] = 2
+    mixed_string_sum = {"sum" => 8.0}
+    mixed_string_sum[:count] = 2
+
+    Timecop.freeze Time.at(100) do
+      buffer.repopulate("web", "rqt", {
+        100 => mixed_symbol_sum,
+        99 => mixed_string_sum
+      })
+    end
+
+    data = buffer.flush["web"]["rqt"]
+    assert_equal({sum: 3.0, count: 2}, data[100])
+    assert_equal({sum: 8.0, count: 2}, data[99])
+  end
+
   def test_repopulate_clamps_to_sample_count_limit
     Timecop.freeze Time.at(100) do
       limit = HireFire::Buffer::SAMPLE_COUNT_LIMIT

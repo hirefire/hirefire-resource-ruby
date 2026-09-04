@@ -1976,6 +1976,34 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_equal [20.0, 3], bodies[0][0].dig("metrics", "rqt", "1000")
   end
 
+  def test_encode_rqt_accepts_mixed_bucket_keys_and_empty_leaf_for_non_hash
+    stub_lease
+    bodies = capture_ingest_bodies
+    dispatcher = configure_web_only
+
+    Timecop.freeze Time.at(1000) do
+      buffer = HireFire.configuration.buffer
+      buffer.instance_variable_get(:@mutex).synchronize do
+        metrics = buffer.instance_variable_get(:@metrics)
+        metrics["web"] = {
+          "rqt" => {
+            1000 => {"sum" => 8.0, "count" => 2},
+            999 => {sum: 6.0, count: 2},
+            998 => 12,
+            997 => nil
+          }
+        }
+      end
+      dispatcher.send(:tick)
+    end
+
+    rqt = bodies[0][0].dig("metrics", "rqt")
+    assert_equal [4.0, 2], rqt["1000"]
+    assert_equal [3.0, 2], rqt["999"]
+    assert_equal [], rqt["998"]
+    assert_equal [], rqt["997"]
+  end
+
   def test_payload_size_limit_is_32768_with_strict_greater_drop
     limit = HireFire::Dispatcher::PAYLOAD_SIZE_LIMIT
     assert_equal 32_768, limit

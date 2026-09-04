@@ -2,6 +2,7 @@
 
 require_relative "helpers/active_record_connection"
 require_relative "../plan/hooks"
+require_relative "../utility"
 require_relative "helpers/good_job"
 require_relative "deprecated/good_job"
 

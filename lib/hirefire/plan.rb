@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "sample"
+
 module HireFire
   module Plan
     extend self
@@ -167,13 +169,13 @@ module HireFire
       value = macro.public_send(method_name, *queues, **options)
       return false if live && !live.call
 
-      unless valid_sample?(value)
+      unless Sample.valid?(value)
         Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} returned " \
-          "#{format_sample_value(value)}, expected a non-negative number. Sample dropped.")
+          "#{Sample.format(value)}, expected a non-negative number. Sample dropped.")
         return false
       end
 
-      record_sample(name, strategy, value)
+      record_sample(name, strategy, Sample.coerce(value))
       true
     rescue => e
       Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " +
@@ -185,20 +187,20 @@ module HireFire
       wrk = macro.job_queue_working(*queues)
       return if live && !live.call
 
-      unless valid_sample?(wrk)
+      unless Sample.valid?(wrk)
         Log.safe(logger, :error, "[HireFire] Plan working sampler for #{name.inspect} returned " \
-          "#{format_sample_value(wrk)}, expected a non-negative number. wrk sample dropped.")
+          "#{Sample.format(wrk)}, expected a non-negative number. wrk sample dropped.")
         return
       end
 
-      record_sample(name, "wrk", wrk)
+      record_sample(name, "wrk", Sample.coerce(wrk))
     rescue => e
       Log.safe(logger, :error, "[HireFire] Plan working sampler for #{name.inspect} raised " +
         Log.format_error(e))
     end
 
     def record_sample(name, strategy, value)
-      HireFire.configuration.buffer.sample(name, strategy, coerce_sample(value))
+      HireFire.configuration.buffer.sample(name, strategy, value)
     end
 
     def normalize_queues(queues, name:)
@@ -230,23 +232,6 @@ module HireFire
       end
 
       list
-    end
-
-    def valid_sample?(value)
-      value.is_a?(Numeric) && value.finite? && value >= 0
-    end
-
-    def coerce_sample(value)
-      (value.is_a?(Integer) || value.is_a?(Float)) ? value : value.to_f
-    end
-
-    def format_sample_value(value)
-      text = value.class.name
-      preview = value.to_s
-      preview = "#{preview.byteslice(0, 64)}…" if preview.bytesize > 64
-      "#{text}(#{preview.inspect})"
-    rescue
-      value.class.name
     end
 
     def logger

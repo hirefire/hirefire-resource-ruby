@@ -18,6 +18,11 @@ class HireFire::ClientTest < Minitest::Test
     HireFire.configuration.logger = Logger.new(log)
   end
 
+  def test_client_source_does_not_require_json
+    path = File.expand_path("../../lib/hirefire/client.rb", __dir__)
+    refute_match(/require ["']json["']/, File.read(path))
+  end
+
   def test_submit_samples_sends_payload
     request = stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .with(

@@ -111,7 +111,7 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
 
   def test_invalid_sample_values_are_dropped_and_logged
     log = StringIO.new
-    values = ["10", nil, -1, Float::INFINITY, Float::NAN, true, false, 7].each
+    values = ["10", nil, -1, Float::INFINITY, Float::NAN, true, false, 7, 1.5].each
     HireFire.configure do |config|
       config.dyno(:worker) { values.next }
     end
@@ -121,9 +121,14 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
     7.times { HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql") }
     assert_empty buffer.flush
     assert_includes log.string, "expected a non-negative number"
+    assert_includes log.string, 'String("10")'
+    assert_includes log.string, 'Integer("-1")'
 
     HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql")
     assert_equal 7, buffer.flush["worker"]["jql"].values.first
+
+    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql")
+    assert_in_delta 1.5, buffer.flush["worker"]["jql"].values.first
   end
 
   def test_a_raising_logger_does_not_escape_sampling

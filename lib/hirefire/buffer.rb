@@ -57,7 +57,7 @@ module HireFire
         data.each do |timestamp, bucket|
           next if timestamp < now - @ttl
 
-          sum, count = bucket_parts(bucket)
+          sum, count = self.class.rqt_parts(bucket)
           next if count <= 0
 
           existing = series[timestamp]
@@ -74,6 +74,17 @@ module HireFire
       end
     end
 
+    def self.rqt_parts(bucket)
+      case bucket
+      when Hash
+        sum = bucket[:sum] || bucket["sum"]
+        count = bucket[:count] || bucket["count"]
+        [sum.to_f, count.to_i]
+      else
+        [0.0, 0]
+      end
+    end
+
     private
 
     def clamp_rqt_bucket(sum, count)
@@ -82,17 +93,6 @@ module HireFire
         {sum: mean * SAMPLE_COUNT_LIMIT, count: SAMPLE_COUNT_LIMIT}
       else
         {sum: sum, count: count}
-      end
-    end
-
-    def bucket_parts(bucket)
-      case bucket
-      when Hash
-        sum = bucket[:sum] || bucket["sum"]
-        count = bucket[:count] || bucket["count"]
-        [sum.to_f, count.to_i]
-      else
-        [0.0, 0]
       end
     end
 

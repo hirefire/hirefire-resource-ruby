@@ -11,4 +11,3 @@ dump.rdb
 # Appraisal lockfiles are intentionally not committed so CI resolves each
 # integration gem fresh and floats to the latest minor/patch of its major.
 /gemfiles/*.gemfile.lock
-AGENTS.md

@@ -126,26 +126,45 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Que.job_queue_size
   end
 
-  def test_job_queue_size_excludes_advisory_locked_jobs
+  def test_job_queue_size_counts_advisory_locked_jobs_by_default
     job = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
     with_advisory_lock(job.que_attrs[:id]) do
-      assert_equal 0, HireFire::Macro::Que.job_queue_size
-      assert_equal 0, HireFire::Macro::Que.job_queue_size(:default)
+      assert_equal 1, HireFire::Macro::Que.job_queue_size
+      assert_equal 1, HireFire::Macro::Que.job_queue_size(:default)
+      assert_equal 1, HireFire::Macro::Que.job_queue_size(skip_working: false)
+      assert_equal 1, HireFire::Macro::Que.job_queue_size(skip_working: nil)
     end
   end
 
-  def test_job_queue_size_counts_due_unlocked_only_with_locked_and_future_present
+  def test_job_queue_size_skip_working_leaves_advisory_locked_jobs_out
+    job = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    with_advisory_lock(job.que_attrs[:id]) do
+      assert_equal 0, HireFire::Macro::Que.job_queue_size(skip_working: true)
+      assert_equal 0, HireFire::Macro::Que.job_queue_size(:default, skip_working: true)
+    end
+  end
+
+  def test_job_queue_size_with_waiting_due_future_running_and_locked_future_jobs
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
-    enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 100})
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now + 100})
     locked = enqueue(job_options: {job_class: "BasicJob", queue: "other", run_at: Time.now - 1})
+    locked_future = enqueue(job_options: {job_class: "BasicJob", queue: "other", run_at: Time.now + 100})
 
-    with_advisory_lock(locked.que_attrs[:id]) do
-      assert_equal 2, HireFire::Macro::Que.job_queue_size
+    with_advisory_locks(locked.que_attrs[:id], locked_future.que_attrs[:id]) do
+      assert_equal 3, HireFire::Macro::Que.job_queue_size
       assert_equal 1, HireFire::Macro::Que.job_queue_size(:default)
       assert_equal 1, HireFire::Macro::Que.job_queue_size(:mailer)
-      assert_equal 0, HireFire::Macro::Que.job_queue_size(:other)
+      assert_equal 1, HireFire::Macro::Que.job_queue_size(:other)
       assert_equal 2, HireFire::Macro::Que.job_queue_size(:default, :mailer)
+
+      assert_equal 2, HireFire::Macro::Que.job_queue_size(skip_working: true)
+      assert_equal 1, HireFire::Macro::Que.job_queue_size(:default, skip_working: true)
+      assert_equal 1, HireFire::Macro::Que.job_queue_size(:mailer, skip_working: true)
+      assert_equal 0, HireFire::Macro::Que.job_queue_size(:other, skip_working: true)
+      assert_equal 2, HireFire::Macro::Que.job_queue_size(:default, :mailer, skip_working: true)
+
+      assert_equal 2, HireFire::Macro::Que.job_queue_working(:other)
     end
   end
 
@@ -195,13 +214,16 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_in_delta 60, HireFire::Macro::Que.job_queue_latency, LATENCY_DELTA
   end
 
-  def test_v0_size_path_excludes_advisory_locked_jobs
+  def test_v0_size_path_counts_advisory_locked_jobs_unless_skipped
     HireFire::Macro::Que.stubs(:version).returns(Gem::Version.new("0.14.3"))
     HireFire::Macro::Que.stubs(:advisory_lock_id_column).returns("id")
 
     job = enqueue(job_options: {job_class: "BasicJob", run_at: Time.now - 1})
     with_advisory_lock(job.que_attrs[:id]) do
-      assert_equal 0, HireFire::Macro::Que.job_queue_size
+      assert_equal 1, HireFire::Macro::Que.job_queue_size
+      assert_equal 1, HireFire::Macro::Que.job_queue_size(:default)
+      assert_equal 0, HireFire::Macro::Que.job_queue_size(skip_working: true)
+      assert_equal 0, HireFire::Macro::Que.job_queue_size(:default, skip_working: true)
     end
   end
 
@@ -254,13 +276,13 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Que.queue(:"o'brien")
   end
 
-  def test_deprecated_queue_method_excludes_advisory_locked_and_future
+  def test_deprecated_queue_method_counts_advisory_locked_and_excludes_future
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now + 100})
     locked = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
 
     with_advisory_lock(locked.que_attrs[:id]) do
-      assert_equal 1, HireFire::Macro::Que.queue(:default)
+      assert_equal 2, HireFire::Macro::Que.queue(:default)
     end
   end
 
@@ -285,7 +307,8 @@ class HireFire::Macro::QueTest < Minitest::Test
       assert_equal 0, HireFire::Macro::Que.job_queue_working(:critical)
       assert_equal 2, HireFire::Macro::Que.job_queue_working(:default, :mailer)
       assert_equal 1, HireFire::Macro::Que.job_queue_size(:critical)
-      assert_equal 0, HireFire::Macro::Que.job_queue_size(:default)
+      assert_equal 1, HireFire::Macro::Que.job_queue_size(:default)
+      assert_equal 0, HireFire::Macro::Que.job_queue_size(:default, skip_working: true)
     end
   end
 
@@ -301,6 +324,8 @@ class HireFire::Macro::QueTest < Minitest::Test
       assert_equal 0, HireFire::Macro::Que.job_queue_working(:default)
       assert_equal 0, HireFire::Macro::Que.job_queue_working(:mailer)
       assert_equal 1, HireFire::Macro::Que.job_queue_working(:other)
+      assert_equal 1, HireFire::Macro::Que.job_queue_size
+      assert_equal 0, HireFire::Macro::Que.job_queue_size(skip_working: true)
     end
   end
 
@@ -333,6 +358,30 @@ class HireFire::Macro::QueTest < Minitest::Test
       assert_equal HireFire::Macro::Que.job_queue_working(:default), wrk_value
       assert_equal HireFire::Macro::Que.job_queue_size(:default), jqs_value
       assert_operator wrk_value, :>, 0
+      assert_equal jqs_value, HireFire::Macro::Que.job_queue_size(:default, skip_working: true) + wrk_value
+    end
+  end
+
+  def test_plan_execute_skip_working_true_leaves_running_jobs_out_and_still_records_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    locked = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+
+    with_advisory_lock(locked.que_attrs[:id]) do
+      HireFire::Plan.execute(
+        "name" => "worker",
+        "adapter" => "que",
+        "strategy" => "jqs",
+        "queues" => ["default"],
+        "options" => {"skip_working" => true}
+      )
+
+      flushed = buffer.flush
+      assert_equal 1, flushed.dig("worker", "jqs")&.values&.last
+      assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
     end
   end
 

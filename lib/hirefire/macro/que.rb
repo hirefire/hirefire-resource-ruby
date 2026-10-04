@@ -14,6 +14,16 @@ module HireFire
 
       VERSION_1_0_0 = Gem::Version.new("1.0.0")
 
+      PLAN_OPTION_SCHEMA = {
+        "jqs" => {
+          "skip_working" => :boolean
+        }.freeze
+      }.freeze
+
+      def plan_options(strategy, options)
+        extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
+      end
+
       def job_queue_latency(*queues)
         if version < VERSION_1_0_0
           job_queue_latency_v0(*queues)
@@ -22,11 +32,11 @@ module HireFire
         end
       end
 
-      def job_queue_size(*queues)
+      def job_queue_size(*queues, skip_working: false)
         if version < VERSION_1_0_0
-          job_queue_size_v0(*queues)
+          job_queue_size_v0(*queues, skip_working: skip_working)
         else
-          job_queue_size_v1_v2(*queues)
+          job_queue_size_v1_v2(*queues, skip_working: skip_working)
         end
       end
 
@@ -72,20 +82,20 @@ module HireFire
         query_job_queue_latency(query, queues)
       end
 
-      def job_queue_size_v0(*queues)
+      def job_queue_size_v0(*queues, skip_working:)
         queues = normalize_queues(queues, allow_empty: true)
         query = <<~SQL
           SELECT COUNT(*) AS job_queue_size
           FROM que_jobs
           WHERE run_at <= NOW()
-          #{not_advisory_locked_sql}
+          #{not_advisory_locked_sql if skip_working}
           #{filter_by_queues_if_any(queues)}
         SQL
 
         query_job_queue_size(query, queues)
       end
 
-      def job_queue_size_v1_v2(*queues)
+      def job_queue_size_v1_v2(*queues, skip_working:)
         queues = normalize_queues(queues, allow_empty: true)
         query = <<~SQL
           SELECT COUNT(*) AS job_queue_size
@@ -93,7 +103,7 @@ module HireFire
           WHERE run_at <= NOW()
           AND finished_at IS NULL
           AND expired_at IS NULL
-          #{not_advisory_locked_sql}
+          #{not_advisory_locked_sql if skip_working}
           #{filter_by_queues_if_any(queues)}
         SQL
 

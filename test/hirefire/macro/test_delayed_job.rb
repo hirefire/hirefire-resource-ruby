@@ -93,9 +93,16 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size
   end
 
-  def test_job_queue_size_excludes_locked_jobs
+  def test_job_queue_size_counts_locked_jobs_by_default
     BasicJob.delay.perform.update(locked_at: Time.now, locked_by: "worker-1")
-    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(skip_working: false)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(skip_working: nil)
+  end
+
+  def test_job_queue_size_skip_working_leaves_locked_jobs_out
+    BasicJob.delay.perform.update(locked_at: Time.now, locked_by: "worker-1")
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size(skip_working: true)
   end
 
   def test_job_queue_latency_excludes_locked_jobs
@@ -105,17 +112,26 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_latency
   end
 
-  def test_job_queue_size_counts_due_unlocked_only_with_locked_and_future_present
+  def test_job_queue_size_with_waiting_due_future_running_and_locked_future_jobs
     BasicJob.delay(queue: :default).perform
-    BasicJob.delay(queue: :mailer).perform
+    BasicJob.delay(queue: :mailer, run_at: 1.minute.ago).perform
     BasicJob.delay(queue: :default, run_at: 1.minute.from_now).perform
     BasicJob.delay(queue: :other).perform.update(locked_at: Time.now, locked_by: "worker-1")
+    BasicJob.delay(queue: :other, run_at: 1.minute.from_now).perform.update(locked_at: Time.now, locked_by: "worker-2")
 
-    assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_size
+    assert_equal 3, HireFire::Macro::Delayed::Job.job_queue_size
     assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:default)
     assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:mailer)
-    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size(:other)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:other)
     assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_size(:default, :mailer)
+
+    assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_size(skip_working: true)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:default, skip_working: true)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:mailer, skip_working: true)
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size(:other, skip_working: true)
+    assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_size(:default, :mailer, skip_working: true)
+
+    assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_working(:other)
   end
 
   def test_job_queue_latency_ignores_locked_when_unlocked_due_exists
@@ -203,7 +219,9 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_working(:mailer)
     assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_working(:other)
     assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:default)
-    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size(:other)
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size(:mailer)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:other)
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size(:other, skip_working: true)
   end
 
   def test_plan_execute_delayed_job_jqs_also_samples_wrk
@@ -234,6 +252,28 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal HireFire::Macro::Delayed::Job.job_queue_working(:default), wrk_value
     assert_equal HireFire::Macro::Delayed::Job.job_queue_size(:default), jqs_value
     assert_operator wrk_value, :>, 0
+    assert_equal jqs_value, HireFire::Macro::Delayed::Job.job_queue_size(:default, skip_working: true) + wrk_value
+  end
+
+  def test_plan_execute_skip_working_true_leaves_running_jobs_out_and_still_records_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    BasicJob.delay(queue: :default).perform.update(locked_at: Time.now, locked_by: "worker-1")
+    BasicJob.delay(queue: :default).perform
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "delayed_job",
+      "strategy" => "jqs",
+      "queues" => ["default"],
+      "options" => {"skip_working" => true}
+    )
+
+    flushed = buffer.flush
+    assert_equal 1, flushed.dig("worker", "jqs")&.values&.last
+    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
   end
 
   def test_plan_execute_delayed_job_jql_also_samples_wrk

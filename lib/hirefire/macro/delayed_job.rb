@@ -17,6 +17,16 @@ module HireFire
 
         class MapperNotDetectedError < StandardError; end
 
+        PLAN_OPTION_SCHEMA = {
+          "jqs" => {
+            "skip_working" => :boolean
+          }.freeze
+        }.freeze
+
+        def plan_options(strategy, options)
+          extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
+        end
+
         def job_queue_latency(*queues)
           with_connection do
             queues = normalize_queues(queues, allow_empty: true)
@@ -39,10 +49,10 @@ module HireFire
           end
         end
 
-        def job_queue_size(*queues)
+        def job_queue_size(*queues, skip_working: false)
           with_connection do
             queues = normalize_queues(queues, allow_empty: true)
-            query = waiting_scope
+            query = skip_working ? waiting_scope : unfailed_scope
 
             case mapper
             when :active_record
@@ -76,8 +86,12 @@ module HireFire
 
         private
 
+        def unfailed_scope
+          ::Delayed::Job.where(failed_at: nil)
+        end
+
         def waiting_scope
-          ::Delayed::Job.where(failed_at: nil, locked_at: nil)
+          unfailed_scope.where(locked_at: nil)
         end
 
         def mapper

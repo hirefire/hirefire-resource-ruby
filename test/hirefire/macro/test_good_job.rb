@@ -134,10 +134,63 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default)
   end
 
-  def test_job_queue_size_excludes_running_jobs
+  def test_job_queue_size_counts_running_jobs_by_default
     job_id = BasicJob.perform_later.job_id
     mark_running(job_id, at: 1.minute.ago)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(skip_working: false)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(skip_working: nil)
+  end
+
+  def test_job_queue_size_skip_working_leaves_running_jobs_out
+    job_id = BasicJob.perform_later.job_id
+    mark_running(job_id, at: 1.minute.ago)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(:default, skip_working: true)
+  end
+
+  def test_job_queue_size_with_waiting_due_future_running_and_finished_jobs
+    BasicJob.perform_later
+    BasicJob.set(queue: :mailer, wait_until: 1.minute.ago).perform_later
+    BasicJob.set(wait_until: 1.minute.from_now).perform_later
+    running_id = BasicJob.set(queue: :other).perform_later.job_id
+    finished_id = BasicJob.set(queue: :other).perform_later.job_id
+    mark_running(running_id, at: Time.now)
+    good_job_class.where(active_job_id: finished_id).update_all(performed_at: 1.minute.ago, finished_at: Time.now)
+
+    assert_equal 3, HireFire::Macro::GoodJob.job_queue_size
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:mailer)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:other)
+    assert_equal 2, HireFire::Macro::GoodJob.job_queue_size(:default, :mailer)
+
+    assert_equal 2, HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default, skip_working: true)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:mailer, skip_working: true)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(:other, skip_working: true)
+    assert_equal 2, HireFire::Macro::GoodJob.job_queue_size(:default, :mailer, skip_working: true)
+  end
+
+  def test_discarded_job_is_not_counted_as_running
+    job_id = BasicJob.perform_later.job_id
+    mark_running(job_id, at: 1.minute.ago)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
+
+    ::GoodJob::Job.find_by!(active_job_id: job_id).discard_job("Discarded in a test")
+
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_working
+  end
+
+  def test_interrupted_job_counts_as_running_and_never_as_waiting
+    job_id = Timecop.freeze(5.minutes.ago) { BasicJob.perform_later.job_id }
+    mark_running(job_id, at: 4.minutes.ago)
+
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_working
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
   end
 
   def test_job_queue_size_excludes_finished_before_perform_without_discard_event
@@ -164,7 +217,8 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     )
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
     mark_running(job_id, at: Time.now)
-    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
   end
 
   def test_ready_queue_ignores_terminal_and_running_neighbors
@@ -175,8 +229,9 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     mark_running(running_id, at: 2.minutes.ago)
     mark_finished_before_perform(finished_id, finished_at: 1.minute.ago, scheduled_at: 4.minutes.ago)
 
-    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
-    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default, skip_working: true)
+    assert_equal 2, HireFire::Macro::GoodJob.job_queue_size
     assert_in_delta 180, HireFire::Macro::GoodJob.job_queue_latency, LATENCY_DELTA
 
     remaining = good_job_class.where(active_job_id: ready_id).where(finished_at: nil, performed_at: nil)
@@ -213,7 +268,7 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     mark_running(id, at: Time.now)
 
     assert_equal 1, HireFire::Macro::GoodJob.queue(:default)
-    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(:default)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default)
   end
 
   def test_job_queue_working_idle_is_zero
@@ -253,7 +308,9 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_working(:mailer)
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_working(:other)
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default)
-    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(:other)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(:mailer)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:other)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(:other, skip_working: true)
     assert_equal 1, good_job_class.where(active_job_id: ready_id).count
   end
 
@@ -286,6 +343,29 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal HireFire::Macro::GoodJob.job_queue_working(:default), wrk_value
     assert_equal HireFire::Macro::GoodJob.job_queue_size(:default), jqs_value
     assert_operator wrk_value, :>, 0
+    assert_equal jqs_value, HireFire::Macro::GoodJob.job_queue_size(:default, skip_working: true) + wrk_value
+  end
+
+  def test_plan_execute_skip_working_true_leaves_running_jobs_out_and_still_records_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    running_id = BasicJob.perform_later.job_id
+    mark_running(running_id, at: Time.now)
+    BasicJob.perform_later
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "good_job",
+      "strategy" => "jqs",
+      "queues" => ["default"],
+      "options" => {"skip_working" => true}
+    )
+
+    flushed = buffer.flush
+    assert_equal 1, flushed.dig("worker", "jqs")&.values&.last
+    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
   end
 
   def test_plan_execute_good_job_jql_also_samples_wrk

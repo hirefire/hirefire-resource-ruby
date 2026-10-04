@@ -16,6 +16,16 @@ module HireFire
       extend HireFire::Macro::Deprecated::GoodJob
       extend self
 
+      PLAN_OPTION_SCHEMA = {
+        "jqs" => {
+          "skip_working" => :boolean
+        }.freeze
+      }.freeze
+
+      def plan_options(strategy, options)
+        extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
+      end
+
       def job_queue_latency(*queues)
         with_connection do
           query = ready_jobs(*queues).order(Arel.sql("COALESCE(scheduled_at, created_at) ASC"))
@@ -28,9 +38,10 @@ module HireFire
         end
       end
 
-      def job_queue_size(*queues)
+      def job_queue_size(*queues, skip_working: false)
         with_connection do
-          ready_jobs(*queues).count
+          size = ready_jobs(*queues).count
+          skip_working ? size : size + working_jobs(*queues).count
         end
       end
 

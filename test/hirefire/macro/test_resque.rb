@@ -320,6 +320,24 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
   end
 
+  def test_deprecated_queue_returns_what_job_queue_size_returns_for_each_call_shape
+    Resque.enqueue_to(:default, BasicJob)
+    Resque.enqueue_to(:mailer, BasicJob)
+    Resque.enqueue_in_with_queue(:default, -60, BasicJob)
+    Resque.enqueue_in_with_queue(:mailer, 300, BasicJob)
+    enqueue_to_working_with_queue :default, BasicJob
+    enqueue_to_working_with_queue :never_registered, BasicJob
+    macro = HireFire::Macro::Resque
+
+    assert_equal 5, macro.queue
+    assert_equal macro.job_queue_size, macro.queue
+    assert_equal 3, macro.queue(:default)
+    assert_equal macro.job_queue_size(:default), macro.queue(:default)
+    assert_equal macro.job_queue_size(:mailer), macro.queue("mailer")
+    assert_equal macro.job_queue_size(:default, :mailer), macro.queue(:default, :mailer)
+    assert_equal macro.job_queue_size(:default, :mailer), macro.queue([:default, ["mailer"]])
+  end
+
   def self.next_id
     @next_id ||= 0
     @next_id += 1

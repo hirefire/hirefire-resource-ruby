@@ -145,6 +145,52 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_in_delta 60, HireFire::Macro::Delayed::Job.job_queue_latency(:mailer), LATENCY_DELTA
   end
 
+  def test_job_queue_size_with_priority_bounds
+    BasicJob.delay(queue: :default).perform
+    BasicJob.delay(queue: :default, priority: 1).perform
+    BasicJob.delay(queue: :default, priority: 5).perform
+    BasicJob.delay(queue: :mailer, priority: 10).perform
+
+    assert_equal 4, HireFire::Macro::Delayed::Job.job_queue_size
+    assert_equal 4, HireFire::Macro::Delayed::Job.job_queue_size(min_priority: nil, max_priority: nil)
+    assert_equal 4, HireFire::Macro::Delayed::Job.job_queue_size(min_priority: 0)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(max_priority: 0)
+    assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_size(min_priority: 5)
+    assert_equal 3, HireFire::Macro::Delayed::Job.job_queue_size(max_priority: 5)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(min_priority: 2, max_priority: 9)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(min_priority: 5, max_priority: 5)
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size(min_priority: 11)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:default, min_priority: 5)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:mailer, :other, min_priority: 5, max_priority: 10)
+  end
+
+  def test_job_queue_size_with_priority_bounds_and_locked_jobs
+    BasicJob.delay(queue: :default, priority: 5).perform
+    BasicJob.delay(queue: :default, priority: 5).perform.update(locked_at: Time.now, locked_by: "worker-1")
+    BasicJob.delay(queue: :default, priority: 1).perform.update(locked_at: Time.now, locked_by: "worker-2")
+
+    assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_size(min_priority: 5)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(min_priority: 5, skip_working: true)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(max_priority: 1)
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size(max_priority: 1, skip_working: true)
+  end
+
+  def test_job_queue_latency_with_priority_bounds
+    Timecop.freeze(3.minutes.ago) { BasicJob.delay(queue: :default, priority: 1).perform }
+    Timecop.freeze(2.minutes.ago) { BasicJob.delay(queue: :default, priority: 5).perform }
+    Timecop.freeze(1.minute.ago) { BasicJob.delay(queue: :mailer, priority: 10).perform }
+
+    assert_in_delta 180, HireFire::Macro::Delayed::Job.job_queue_latency, LATENCY_DELTA
+    assert_in_delta 180, HireFire::Macro::Delayed::Job.job_queue_latency(min_priority: nil, max_priority: nil), LATENCY_DELTA
+    assert_in_delta 120, HireFire::Macro::Delayed::Job.job_queue_latency(min_priority: 5), LATENCY_DELTA
+    assert_in_delta 180, HireFire::Macro::Delayed::Job.job_queue_latency(max_priority: 5), LATENCY_DELTA
+    assert_in_delta 120, HireFire::Macro::Delayed::Job.job_queue_latency(min_priority: 2, max_priority: 9), LATENCY_DELTA
+    assert_in_delta 60, HireFire::Macro::Delayed::Job.job_queue_latency(min_priority: 6), LATENCY_DELTA
+    assert_in_delta 60, HireFire::Macro::Delayed::Job.job_queue_latency(:mailer, max_priority: 10), LATENCY_DELTA
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_latency(min_priority: 11)
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_latency(max_priority: 0)
+  end
+
   def test_raises_when_no_mapper_is_detected
     ::Delayed::Job.stubs(:ancestors).returns([Object])
 

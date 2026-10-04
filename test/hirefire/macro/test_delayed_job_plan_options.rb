@@ -24,6 +24,17 @@ class HireFire::Macro::DelayedJobPlanOptionsTest < Minitest::Test
     assert_equal({}, HireFire::Macro::Delayed::Job.plan_options("jqs", nil))
   end
 
+  def test_lease_plan_never_carries_the_priority_bounds
+    opts = HireFire::Macro::Delayed::Job.plan_options("jqs", {
+      "skip_working" => true,
+      "min_priority" => 1,
+      "max_priority" => 5
+    })
+
+    assert_equal({skip_working: true}, opts)
+    assert_equal({}, HireFire::Macro::Delayed::Job.plan_options("jql", {"min_priority" => 1, "max_priority" => 5}))
+  end
+
   def test_jql_never_receives_skip_working
     assert_equal({}, HireFire::Macro::Delayed::Job.plan_options("jql", {"skip_working" => true}))
   end

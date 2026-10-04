@@ -27,19 +27,9 @@ module HireFire
           extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
         end
 
-        def job_queue_latency(*queues)
+        def job_queue_latency(*queues, min_priority: nil, max_priority: nil)
           with_connection do
-            queues = normalize_queues(queues, allow_empty: true)
-            query = waiting_scope.order(run_at: :asc)
-
-            case mapper
-            when :active_record
-              query = query.where("run_at <= ?", Time.now)
-              query = query.where(queue: queues) if queues.any?
-            when :mongoid
-              query = query.where(run_at: {"$lte" => Time.now})
-              query = query.in(queue: queues.to_a) if queues.any?
-            end
+            query = due(waiting_scope, queues, min_priority, max_priority).order(run_at: :asc)
 
             if (job = query.first)
               [Time.now - job.run_at, 0.0].max
@@ -49,21 +39,11 @@ module HireFire
           end
         end
 
-        def job_queue_size(*queues, skip_working: false)
+        def job_queue_size(*queues, skip_working: false, min_priority: nil, max_priority: nil)
           with_connection do
-            queues = normalize_queues(queues, allow_empty: true)
             query = skip_working ? waiting_scope : unfailed_scope
 
-            case mapper
-            when :active_record
-              query = query.where("run_at <= ?", Time.now)
-              query = query.where(queue: queues) if queues.any?
-            when :mongoid
-              query = query.where(run_at: {"$lte" => Time.now})
-              query = query.in(queue: queues.to_a) if queues.any?
-            end
-
-            query.count
+            due(query, queues, min_priority, max_priority).count
           end
         end
 
@@ -85,6 +65,25 @@ module HireFire
         end
 
         private
+
+        def due(query, queues, min_priority, max_priority)
+          queues = normalize_queues(queues, allow_empty: true)
+
+          case mapper
+          when :active_record
+            query = query.where("run_at <= ?", Time.now)
+            query = query.where("priority >= ?", min_priority) unless min_priority.nil?
+            query = query.where("priority <= ?", max_priority) unless max_priority.nil?
+            query = query.where(queue: queues) if queues.any?
+          when :mongoid
+            query = query.where(run_at: {"$lte" => Time.now})
+            query = query.where(priority: {"$gte" => min_priority}) unless min_priority.nil?
+            query = query.where(priority: {"$lte" => max_priority}) unless max_priority.nil?
+            query = query.in(queue: queues.to_a) if queues.any?
+          end
+
+          query
+        end
 
         def unfailed_scope
           ::Delayed::Job.where(failed_at: nil)

@@ -349,8 +349,20 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   def test_deprecated_latency_method
     Timecop.freeze(Time.now - 200) { enqueue }
     Timecop.freeze(Time.now - 100) { enqueue queue: "critical" }
+    assert_in_delta 200, HireFire::Macro::Sidekiq.latency, LATENCY_DELTA
     assert_in_delta 200, HireFire::Macro::Sidekiq.latency(:default), LATENCY_DELTA
     assert_in_delta 100, HireFire::Macro::Sidekiq.latency(:critical), LATENCY_DELTA
+    assert_in_delta 100, HireFire::Macro::Sidekiq.latency("critical"), LATENCY_DELTA
+  end
+
+  def test_deprecated_latency_method_measures_due_scheduled_and_retry_jobs
+    Timecop.freeze(Time.now - 100) { enqueue }
+    enqueue_scheduled(at: Time.now.to_i - 300)
+    enqueue_retry(queue: "critical", at: Time.now.to_i - 400)
+
+    assert_in_delta 300, HireFire::Macro::Sidekiq.latency, LATENCY_DELTA
+    assert_in_delta 400, HireFire::Macro::Sidekiq.latency(:critical), LATENCY_DELTA
+    assert_in_delta HireFire::Macro::Sidekiq.job_queue_latency(:default), HireFire::Macro::Sidekiq.latency, LATENCY_DELTA
   end
 
   def test_job_queue_size_without_jobs
@@ -655,13 +667,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: nil)
   end
 
-  def test_deprecated_queue_skip_working_nil_excludes_working
-    enqueue
-    enqueue_working(run_at: Time.now.to_i - 60)
-
-    assert_equal 1, HireFire::Macro::Sidekiq.queue(skip_working: nil)
-  end
-
   def test_plan_execute_honors_skip_working_false
     HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
     buffer = HireFire.configuration.buffer
@@ -934,15 +939,16 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   def test_deprecated_queue_method
     populate_queue
 
-    assert_equal 3, HireFire::Macro::Sidekiq.queue(:default)
-    assert_equal 4, HireFire::Macro::Sidekiq.queue(:default, :critical)
-    assert_equal 3, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_scheduled: true)
-    assert_equal 3, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_retries: true)
+    assert_equal 4, HireFire::Macro::Sidekiq.queue(:default)
+    assert_equal 5, HireFire::Macro::Sidekiq.queue(:default, :critical)
+    assert_equal 4, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_scheduled: true)
+    assert_equal 4, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_retries: true)
     assert_equal 4, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_working: true)
     assert_equal 5, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_working: false)
+    assert_equal 5, HireFire::Macro::Sidekiq.queue(:default, :critical, skip_working: nil)
   end
 
-  def test_deprecated_queue_method_without_queues_uses_fast_lookup
+  def test_deprecated_queue_method_without_queues_reads_the_busy_total
     enqueue
     enqueue queue: "critical"
     enqueue_scheduled
@@ -950,24 +956,41 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue_retry
     enqueue_retry_future
     enqueue_working
+    HireFire::Macro::Sidekiq::DueCache.expects(:working_jobs).never
 
-    assert_equal 4, HireFire::Macro::Sidekiq.queue
-    assert_equal 3, HireFire::Macro::Sidekiq.queue(skip_scheduled: true)
-    assert_equal 3, HireFire::Macro::Sidekiq.queue(skip_retries: true)
+    assert_equal 5, HireFire::Macro::Sidekiq.queue
+    assert_equal 4, HireFire::Macro::Sidekiq.queue(skip_scheduled: true)
+    assert_equal 4, HireFire::Macro::Sidekiq.queue(skip_retries: true)
     assert_equal 4, HireFire::Macro::Sidekiq.queue(skip_working: true)
     assert_equal 5, HireFire::Macro::Sidekiq.queue(skip_working: false)
+    assert_equal 5, HireFire::Macro::Sidekiq.queue(skip_working: nil)
   end
 
-  def test_deprecated_queue_fast_lookup_counts_future_run_at_working
-    enqueue
-    enqueue_working(run_at: Time.now.to_i + 120)
+  def test_deprecated_queue_returns_what_job_queue_size_returns_for_each_call_shape
+    populate_queue
+    3.times { enqueue_scheduled }
+    macro = HireFire::Macro::Sidekiq
 
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default),
-      "modern JQS counts live only (excludes future run_at working)"
-    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, server: true)
-    assert_equal 1, HireFire::Macro::Sidekiq.queue(skip_working: true),
-      "deprecated skip_working true: live only"
-    assert_equal 1, HireFire::Macro::Sidekiq.queue(skip_working: false)
+    assert_equal macro.job_queue_size, macro.queue
+    assert_equal macro.job_queue_size(:default), macro.queue(:default)
+    assert_equal macro.job_queue_size(:default), macro.queue("default")
+    assert_equal macro.job_queue_size(:default, :critical), macro.queue(:default, :critical)
+    assert_equal macro.job_queue_size(:default, :critical), macro.queue([:default, ["critical"]])
+    assert_equal macro.job_queue_size(:default, skip_scheduled: true), macro.queue(:default, skip_scheduled: true)
+    assert_equal macro.job_queue_size(:default, skip_retries: true), macro.queue(:default, skip_retries: true)
+    assert_equal macro.job_queue_size(:default, skip_working: true), macro.queue(:default, skip_working: true)
+    assert_equal macro.job_queue_size(:default, max_scheduled: 2), macro.queue(:default, max_scheduled: 2)
+    assert_equal macro.job_queue_size(:default, max_scheduled: 2), macro.queue([:default], {max_scheduled: 2})
+    assert_equal macro.job_queue_size(skip_scheduled: true, skip_retries: true), macro.queue(skip_scheduled: true, skip_retries: true)
+  end
+
+  def test_deprecated_queue_passes_on_only_the_options_the_1_x_method_read
+    options = {skip_scheduled: true, skip_retries: true, skip_working: true, max_scheduled: 5}
+    HireFire::Macro::Sidekiq.expects(:job_queue_size).with(:default, "critical", **options).returns(7)
+
+    assert_equal 7, HireFire::Macro::Sidekiq.queue(
+      :default, "critical", **options, :server => true, :bogus => 1, "skip_working" => false
+    )
   end
 
   def test_named_due_walk_raises_instead_of_undercounting_when_budget_is_exceeded

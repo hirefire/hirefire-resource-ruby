@@ -19,15 +19,28 @@ module HireFire
         :enqueued_size,
         :scheduled_size
       ].freeze
+      WALK_BATCH = 1_000
       WALK_JOB_BUDGET = 50_000
       WALK_TIME_BUDGET = 2.0
 
-      def job_queue_size(*queues)
+      PLAN_OPTION_SCHEMA = {
+        "jqs" => {
+          "skip_working" => :boolean
+        }.freeze
+      }.freeze
+
+      def plan_options(strategy, options)
+        extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
+      end
+
+      def job_queue_size(*queues, skip_working: false)
         queues = normalize_queues(queues, allow_empty: true)
 
-        SIZE_METHODS.sum do |size_method|
+        size = SIZE_METHODS.sum do |size_method|
           method(size_method).call(queues)
         end
+
+        skip_working ? size : size + working_size(queues)
       end
 
       private
@@ -43,7 +56,7 @@ module HireFire
       end
 
       def scheduled_size(queues)
-        batch = 1000
+        batch = WALK_BATCH
         total_size = 0
         current_time = Time.now.to_i
         min_score = "-inf"
@@ -67,7 +80,7 @@ module HireFire
               end
             end
             jobs_seen += lengths.sum
-            raise_if_walk_budget_exceeded!(jobs_seen, started)
+            raise_if_walk_budget_exceeded!("delayed", jobs_seen, started)
             total_size += lengths.sum
           else
             timestamps.each do |timestamp|
@@ -83,11 +96,10 @@ module HireFire
                 break if encoded_jobs.empty?
 
                 jobs_seen += encoded_jobs.size
-                raise_if_walk_budget_exceeded!(jobs_seen, started)
+                raise_if_walk_budget_exceeded!("delayed", jobs_seen, started)
 
                 total_size += encoded_jobs.count do |encoded_job|
-                  queue = delayed_job_queue(encoded_job)
-                  queue && queues.include?(queue)
+                  queues.include?(encoded_queue(encoded_job))
                 end
 
                 break if encoded_jobs.size < batch
@@ -105,14 +117,41 @@ module HireFire
         total_size
       end
 
-      def raise_if_walk_budget_exceeded!(jobs_seen, started)
+      def working_size(queues)
+        total_size = 0
+        jobs_seen = 0
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+        ::Resque.redis.smembers(:workers).each_slice(WALK_BATCH) do |ids|
+          encoded_jobs = ::Resque.redis.pipelined do |pipeline|
+            ids.each do |id|
+              pipeline.get("worker:#{id}")
+            end
+          end.compact
+
+          jobs_seen += encoded_jobs.size
+          raise_if_walk_budget_exceeded!("worker", jobs_seen, started)
+
+          total_size += if queues.empty?
+            encoded_jobs.size
+          else
+            encoded_jobs.count do |encoded_job|
+              queues.include?(encoded_queue(encoded_job))
+            end
+          end
+        end
+
+        total_size
+      end
+
+      def raise_if_walk_budget_exceeded!(walk, jobs_seen, started)
         return if jobs_seen < WALK_JOB_BUDGET &&
           (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) < WALK_TIME_BUDGET
 
-        raise HireFire::Errors::SampleIncomplete, "Resque delayed walk exceeded budget"
+        raise HireFire::Errors::SampleIncomplete, "Resque #{walk} walk exceeded budget"
       end
 
-      def delayed_job_queue(encoded_job)
+      def encoded_queue(encoded_job)
         payload = ::Resque.decode(encoded_job)
         return unless payload.is_a?(Hash)
 

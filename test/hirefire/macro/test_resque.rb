@@ -61,14 +61,22 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     assert_equal 2, HireFire::Macro::Resque.job_queue_size(:default, :mailer)
   end
 
-  def test_job_queue_size_with_working
+  def test_job_queue_size_counts_working_jobs_by_default
     enqueue_to_working_with_queue :default, BasicJob
-    assert_equal 0, HireFire::Macro::Resque.job_queue_size
-    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
     assert_equal 0, HireFire::Macro::Resque.job_queue_size(:mailer)
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(skip_working: false)
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(skip_working: nil)
   end
 
-  def test_job_queue_size_counts_live_and_due_only_with_working_present
+  def test_job_queue_size_skip_working_leaves_working_jobs_out
+    enqueue_to_working_with_queue :default, BasicJob
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(skip_working: true)
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default, skip_working: true)
+  end
+
+  def test_job_queue_size_with_live_due_future_and_working_jobs
     Resque.enqueue_to(:default, BasicJob)
     Resque.enqueue_to(:mailer, BasicJob)
     Resque.enqueue_in_with_queue(:default, -60, BasicJob)
@@ -76,11 +84,107 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     enqueue_to_working_with_queue :default, BasicJob
     enqueue_to_working_with_queue :other, BasicJob
 
-    assert_equal 3, HireFire::Macro::Resque.job_queue_size
-    assert_equal 2, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 5, HireFire::Macro::Resque.job_queue_size
+    assert_equal 3, HireFire::Macro::Resque.job_queue_size(:default)
     assert_equal 1, HireFire::Macro::Resque.job_queue_size(:mailer)
-    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:other)
-    assert_equal 3, HireFire::Macro::Resque.job_queue_size(:default, :mailer)
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:other)
+    assert_equal 4, HireFire::Macro::Resque.job_queue_size(:default, :mailer)
+
+    assert_equal 3, HireFire::Macro::Resque.job_queue_size(skip_working: true)
+    assert_equal 2, HireFire::Macro::Resque.job_queue_size(:default, skip_working: true)
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:mailer, skip_working: true)
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:other, skip_working: true)
+    assert_equal 3, HireFire::Macro::Resque.job_queue_size(:default, :mailer, skip_working: true)
+  end
+
+  def test_job_queue_size_ignores_workers_without_a_job
+    Resque.redis.sadd(:workers, "idle-worker")
+
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size
+    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default)
+  end
+
+  def test_job_queue_size_skips_corrupt_worker_payloads_for_named_queues
+    enqueue_to_working_with_queue :default, BasicJob
+    Resque.redis.pipelined do |pipeline|
+      pipeline.set("worker:corrupt", "not-json")
+      pipeline.sadd(:workers, "corrupt")
+      pipeline.set("worker:null", "null")
+      pipeline.sadd(:workers, "null")
+    end
+
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 3, HireFire::Macro::Resque.job_queue_size
+  end
+
+  def test_job_queue_size_pages_worker_payloads_across_the_batch_boundary
+    Resque.redis.pipelined do |pipeline|
+      1_001.times do |i|
+        queue = (i % 3 == 0) ? "mailer" : "default"
+        pipeline.set("worker:#{i}", Resque.encode("queue" => queue, "payload" => {"class" => "BasicJob", "args" => []}))
+        pipeline.sadd(:workers, i)
+      end
+    end
+
+    assert_equal 1_001, HireFire::Macro::Resque.job_queue_size
+    assert_equal 667, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 334, HireFire::Macro::Resque.job_queue_size(:mailer)
+  end
+
+  def test_worker_walk_raises_instead_of_undercounting_when_budget_is_exceeded
+    20.times { enqueue_to_working_with_queue :default, BasicJob }
+
+    stub_resque_const(:WALK_JOB_BUDGET, 5) do
+      error = assert_raises(HireFire::Errors::SampleIncomplete) do
+        HireFire::Macro::Resque.job_queue_size(:default)
+      end
+      assert_includes error.message, "worker walk"
+
+      assert_raises(HireFire::Errors::SampleIncomplete) do
+        HireFire::Macro::Resque.job_queue_size
+      end
+      assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default, skip_working: true)
+    end
+  end
+
+  def test_plan_execute_resque_jqs_counts_working_jobs_and_records_no_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+    Resque.enqueue_to(:default, BasicJob)
+    enqueue_to_working_with_queue :default, BasicJob
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "resque",
+      "strategy" => "jqs",
+      "queues" => ["default"],
+      "options" => {}
+    )
+
+    flushed = buffer.flush
+    assert_equal 2, flushed.dig("worker", "jqs")&.values&.last
+    refute flushed.dig("worker", "wrk")
+  end
+
+  def test_plan_execute_skip_working_true_leaves_working_jobs_out
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+    Resque.enqueue_to(:default, BasicJob)
+    enqueue_to_working_with_queue :default, BasicJob
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "resque",
+      "strategy" => "jqs",
+      "queues" => ["default"],
+      "options" => {"skip_working" => true}
+    )
+
+    flushed = buffer.flush
+    assert_equal 1, flushed.dig("worker", "jqs")&.values&.last
+    refute flushed.dig("worker", "wrk")
   end
 
   def test_job_queue_size_with_scheduled_jobs
@@ -213,7 +317,7 @@ class HireFire::Macro::ResqueTest < Minitest::Test
   def test_deprecated_queue_still_includes_working
     enqueue_to_working_with_queue :default, BasicJob
     assert_equal 1, HireFire::Macro::Resque.queue(:default)
-    assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
   end
 
   def self.next_id

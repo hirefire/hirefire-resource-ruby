@@ -276,6 +276,22 @@ class HireFire::Macro::QueTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Que.queue(:"o'brien")
   end
 
+  def test_deprecated_queue_returns_what_job_queue_size_returns_for_each_call_shape
+    enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 1})
+    enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now + 100})
+    locked = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
+    macro = HireFire::Macro::Que
+
+    with_advisory_lock(locked.que_attrs[:id]) do
+      assert_equal 3, macro.queue
+      assert_equal macro.job_queue_size, macro.queue
+      assert_equal macro.job_queue_size(:default), macro.queue(:default)
+      assert_equal macro.job_queue_size(:mailer), macro.queue("mailer")
+      assert_equal macro.job_queue_size(:default, :mailer), macro.queue(:default, :mailer)
+    end
+  end
+
   def test_deprecated_queue_method_counts_advisory_locked_and_excludes_future
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now + 100})

@@ -154,6 +154,17 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_equal 1, HireFire::Macro::QC.queue
   end
 
+  def test_deprecated_queue_method_samples_the_default_queue_without_an_argument
+    QC::Queue.new("default").enqueue("BasicJob.perform")
+    QC::Queue.new("mailer").enqueue("BasicJob.perform")
+    QC::Queue.new("mailer").enqueue("BasicJob.perform")
+
+    assert_equal 1, HireFire::Macro::QC.queue
+    assert_equal HireFire::Macro::QC.job_queue_size(:default), HireFire::Macro::QC.queue
+    assert_equal 2, HireFire::Macro::QC.queue(:mailer)
+    assert_equal HireFire::Macro::QC.job_queue_size(:mailer), HireFire::Macro::QC.queue("mailer")
+  end
+
   def test_deprecated_queue_method_counts_locked_and_excludes_future
     queue = QC::Queue.new("default")
     queue.enqueue("BasicJob.perform")

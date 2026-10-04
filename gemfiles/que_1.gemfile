@@ -17,5 +17,6 @@ gem "erb", "< 5"
 gem "pg"
 gem "rails", "~> 8"
 gem "que", "~> 1", require: false
+gem "json", "< 3"
 
 gemspec path: "../"

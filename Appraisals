@@ -44,12 +44,14 @@ appraise "que_1" do
   gem "pg"
   gem "rails", "~> 8"
   gem "que", "~> 1", require: false
+  gem "json", "< 3"
 end
 
 appraise "que_2" do
   gem "pg"
   gem "rails", "~> 8"
   gem "que", "~> 2", require: false
+  gem "json", "< 3"
 end
 
 appraise "rack_2" do

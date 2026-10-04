@@ -209,13 +209,13 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     end
   end
 
-  def test_deprecated_queue_method_excludes_locked_jobs
+  def test_deprecated_queue_method_counts_locked_jobs
     BasicJob.delay(queue: :default).perform
     BasicJob.delay(queue: :default).perform.update(locked_at: Time.now, locked_by: "worker-1")
 
     mapper = defined?(ActiveRecord) ? :active_record : :mongoid
 
-    assert_equal 1, HireFire::Macro::Delayed::Job.queue(:default, mapper: mapper)
+    assert_equal 2, HireFire::Macro::Delayed::Job.queue(:default, mapper: mapper)
   end
 
   def test_deprecated_queue_method_with_priority_range
@@ -229,10 +229,50 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 2, HireFire::Macro::Delayed::Job.queue(mapper: mapper, min_priority: 0, max_priority: 10)
   end
 
-  def test_deprecated_queue_method_requires_a_mapper
-    assert_raises ArgumentError do
-      HireFire::Macro::Delayed::Job.queue(:default)
-    end
+  def test_deprecated_queue_method_accepts_and_drops_the_mapper
+    BasicJob.delay(queue: :default).perform
+
+    assert_equal 1, HireFire::Macro::Delayed::Job.queue(:default)
+    assert_equal 1, HireFire::Macro::Delayed::Job.queue(:default, mapper: :active_record)
+    assert_equal 1, HireFire::Macro::Delayed::Job.queue(:default, mapper: :active_record_2)
+    assert_equal 1, HireFire::Macro::Delayed::Job.queue(:default, mapper: :mongoid)
+  end
+
+  def test_deprecated_queue_returns_what_job_queue_size_returns_for_each_call_shape
+    BasicJob.delay(queue: :default, priority: 1).perform
+    BasicJob.delay(queue: :default, priority: 5).perform.update(locked_at: Time.now, locked_by: "worker-1")
+    BasicJob.delay(queue: :mailer, priority: 10).perform
+    BasicJob.delay(queue: :mailer, run_at: 1.minute.from_now).perform
+    macro = HireFire::Macro::Delayed::Job
+    mapper = defined?(ActiveRecord) ? :active_record : :mongoid
+
+    assert_equal 3, macro.queue(mapper: mapper)
+    assert_equal macro.job_queue_size, macro.queue(mapper: mapper)
+    assert_equal macro.job_queue_size(:default), macro.queue(:default, mapper: mapper)
+    assert_equal macro.job_queue_size(:default), macro.queue("default", {mapper: mapper})
+    assert_equal macro.job_queue_size(:default, :mailer), macro.queue([:default, ["mailer"]], mapper: mapper)
+    assert_equal macro.job_queue_size(min_priority: 5), macro.queue(mapper: mapper, min_priority: 5)
+    assert_equal macro.job_queue_size(max_priority: 5), macro.queue(mapper: mapper, max_priority: 5)
+    assert_equal macro.job_queue_size(:mailer, min_priority: 2, max_priority: 10),
+      macro.queue(:mailer, mapper: mapper, min_priority: 2, max_priority: 10)
+  end
+
+  def test_deprecated_queue_treats_an_explicit_nil_priority_bound_as_no_bound
+    BasicJob.delay(queue: :default, priority: 1).perform
+    BasicJob.delay(queue: :default, priority: 5).perform
+    mapper = defined?(ActiveRecord) ? :active_record : :mongoid
+
+    assert_equal 2, HireFire::Macro::Delayed::Job.queue(mapper: mapper, min_priority: nil)
+    assert_equal 2, HireFire::Macro::Delayed::Job.queue(mapper: mapper, max_priority: nil)
+    assert_equal 1, HireFire::Macro::Delayed::Job.queue(mapper: mapper, min_priority: nil, max_priority: 3)
+  end
+
+  def test_deprecated_queue_passes_on_only_the_options_the_1_x_method_read
+    HireFire::Macro::Delayed::Job.expects(:job_queue_size).with(:default, "mailer", min_priority: 1, max_priority: 5).returns(7)
+
+    assert_equal 7, HireFire::Macro::Delayed::Job.queue(
+      :default, "mailer", mapper: :active_record, min_priority: 1, max_priority: 5, skip_working: true, bogus: 1
+    )
   end
 
   def test_job_queue_working_idle_is_zero

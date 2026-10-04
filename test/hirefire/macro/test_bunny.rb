@@ -301,21 +301,63 @@ class HireFire::Macro::BunnyTest < Minitest::Test
         publish_confirmed(default_channel, default)
         publish_confirmed(mailer_channel, mailer)
         assert_size 1, :default_legacy, amqp_url: AMQP_URL
-        seen = nil
-        deadline = Time.now + 2
-        while Time.now < deadline
-          seen = HireFire::Macro::Bunny.queue(:default_legacy, :mailer_legacy, connection: connection)
-          break if seen == 2
-          sleep 0.02
+        assert_eventually(2) do
+          HireFire::Macro::Bunny.queue(:default_legacy, :mailer_legacy, connection: connection)
         end
-        assert_equal 2, seen
+        assert_eventually(2) do
+          HireFire::Macro::Bunny.queue([:default_legacy, ["mailer_legacy"]], {connection: connection})
+        end
       end
     end
   end
 
-  def test_deprecated_queue_method_requires_connection_or_amqp_url
-    assert_raises ArgumentError do
-      HireFire::Macro::Bunny.queue(:default)
+  def test_deprecated_queue_method_falls_back_to_the_environment_url
+    with_connection(queue: :environment_legacy) do |_connection, channel, queue|
+      publish_confirmed(channel, queue)
+      assert_eventually(1) { HireFire::Macro::Bunny.queue(:environment_legacy) }
+    end
+  end
+
+  def test_deprecated_queue_method_accepts_and_drops_durable_and_max_priority
+    with_connection(queue: :priority_legacy, max_priority: 10) do |_connection, channel, queue|
+      publish_confirmed(channel, queue)
+      assert_eventually(1) { HireFire::Macro::Bunny.queue(:priority_legacy, amqp_url: AMQP_URL) }
+      assert_equal 1, HireFire::Macro::Bunny.queue(:priority_legacy, amqp_url: AMQP_URL, durable: true, "x-max-priority": 10)
+      assert_equal 1, HireFire::Macro::Bunny.queue(:priority_legacy, amqp_url: AMQP_URL, durable: false, "x-max-priority": 5)
+      assert_equal 1, HireFire::Macro::Bunny.job_queue_size(:priority_legacy, amqp_url: AMQP_URL)
+    end
+  end
+
+  def test_deprecated_queue_passes_on_only_the_connection_options
+    connection = Object.new
+    HireFire::Macro::Bunny.expects(:job_queue_size)
+      .with(:default, "mailer", connection: connection, amqp_url: AMQP_URL)
+      .returns(7)
+
+    assert_equal 7, HireFire::Macro::Bunny.queue(
+      [:default, ["mailer"]],
+      connection: connection,
+      amqp_url: AMQP_URL,
+      durable: false,
+      "x-max-priority": 10,
+      reuse_connection: true,
+      bogus: 1
+    )
+  end
+
+  def test_deprecated_queue_method_does_not_create_a_missing_queue
+    name = missing_queue_name
+    assert_equal 0, HireFire::Macro::Bunny.queue(name, amqp_url: AMQP_URL, durable: true)
+
+    connection = ::Bunny.new(AMQP_URL).tap(&:start)
+    refute connection.queue_exists?(name)
+  ensure
+    connection&.close
+  end
+
+  def test_deprecated_queue_method_without_queue_names_raises
+    assert_raises HireFire::Errors::MissingQueueError do
+      HireFire::Macro::Bunny.queue(amqp_url: AMQP_URL)
     end
   end
 
@@ -464,11 +506,16 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   end
 
   def assert_size(expected, *queues, **kwargs)
+    assert_eventually(expected) do
+      HireFire::Macro::Bunny.job_queue_size(*queues, **kwargs).tap { |seen| assert_integer_count seen }
+    end
+  end
+
+  def assert_eventually(expected)
     deadline = Time.now + 2
     seen = nil
     while Time.now < deadline
-      seen = HireFire::Macro::Bunny.job_queue_size(*queues, **kwargs)
-      assert_integer_count seen
+      seen = yield
       return if seen == expected
       sleep 0.02
     end

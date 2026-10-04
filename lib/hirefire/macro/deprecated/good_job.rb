@@ -1,17 +1,11 @@
 # frozen_string_literal: true
 
-require_relative "../helpers/good_job"
-
 module HireFire
   module Macro
     module Deprecated
       module GoodJob
-        include HireFire::Macro::Helpers::GoodJob
-
         def queue(*queues)
-          scope = good_job_class.only_scheduled.unfinished
-          scope = scope.where(queue_name: queues) if queues.any?
-          scope.count
+          job_queue_size(*queues)
         end
       end
     end

@@ -271,6 +271,23 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default)
   end
 
+  def test_deprecated_queue_returns_what_job_queue_size_returns_for_each_call_shape
+    BasicJob.perform_later
+    BasicJob.set(queue: :mailer, wait_until: 1.minute.ago).perform_later
+    BasicJob.set(queue: :mailer, wait_until: 1.minute.from_now).perform_later
+    running_id = BasicJob.set(queue: :other).perform_later.job_id
+    finished_id = BasicJob.perform_later.job_id
+    mark_running(running_id, at: Time.now)
+    good_job_class.where(active_job_id: finished_id).update_all(performed_at: 1.minute.ago, finished_at: Time.now)
+    macro = HireFire::Macro::GoodJob
+
+    assert_equal 3, macro.queue
+    assert_equal macro.job_queue_size, macro.queue
+    assert_equal macro.job_queue_size(:default), macro.queue(:default)
+    assert_equal macro.job_queue_size(:mailer), macro.queue("mailer")
+    assert_equal macro.job_queue_size(:default, :other), macro.queue(:default, :other)
+  end
+
   def test_job_queue_working_idle_is_zero
     working = HireFire::Macro::GoodJob.job_queue_working
     assert_integer_count working

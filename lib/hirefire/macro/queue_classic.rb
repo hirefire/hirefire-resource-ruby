@@ -14,6 +14,16 @@ module HireFire
       extend HireFire::Plan::Hooks
       extend self
 
+      PLAN_OPTION_SCHEMA = {
+        "jqs" => {
+          "skip_working" => :boolean
+        }.freeze
+      }.freeze
+
+      def plan_options(strategy, options)
+        extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
+      end
+
       def job_queue_latency(*queues)
         with_connection do |connection|
           queues = normalize_queues(queues, allow_empty: true)
@@ -31,13 +41,13 @@ module HireFire
         end
       end
 
-      def job_queue_size(*queues)
+      def job_queue_size(*queues, skip_working: false)
         with_connection do |connection|
           queues = normalize_queues(queues, allow_empty: true)
           query = <<~SQL
             SELECT COUNT(*) FROM #{::QC.table_name}
             WHERE scheduled_at <= now()
-              AND locked_at IS NULL
+            #{"AND locked_at IS NULL" if skip_working}
             #{filter_by_queues_if_any(queues, style: connection ? :ar : :dollar)}
           SQL
           result = query_one(connection, query, queues.to_a)

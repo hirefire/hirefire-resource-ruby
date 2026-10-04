@@ -90,32 +90,53 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_equal 1, HireFire::Macro::QC.job_queue_size
   end
 
-  def test_job_queue_size_excludes_locked_jobs
+  def test_job_queue_size_counts_locked_jobs_by_default
     queue = QC::Queue.new("default")
     queue.enqueue("BasicJob.perform")
     locked = queue.lock
     refute_nil locked
     assert_equal 1, queue.count_ready
 
-    assert_equal 0, HireFire::Macro::QC.job_queue_size
-    assert_equal 0, HireFire::Macro::QC.job_queue_size(:default)
+    assert_equal 1, HireFire::Macro::QC.job_queue_size
+    assert_equal 1, HireFire::Macro::QC.job_queue_size(:default)
+    assert_equal 1, HireFire::Macro::QC.job_queue_size(skip_working: false)
+    assert_equal 1, HireFire::Macro::QC.job_queue_size(skip_working: nil)
   end
 
-  def test_job_queue_size_counts_due_unlocked_only_with_locked_and_future_present
+  def test_job_queue_size_skip_working_leaves_locked_jobs_out
+    queue = QC::Queue.new("default")
+    queue.enqueue("BasicJob.perform")
+    refute_nil queue.lock
+
+    assert_equal 0, HireFire::Macro::QC.job_queue_size(skip_working: true)
+    assert_equal 0, HireFire::Macro::QC.job_queue_size(:default, skip_working: true)
+  end
+
+  def test_job_queue_size_with_waiting_due_future_running_and_locked_future_jobs
     QC::Queue.new("default").enqueue("BasicJob.perform")
-    QC::Queue.new("mailer").enqueue("BasicJob.perform")
+    QC::Queue.new("mailer").enqueue_at(1.minute.ago.to_i, "BasicJob.perform")
     QC::Queue.new("default").enqueue_at(1.minute.from_now.to_i, "BasicJob.perform")
     other = QC::Queue.new("other")
     other.enqueue("BasicJob.perform")
-    locked = other.lock
-    refute_nil locked
-    assert_equal 1, other.count_ready
+    refute_nil other.lock
+    other.enqueue_at(1.minute.from_now.to_i, "BasicJob.perform")
+    other.conn_adapter.execute(
+      "UPDATE #{::QC.table_name} SET locked_at = now() WHERE q_name = 'other' AND scheduled_at > now()"
+    )
 
-    assert_equal 2, HireFire::Macro::QC.job_queue_size
+    assert_equal 3, HireFire::Macro::QC.job_queue_size
     assert_equal 1, HireFire::Macro::QC.job_queue_size(:default)
     assert_equal 1, HireFire::Macro::QC.job_queue_size(:mailer)
-    assert_equal 0, HireFire::Macro::QC.job_queue_size(:other)
+    assert_equal 1, HireFire::Macro::QC.job_queue_size(:other)
     assert_equal 2, HireFire::Macro::QC.job_queue_size(:default, :mailer)
+
+    assert_equal 2, HireFire::Macro::QC.job_queue_size(skip_working: true)
+    assert_equal 1, HireFire::Macro::QC.job_queue_size(:default, skip_working: true)
+    assert_equal 1, HireFire::Macro::QC.job_queue_size(:mailer, skip_working: true)
+    assert_equal 0, HireFire::Macro::QC.job_queue_size(:other, skip_working: true)
+    assert_equal 2, HireFire::Macro::QC.job_queue_size(:default, :mailer, skip_working: true)
+
+    assert_equal 2, HireFire::Macro::QC.job_queue_working(:other)
   end
 
   def test_job_queue_size_with_comma_in_queue_name
@@ -133,7 +154,7 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_equal 1, HireFire::Macro::QC.queue
   end
 
-  def test_deprecated_queue_method_excludes_locked_and_future
+  def test_deprecated_queue_method_counts_locked_and_excludes_future
     queue = QC::Queue.new("default")
     queue.enqueue("BasicJob.perform")
     queue.enqueue_at(1.minute.from_now.to_i, "BasicJob.perform")
@@ -142,7 +163,7 @@ class HireFire::Macro::QCTest < Minitest::Test
     refute_nil locked
     assert_equal 2, queue.count_ready
 
-    assert_equal 1, HireFire::Macro::QC.queue
+    assert_equal 2, HireFire::Macro::QC.queue
   end
 
   def test_job_queue_working_idle_is_zero
@@ -179,7 +200,8 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_equal 0, HireFire::Macro::QC.job_queue_working(:default)
     assert_equal 1, HireFire::Macro::QC.job_queue_working(:other)
     assert_equal 1, HireFire::Macro::QC.job_queue_size(:default)
-    assert_equal 0, HireFire::Macro::QC.job_queue_size(:other)
+    assert_equal 1, HireFire::Macro::QC.job_queue_size(:other)
+    assert_equal 0, HireFire::Macro::QC.job_queue_size(:other, skip_working: true)
   end
 
   def test_plan_execute_queue_classic_jqs_also_samples_wrk
@@ -212,6 +234,30 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_equal HireFire::Macro::QC.job_queue_working(:default), wrk_value
     assert_equal HireFire::Macro::QC.job_queue_size(:default), jqs_value
     assert_operator wrk_value, :>, 0
+    assert_equal jqs_value, HireFire::Macro::QC.job_queue_size(:default, skip_working: true) + wrk_value
+  end
+
+  def test_plan_execute_skip_working_true_leaves_running_jobs_out_and_still_records_wrk
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    queue = QC::Queue.new("default")
+    queue.enqueue("BasicJob.perform")
+    refute_nil queue.lock
+    queue.enqueue("BasicJob.perform")
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "queue_classic",
+      "strategy" => "jqs",
+      "queues" => ["default"],
+      "options" => {"skip_working" => true}
+    )
+
+    flushed = buffer.flush
+    assert_equal 1, flushed.dig("worker", "jqs")&.values&.last
+    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
   end
 
   def test_plan_execute_queue_classic_jql_also_samples_wrk

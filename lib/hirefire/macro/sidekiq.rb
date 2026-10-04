@@ -67,14 +67,16 @@ module HireFire
         end
 
         def working_size(queues)
+          return ::Sidekiq::Workers.new.size if queues.empty?
+
           now = Time.now
           now_as_i = now.to_i
 
           DueCache.working_jobs.count do |job|
             if job.is_a?(Hash)
-              (queues.empty? || queues.include?(job["queue"])) && job["run_at"] <= now_as_i
+              queues.include?(job["queue"]) && job["run_at"] <= now_as_i
             else
-              (queues.empty? || queues.include?(job.queue)) && job.run_at <= now
+              queues.include?(job.queue) && job.run_at <= now
             end
           end
         end
@@ -290,8 +292,7 @@ module HireFire
 
         private
 
-        def client_lookup(queues, skip_retries: false, skip_scheduled: false, skip_working: true, max_scheduled: nil)
-          skip_working = true if skip_working.nil?
+        def client_lookup(queues, skip_retries: false, skip_scheduled: false, skip_working: false, max_scheduled: nil)
           size = enqueued_size(queues)
           size += scheduled_size(queues, max_scheduled) unless skip_scheduled
           size += retry_size(queues) unless skip_retries
@@ -317,8 +318,7 @@ module HireFire
           DueCache.size("retry", queues)
         end
 
-        def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: true, max_scheduled: nil)
-          skip_working = true if skip_working.nil?
+        def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: false, max_scheduled: nil)
           max_scheduled = max_scheduled.nil? ? -1 : [max_scheduled.to_i, 0].max
           ::Sidekiq.redis do |connection|
             now = Time.now.to_f

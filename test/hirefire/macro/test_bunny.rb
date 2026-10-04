@@ -93,11 +93,85 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     connection&.close
   end
 
-  def test_job_queue_size_with_missing_queue_raises_not_found
-    queue_name = "missing_#{rand(1_000_000)}"
-    assert_raises Bunny::NotFound do
-      HireFire::Macro::Bunny.job_queue_size(queue_name, amqp_url: AMQP_URL)
+  def test_job_queue_size_counts_a_missing_queue_as_zero
+    size = HireFire::Macro::Bunny.job_queue_size(missing_queue_name, amqp_url: AMQP_URL)
+    assert_integer_count size
+    assert_equal 0, size
+  end
+
+  def test_job_queue_size_counts_existing_queues_around_a_missing_one
+    with_connection(queue: :before_missing) do |_connection, channel, before|
+      with_connection(queue: :after_missing) do |_connection, after_channel, after|
+        publish_confirmed(channel, before)
+        publish_confirmed(after_channel, after)
+        assert_size 2, :before_missing, missing_queue_name, :after_missing, amqp_url: AMQP_URL
+      end
     end
+  end
+
+  def test_missing_queue_reopens_the_channel_for_the_next_queue
+    first = mock("first-channel")
+    second = mock("second-channel")
+    existing = mock("queue")
+    existing.stubs(:message_count).returns(3)
+    first.expects(:queue).with("missing", passive: true).raises(::Bunny::NotFound.new("NOT_FOUND", first, nil))
+    first.expects(:close).never
+    second.expects(:queue).with("default", passive: true).returns(existing)
+    second.expects(:close).once
+    connection = mock("connection")
+    connection.expects(:create_channel).twice.returns(first, second)
+    connection.expects(:close).never
+
+    assert_equal 3, HireFire::Macro::Bunny.job_queue_size(:missing, :default, connection: connection)
+  end
+
+  def test_missing_queue_as_the_last_queue_opens_no_second_channel
+    channel = mock("channel")
+    existing = mock("queue")
+    existing.stubs(:message_count).returns(3)
+    channel.expects(:queue).with("default", passive: true).returns(existing)
+    channel.expects(:queue).with("missing", passive: true).raises(::Bunny::NotFound.new("NOT_FOUND", channel, nil))
+    channel.expects(:close).never
+    connection = mock("connection")
+    connection.expects(:create_channel).once.returns(channel)
+
+    assert_equal 3, HireFire::Macro::Bunny.job_queue_size(:default, :missing, connection: connection)
+  end
+
+  def test_missing_queue_warning_is_logged_once_per_queue
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    first = missing_queue_name
+    second = missing_queue_name
+
+    2.times { HireFire::Macro::Bunny.job_queue_size(first, amqp_url: AMQP_URL) }
+    HireFire::Macro::Bunny.job_queue_size(first, second, amqp_url: AMQP_URL)
+
+    assert_equal 1, log.string.scan(first.inspect).size
+    assert_equal 1, log.string.scan(second.inspect).size
+    assert_includes log.string, "does not exist. It counts as 0 messages."
+  end
+
+  def test_plan_execute_records_zero_for_a_missing_queue
+    HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "bunny",
+      "strategy" => "jqs",
+      "queues" => [missing_queue_name],
+      "options" => {}
+    )
+
+    reused = HireFire::Macro::Bunny.instance_variable_get(:@reused_connection)
+    assert reused&.open?, "a missing queue must not drop the reused connection"
+    assert_equal 0, buffer.flush.dig("worker", "jqs")&.values&.last
+  ensure
+    old = HireFire::Macro::Bunny.instance_variable_get(:@reused_connection)
+    HireFire::Macro::Bunny.send(:close_connection, old) if old
+    HireFire::Macro::Bunny.reinit_after_fork
   end
 
   def test_forked_child_drops_reused_connection_without_closing_parent
@@ -178,23 +252,24 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     connection&.close
   end
 
-  def test_reused_connection_survives_missing_queue_error
+  def test_provided_connection_survives_a_missing_queue
     connection = ::Bunny.new(AMQP_URL).tap(&:start)
 
-    assert_raises ::Bunny::NotFound do
-      HireFire::Macro::Bunny.job_queue_size("missing_#{rand(1_000_000)}", connection: connection)
+    2.times do
+      assert_equal 0, HireFire::Macro::Bunny.job_queue_size(missing_queue_name, connection: connection)
     end
 
-    assert connection.open?, "a channel-level 404 must not close a reused connection"
+    assert connection.open?, "a channel-level 404 must not close a provided connection"
   ensure
     connection&.close
   end
 
   def test_connection_close_failure_does_not_mask_body_error
     ::Bunny::Session.any_instance.stubs(:close).raises(::Bunny::Exception.new("close boom"))
-    queue_name = "missing_#{rand(1_000_000)}"
-    assert_raises ::Bunny::NotFound do
-      HireFire::Macro::Bunny.job_queue_size(queue_name, amqp_url: AMQP_URL)
+    ::Bunny::Channel.any_instance.stubs(:queue).raises(::Bunny::AccessRefused.new("ACCESS_REFUSED", nil, nil))
+
+    assert_raises ::Bunny::AccessRefused do
+      HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: AMQP_URL)
     end
   end
 
@@ -323,6 +398,10 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   end
 
   private
+
+  def missing_queue_name
+    "missing_#{rand(1_000_000_000)}"
+  end
 
   def expect_bunny_connection(url)
     fake = mock("bunny-#{url}")

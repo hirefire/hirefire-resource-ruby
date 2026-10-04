@@ -48,8 +48,14 @@ module HireFire
         channel = nil
 
         begin
-          channel = open_channel(connection, close_connection_on_failure: owned_connection)
-          queues.sum { |name| channel.queue(name, passive: true).message_count }
+          queues.sum do |name|
+            channel ||= open_channel(connection, close_connection_on_failure: owned_connection)
+            channel.queue(name, passive: true).message_count
+          rescue ::Bunny::NotFound
+            warn_missing_queue_once(name)
+            channel = nil
+            0
+          end
         rescue
           discard_reused_connection(connection) if using_reused
           raise
@@ -66,8 +72,19 @@ module HireFire
         write_timeout: 5,
         automatically_recover: false
       }.freeze
+      MISSING_QUEUE_WARN_LIMIT = 256
 
       private
+
+      def warn_missing_queue_once(name)
+        @missing_queue_warned ||= {}
+        return if @missing_queue_warned[name]
+
+        @missing_queue_warned.shift while @missing_queue_warned.size >= MISSING_QUEUE_WARN_LIMIT
+        @missing_queue_warned[name] = true
+        HireFire::Log.safe(HireFire.configuration.logger, :warn,
+          "[HireFire] RabbitMQ queue #{name.inspect} does not exist. It counts as 0 messages.")
+      end
 
       def presence(value)
         return if value.nil?

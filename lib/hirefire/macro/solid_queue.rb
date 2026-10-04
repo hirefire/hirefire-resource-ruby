@@ -14,6 +14,16 @@ module HireFire
 
       REGISTERED_QUEUE_TTL = 60.0
 
+      PLAN_OPTION_SCHEMA = {
+        "jqs" => {
+          "skip_working" => :boolean
+        }.freeze
+      }.freeze
+
+      def plan_options(strategy, options)
+        extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
+      end
+
       LATENCY_METHODS = [
         :ready_latency,
         :scheduled_latency
@@ -34,13 +44,15 @@ module HireFire
         :scheduled_size
       ].freeze
 
-      def job_queue_size(*queues)
+      def job_queue_size(*queues, skip_working: false)
         with_connection do
           queues = determine_queues(queues)
 
-          SIZE_METHODS.sum do |count_method|
+          size = SIZE_METHODS.sum do |count_method|
             method(count_method).call(queues)
           end
+
+          skip_working ? size : size + claimed_size(queues)
         end
       end
 

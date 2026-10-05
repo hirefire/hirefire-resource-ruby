@@ -1,6 +1,6 @@
 test:
   adapter: postgresql
-  host: localhost
+  host: 127.0.0.1
   port: <%= ENV.fetch("POSTGRES_PORT", 5433) %>
   database: rails_queue_classic_4_test_database
   username: <%= ENV.fetch("POSTGRES_USER", "postgres") %>

@@ -5,7 +5,7 @@ require "test_helper"
 class HireFire::Macro::ResqueTest < Minitest::Test
   def setup
     super
-    Resque.redis = Redis.new(port: ENV.fetch("REDIS_PORT", 6379).to_i, db: 0).tap(&:flushdb)
+    Resque.redis = Redis.new(host: "127.0.0.1", port: ENV.fetch("REDIS_PORT", 6379).to_i, db: 0).tap(&:flushdb)
   end
 
   def teardown

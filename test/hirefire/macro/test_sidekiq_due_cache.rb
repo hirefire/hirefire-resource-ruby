@@ -4,7 +4,7 @@ require "test_helper"
 require "securerandom"
 require "timeout"
 
-ENV["REDIS_URL"] ||= "redis://localhost:#{ENV.fetch("REDIS_PORT", 6379)}/0"
+ENV["REDIS_URL"] ||= "redis://127.0.0.1:#{ENV.fetch("REDIS_PORT", 6379)}/0"
 
 require "sidekiq/api"
 

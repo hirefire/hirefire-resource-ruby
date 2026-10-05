@@ -4,7 +4,7 @@ require "test_helper"
 require "timeout"
 require "socket"
 
-ENV["AMQP_URL"] ||= "amqp://guest:guest@localhost:#{ENV.fetch("RABBITMQ_PORT", 5672)}"
+ENV["AMQP_URL"] ||= "amqp://guest:guest@127.0.0.1:#{ENV.fetch("RABBITMQ_PORT", 5672)}"
 
 class HireFire::Macro::BunnyTest < Minitest::Test
   AMQP_URL = ENV.fetch("AMQP_URL")

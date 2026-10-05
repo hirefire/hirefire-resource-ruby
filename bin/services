@@ -31,14 +31,14 @@ up() {
   fi
 
   if [ "$started" -eq 1 ] || [ ! -f .env ]; then
-    printf 'POSTGRES_PORT=%s\nMONGODB_PORT=%s\nREDIS_PORT=%s\nRABBITMQ_PORT=%s\nREDIS_URL=redis://localhost:%s/0\nAMQP_URL=amqp://guest:guest@localhost:%s\n' \
+    printf 'POSTGRES_PORT=%s\nMONGODB_PORT=%s\nREDIS_PORT=%s\nRABBITMQ_PORT=%s\nREDIS_URL=redis://127.0.0.1:%s/0\nAMQP_URL=amqp://guest:guest@127.0.0.1:%s\n' \
       "$postgres_port" "$mongodb_port" "$redis_port" "$rabbitmq_port" "$redis_port" "$rabbitmq_port" > .env
   fi
 
-  echo "PostgreSQL -> localhost:${postgres_port}"
-  echo "MongoDB    -> localhost:${mongodb_port}"
-  echo "Redis      -> localhost:${redis_port}"
-  echo "RabbitMQ   -> localhost:${rabbitmq_port}"
+  echo "PostgreSQL -> 127.0.0.1:${postgres_port}"
+  echo "MongoDB    -> 127.0.0.1:${mongodb_port}"
+  echo "Redis      -> 127.0.0.1:${redis_port}"
+  echo "RabbitMQ   -> 127.0.0.1:${rabbitmq_port}"
 }
 
 down() {

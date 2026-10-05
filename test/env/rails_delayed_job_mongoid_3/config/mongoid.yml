@@ -3,4 +3,4 @@ test:
     default:
       database: mongoid
       hosts:
-        - localhost:<%= ENV.fetch("MONGODB_PORT", 27017) %>
+        - 127.0.0.1:<%= ENV.fetch("MONGODB_PORT", 27017) %>

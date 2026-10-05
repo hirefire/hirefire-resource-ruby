@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `HireFire.boot` starts metric collection when a token is set. `HireFire.reset` stops the dispatcher and clears configuration.
 - `config.token` can set the HireFire token in code. 1.x read only `HIREFIRE_TOKEN`.
 - `HIREFIRE_SERVICE_NAME` sets the process name only on platforms that do not detect it automatically. On Heroku, `DYNO` is used.
-- `job_queue_working` reports how many jobs are currently in progress for Sidekiq, Solid Queue, Delayed Job, Que, Good Job, and Queue Classic.
+- `job_queue_working` reports how many jobs are currently in progress for Sidekiq, Solid Queue, Resque, Delayed Job, Que, Good Job, and Queue Classic.
 - Support Ruby 4.0.
 - Support Sinatra 4 and Hanami 3.
 - Support Resque 3 and Bunny 3.
@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Breaking: Good Job `job_queue_size` now includes running jobs. 1.x counted waiting jobs only.
 - Breaking: job queue latency for Delayed Job, Que, and Queue Classic measures waiting jobs only, as it does for Sidekiq. 1.x also measured jobs that were already running.
 - Solid Queue blocked executions are no longer included in size or latency.
+- Resque `job_queue_size` no longer counts the job of a worker whose heartbeat has expired. 1.x counted it until Resque removed the worker.
 - Breaking: the deprecated `.queue` methods are aliases of `job_queue_size`, and the deprecated Sidekiq `.latency` is an alias of `job_queue_latency`. They accept the same arguments and options as on 1.x, so existing calls keep working. Resque `.queue` also counts delayed jobs that are due. Queue Classic `.queue` counts due jobs only, where 1.x counted every job in the queue. Sidekiq `.latency` also measures scheduled and retry jobs that are due. Bunny `.queue` no longer creates a missing queue, which counts as 0, `durable` and `x-max-priority` have no effect, and a call with no queue names raises. Delayed Job `.queue` detects the mapper, so `mapper` has no effect, and an explicit `nil` priority bound means no bound. Resque `.queue` with no queue names counts every worker's job. Sidekiq `.queue` and Resque `.queue` raise when a due walk exceeds its budget.
 - Bunny `job_queue_size` counts a queue that does not exist as 0 and logs a warning once, where it raised.
 - Sidekiq `job_queue_latency` returns a Float. 1.x truncated live-queue latency to an Integer.

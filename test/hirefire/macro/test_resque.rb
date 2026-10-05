@@ -33,8 +33,37 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     refute HireFire::Macro::Resque.supports_plan_strategy?("rpm")
   end
 
-  def test_does_not_define_job_queue_working
-    refute HireFire::Macro::Resque.respond_to?(:job_queue_working)
+  def test_job_queue_working_without_jobs
+    working = HireFire::Macro::Resque.job_queue_working
+    assert_integer_count working
+    assert_equal 0, working
+    assert_equal 0, HireFire::Macro::Resque.job_queue_working(:default)
+  end
+
+  def test_job_queue_working_counts_the_jobs_workers_hold
+    Resque.enqueue_to(:default, BasicJob)
+    enqueue_to_working_with_queue :default, BasicJob
+    enqueue_to_working_with_queue :default, BasicJob
+    enqueue_to_working_with_queue :mailer, BasicJob
+
+    assert_equal 3, HireFire::Macro::Resque.job_queue_working
+    assert_equal 2, HireFire::Macro::Resque.job_queue_working(:default)
+    assert_equal 1, HireFire::Macro::Resque.job_queue_working("mailer")
+    assert_equal 3, HireFire::Macro::Resque.job_queue_working([:default, ["mailer"]])
+    assert_equal 0, HireFire::Macro::Resque.job_queue_working(:other)
+  end
+
+  def test_job_queue_working_is_what_job_queue_size_adds
+    Resque.enqueue_to(:default, BasicJob)
+    enqueue_to_working_with_queue :default, BasicJob
+    enqueue_to_working_with_queue :mailer, BasicJob
+    macro = HireFire::Macro::Resque
+
+    [[], [:default], [:mailer], [:default, :mailer]].each do |queues|
+      added = macro.job_queue_size(*queues) - macro.job_queue_size(*queues, skip_working: true)
+      assert_equal added, macro.job_queue_working(*queues)
+    end
+    assert_equal 2, macro.job_queue_working
   end
 
   def test_job_queue_size_without_jobs
@@ -147,7 +176,7 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     end
   end
 
-  def test_plan_execute_resque_jqs_counts_working_jobs_and_records_no_wrk
+  def test_plan_execute_resque_jqs_counts_working_jobs_and_records_wrk
     HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
     buffer = HireFire.configuration.buffer
     buffer.flush
@@ -164,10 +193,10 @@ class HireFire::Macro::ResqueTest < Minitest::Test
 
     flushed = buffer.flush
     assert_equal 2, flushed.dig("worker", "jqs")&.values&.last
-    refute flushed.dig("worker", "wrk")
+    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
   end
 
-  def test_plan_execute_skip_working_true_leaves_working_jobs_out
+  def test_plan_execute_skip_working_true_leaves_working_jobs_out_and_records_wrk
     HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
     buffer = HireFire.configuration.buffer
     buffer.flush
@@ -184,7 +213,7 @@ class HireFire::Macro::ResqueTest < Minitest::Test
 
     flushed = buffer.flush
     assert_equal 1, flushed.dig("worker", "jqs")&.values&.last
-    refute flushed.dig("worker", "wrk")
+    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
   end
 
   def test_job_queue_size_with_scheduled_jobs

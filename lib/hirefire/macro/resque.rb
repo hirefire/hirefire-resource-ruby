@@ -43,6 +43,10 @@ module HireFire
         skip_working ? size : size + working_size(queues)
       end
 
+      def job_queue_working(*queues)
+        working_size(normalize_queues(queues, allow_empty: true))
+      end
+
       private
 
       def enqueued_size(queues)

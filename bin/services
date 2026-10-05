@@ -2,6 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+compose() {
+  docker compose -p "$(bin/worktree compose-project)" "$@"
+}
+
 require_docker() {
   if ! command -v docker >/dev/null 2>&1; then
     echo "Docker is required: https://www.docker.com/products/docker-desktop/" >&2
@@ -12,18 +16,18 @@ require_docker() {
 up() {
   require_docker
 
-  if [ -z "$(docker compose ps --status running --quiet)" ]; then
-    docker compose up -d --wait
+  if [ -z "$(compose ps --status running --quiet)" ]; then
+    compose up -d --wait
     started=1
   else
     echo "Already up."
     started=0
   fi
 
-  postgres_port="$(docker compose port postgres 5432 | cut -d: -f2)"
-  mongodb_port="$(docker compose port mongodb 27017 | cut -d: -f2)"
-  redis_port="$(docker compose port redis 6379 | cut -d: -f2)"
-  rabbitmq_port="$(docker compose port rabbitmq 5672 | cut -d: -f2)"
+  postgres_port="$(compose port postgres 5432 | cut -d: -f2)"
+  mongodb_port="$(compose port mongodb 27017 | cut -d: -f2)"
+  redis_port="$(compose port redis 6379 | cut -d: -f2)"
+  rabbitmq_port="$(compose port rabbitmq 5672 | cut -d: -f2)"
 
   if [ -z "$postgres_port" ] || [ -z "$mongodb_port" ] || [ -z "$redis_port" ] || [ -z "$rabbitmq_port" ]; then
     echo "Could not determine the published ports." >&2
@@ -42,8 +46,8 @@ up() {
 }
 
 down() {
-  if command -v docker >/dev/null 2>&1 && [ -n "$(docker compose ps --all --quiet)" ]; then
-    docker compose down
+  if command -v docker >/dev/null 2>&1 && [ -n "$(compose ps --all --quiet)" ]; then
+    compose down
   else
     echo "Already down."
   fi
@@ -54,9 +58,9 @@ down() {
 case "${1:-}" in
   up) up ;;
   down) down ;;
-  status) require_docker; docker compose ps ;;
+  status) require_docker; compose ps ;;
   restart) down; up ;;
-  logs) require_docker; docker compose logs -f "${@:2}" ;;
+  logs) require_docker; compose logs -f "${@:2}" ;;
   *)
     echo "usage: bin/services {up|down|status|restart|logs}" >&2
     exit 1

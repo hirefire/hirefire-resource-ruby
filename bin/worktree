@@ -1,0 +1,27 @@
+#!/usr/bin/env sh
+set -eu
+cd "$(dirname "$0")/.."
+root=$(pwd -P)
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$1" | sha256sum | awk '{print $1}'
+  else
+    printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
+  fi
+}
+
+compose_project() {
+  base=$(basename "$root" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/--*/-/g; s/^-//; s/-$//')
+  [ -n "$base" ] || base="app"
+  hash=$(sha256 "$root" | cut -c1-12)
+  printf 'wt-%s-%s\n' "$base" "$hash"
+}
+
+case "${1:-}" in
+  compose-project) compose_project ;;
+  *)
+    echo "usage: bin/worktree compose-project" >&2
+    exit 1
+    ;;
+esac

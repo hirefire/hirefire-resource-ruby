@@ -57,6 +57,7 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     Resque.enqueue_to(:default, BasicJob)
     enqueue_to_working_with_queue :default, BasicJob
     enqueue_to_working_with_queue :mailer, BasicJob
+    heartbeat enqueue_to_working_with_queue(:default, BasicJob), Resque.prune_interval + 60
     macro = HireFire::Macro::Resque
 
     [[], [:default], [:mailer], [:default, :mailer]].each do |queues|
@@ -64,6 +65,69 @@ class HireFire::Macro::ResqueTest < Minitest::Test
       assert_equal added, macro.job_queue_working(*queues)
     end
     assert_equal 2, macro.job_queue_working
+  end
+
+  def test_working_leaves_out_a_worker_whose_heartbeat_has_expired
+    heartbeat enqueue_to_working_with_queue(:default, BasicJob), Resque.prune_interval + 60
+    enqueue_to_working_with_queue :default, BasicJob
+
+    assert_equal 1, HireFire::Macro::Resque.job_queue_working
+    assert_equal 1, HireFire::Macro::Resque.job_queue_working(:default)
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
+    assert_equal 1, HireFire::Macro::Resque.queue(:default)
+  end
+
+  def test_working_counts_a_worker_with_a_fresh_heartbeat
+    heartbeat enqueue_to_working_with_queue(:default, BasicJob), 30
+
+    assert_equal 1, HireFire::Macro::Resque.job_queue_working
+    assert_equal 1, HireFire::Macro::Resque.job_queue_size(:default)
+  end
+
+  def test_working_counts_a_worker_without_a_heartbeat
+    heartbeat enqueue_to_working_with_queue(:mailer, BasicJob), 30
+    enqueue_to_working_with_queue :default, BasicJob
+
+    assert_equal 1, HireFire::Macro::Resque.job_queue_working(:default)
+    assert_equal 2, HireFire::Macro::Resque.job_queue_working
+  end
+
+  def test_working_counts_a_worker_whose_heartbeat_cannot_be_read
+    worker = enqueue_to_working_with_queue :default, BasicJob
+    Resque.redis.hset("workers:heartbeat", worker, "not-a-time")
+
+    assert_equal 1, HireFire::Macro::Resque.job_queue_working
+  end
+
+  def test_working_follows_the_resque_prune_interval
+    heartbeat enqueue_to_working_with_queue(:default, BasicJob), 120
+    assert_equal 1, HireFire::Macro::Resque.job_queue_working
+
+    original = Resque.prune_interval
+    Resque.prune_interval = 60
+    assert_equal 0, HireFire::Macro::Resque.job_queue_working
+  ensure
+    Resque.prune_interval = original if original
+  end
+
+  def test_working_leaves_out_the_workers_resque_itself_treats_as_dead
+    job = {"class" => "BasicJob", "args" => []}
+    alive = Resque::Worker.new(:default)
+    dead = Resque::Worker.new(:mailer)
+    silent = Resque::Worker.new(:other)
+    [alive, dead, silent].each do |worker|
+      worker.register_worker
+      worker.working_on(Resque::Job.new(worker.queues.first, job))
+    end
+    alive.heartbeat!
+    dead.heartbeat!(Resque.data_store.server_time - Resque.prune_interval - 60)
+
+    assert_equal [dead.to_s], Resque::Worker.all_workers_with_expired_heartbeats.map(&:to_s)
+    assert_equal 2, HireFire::Macro::Resque.job_queue_working
+    assert_equal 1, HireFire::Macro::Resque.job_queue_working(:default)
+    assert_equal 0, HireFire::Macro::Resque.job_queue_working(:mailer)
+    assert_equal 1, HireFire::Macro::Resque.job_queue_working(:other)
   end
 
   def test_job_queue_size_without_jobs
@@ -391,6 +455,10 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     def self.perform
       raise ExpectedError
     end
+  end
+
+  def heartbeat(worker, seconds_ago)
+    Resque.redis.hset("workers:heartbeat", worker, (Resque.data_store.server_time - seconds_ago).iso8601)
   end
 
   def enqueue_to_working_with_queue(queue, job)

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "time"
 require_relative "../plan/hooks"
 require_relative "../plan/size_only"
 require_relative "../utility"
@@ -126,7 +127,7 @@ module HireFire
         jobs_seen = 0
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-        ::Resque.redis.smembers(:workers).each_slice(WALK_BATCH) do |ids|
+        live_worker_ids.each_slice(WALK_BATCH) do |ids|
           encoded_jobs = ::Resque.redis.pipelined do |pipeline|
             ids.each do |id|
               pipeline.get("worker:#{id}")
@@ -146,6 +147,27 @@ module HireFire
         end
 
         total_size
+      end
+
+      def live_worker_ids
+        ids, heartbeats, server_time = ::Resque.redis.pipelined do |pipeline|
+          pipeline.smembers(:workers)
+          pipeline.hgetall("workers:heartbeat")
+          pipeline.time
+        end
+        now = Time.at(server_time.first.to_i)
+
+        ids.reject do |id|
+          heartbeat_expired?(heartbeats[id], now)
+        end
+      end
+
+      def heartbeat_expired?(heartbeat, now)
+        return false unless heartbeat
+
+        (now - Time.parse(heartbeat)).to_i > ::Resque.prune_interval
+      rescue ArgumentError
+        false
       end
 
       def raise_if_walk_budget_exceeded!(walk, jobs_seen, started)

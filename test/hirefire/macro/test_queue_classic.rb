@@ -215,7 +215,7 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_equal 0, HireFire::Macro::QC.job_queue_size(:other, skip_working: true)
   end
 
-  def test_plan_execute_queue_classic_jqs_also_samples_wrk
+  def test_plan_execute_queue_classic_jqs_counts_running_jobs_and_samples_no_wrk
     HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
     buffer = HireFire.configuration.buffer
     buffer.flush
@@ -236,16 +236,14 @@ class HireFire::Macro::QCTest < Minitest::Test
     flushed = buffer.flush
     assert flushed["worker"], "plan must buffer under process name"
     assert flushed["worker"]["jqs"], "plan must sample jqs"
-    assert flushed["worker"]["wrk"], "plan must sample wrk companion"
+    assert_nil flushed["worker"]["wrk"], "plan must sample no wrk when the size holds the running jobs"
 
     jqs_value = flushed["worker"]["jqs"].values.last
-    wrk_value = flushed["worker"]["wrk"].values.last
+    working = HireFire::Macro::QC.job_queue_working(:default)
     assert_kind_of Numeric, jqs_value
-    assert_kind_of Numeric, wrk_value
-    assert_equal HireFire::Macro::QC.job_queue_working(:default), wrk_value
     assert_equal HireFire::Macro::QC.job_queue_size(:default), jqs_value
-    assert_operator wrk_value, :>, 0
-    assert_equal jqs_value, HireFire::Macro::QC.job_queue_size(:default, skip_working: true) + wrk_value
+    assert_operator working, :>, 0
+    assert_equal jqs_value, HireFire::Macro::QC.job_queue_size(:default, skip_working: true) + working
   end
 
   def test_plan_execute_skip_working_true_leaves_running_jobs_out_and_still_records_wrk
@@ -310,7 +308,7 @@ class HireFire::Macro::QCTest < Minitest::Test
       "adapter" => "queue_classic",
       "strategy" => "jqs",
       "queues" => [],
-      "options" => {}
+      "options" => {"skip_working" => true}
     )
 
     flushed = buffer.flush

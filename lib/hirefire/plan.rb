@@ -157,13 +157,19 @@ module HireFire
       options = macro.plan_options(strategy, entry["options"])
         .merge(macro.plan_connection_options)
       sample_job_strategy(macro, name, strategy, method_name, queues, options, live: live)
-      sample_working(macro, name, queues, live: live) if macro.respond_to?(:job_queue_working)
+      sample_working(macro, name, queues, live: live) if sample_working?(macro, strategy, options)
     rescue => e
       Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " +
         Log.format_error(e))
     end
 
     private
+
+    def sample_working?(macro, strategy, options)
+      return false unless macro.respond_to?(:job_queue_working)
+
+      strategy == "jql" || options[:skip_working] == true
+    end
 
     def sample_job_strategy(macro, name, strategy, method_name, queues, options, live: nil)
       value = macro.public_send(method_name, *queues, **options)

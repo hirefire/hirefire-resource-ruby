@@ -499,7 +499,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_operator wrk, :>, 0
   end
 
-  def test_plan_execute_sidekiq_jqs_also_samples_wrk
+  def test_plan_execute_sidekiq_jqs_counts_running_jobs_and_samples_no_wrk
     HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
     buffer = HireFire.configuration.buffer
     buffer.flush
@@ -518,16 +518,14 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     flushed = buffer.flush
     assert flushed["worker"], "plan must buffer under process name"
     assert flushed["worker"]["jqs"], "plan must sample jqs"
-    assert flushed["worker"]["wrk"], "plan must sample wrk companion"
+    assert_nil flushed["worker"]["wrk"], "plan must sample no wrk when the size holds the running jobs"
 
     jqs_value = flushed["worker"]["jqs"].values.last
-    wrk_value = flushed["worker"]["wrk"].values.last
+    working = HireFire::Macro::Sidekiq.job_queue_working(:default)
     assert_kind_of Numeric, jqs_value
-    assert_kind_of Numeric, wrk_value
-    assert_equal HireFire::Macro::Sidekiq.job_queue_working(:default), wrk_value
     assert_equal HireFire::Macro::Sidekiq.job_queue_size(:default), jqs_value
-    assert_operator wrk_value, :>, 0
-    assert_equal jqs_value, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: true) + wrk_value
+    assert_operator working, :>, 0
+    assert_equal jqs_value, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: true) + working
   end
 
   def test_plan_execute_sidekiq_jql_records_wrk_when_primary_timestamp_is_invalid
@@ -584,7 +582,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
       "adapter" => "sidekiq",
       "strategy" => "jqs",
       "queues" => [],
-      "options" => {}
+      "options" => {"skip_working" => true}
     )
 
     flushed = buffer.flush
@@ -667,7 +665,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_working: nil)
   end
 
-  def test_plan_execute_honors_skip_working_false
+  def test_plan_execute_skip_working_false_counts_running_jobs_and_samples_no_wrk
     HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
     buffer = HireFire.configuration.buffer
     buffer.flush
@@ -684,7 +682,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
     flushed = buffer.flush
     assert_equal 2, flushed.dig("worker", "jqs")&.values&.last
-    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
+    assert_nil flushed.dig("worker", "wrk")
   end
 
   def test_plan_execute_skip_working_true_leaves_running_jobs_out_and_still_records_wrk

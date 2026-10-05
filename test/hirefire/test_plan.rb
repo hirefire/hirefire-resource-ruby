@@ -30,7 +30,7 @@ class HireFire::PlanTest < Minitest::Test
     buffer.flush
     original = HireFire::Plan::ADAPTERS
     original_checks = HireFire::Plan::LIBRARY_CHECKS
-    mod = stub_macro do |m|
+    mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| 7 }
     end
     refute mod.respond_to?(:job_queue_working)
@@ -45,7 +45,7 @@ class HireFire::PlanTest < Minitest::Test
       "adapter" => "sidekiq",
       "strategy" => "jqs",
       "queues" => ["default"],
-      "options" => {}
+      "options" => {"skip_working" => true}
     )
 
     flushed = buffer.flush
@@ -63,7 +63,7 @@ class HireFire::PlanTest < Minitest::Test
     buffer.flush
     original = HireFire::Plan::ADAPTERS
     original_checks = HireFire::Plan::LIBRARY_CHECKS
-    mod = stub_macro do |m|
+    mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| 9 }
       m.define_singleton_method(:job_queue_working) { |*_a| raise "wrk boom" }
     end
@@ -81,7 +81,7 @@ class HireFire::PlanTest < Minitest::Test
       "adapter" => "sidekiq",
       "strategy" => "jqs",
       "queues" => ["default"],
-      "options" => {}
+      "options" => {"skip_working" => true}
     )
 
     flushed = buffer.flush
@@ -101,7 +101,7 @@ class HireFire::PlanTest < Minitest::Test
     original = HireFire::Plan::ADAPTERS
     original_checks = HireFire::Plan::LIBRARY_CHECKS
     working_called = false
-    mod = stub_macro do |m|
+    mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| -1 }
       m.define_singleton_method(:job_queue_working) do |*_a|
         working_called = true
@@ -119,7 +119,7 @@ class HireFire::PlanTest < Minitest::Test
       "adapter" => "sidekiq",
       "strategy" => "jqs",
       "queues" => ["default"],
-      "options" => {}
+      "options" => {"skip_working" => true}
     )
 
     flushed = buffer.flush
@@ -139,7 +139,7 @@ class HireFire::PlanTest < Minitest::Test
     original = HireFire::Plan::ADAPTERS
     original_checks = HireFire::Plan::LIBRARY_CHECKS
     working_called = false
-    mod = stub_macro do |m|
+    mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| raise "jqs boom" }
       m.define_singleton_method(:job_queue_working) do |*_a|
         working_called = true
@@ -160,7 +160,7 @@ class HireFire::PlanTest < Minitest::Test
       "adapter" => "sidekiq",
       "strategy" => "jqs",
       "queues" => ["default"],
-      "options" => {}
+      "options" => {"skip_working" => true}
     )
 
     flushed = buffer.flush
@@ -182,7 +182,7 @@ class HireFire::PlanTest < Minitest::Test
     buffer.flush
     original = HireFire::Plan::ADAPTERS
     original_checks = HireFire::Plan::LIBRARY_CHECKS
-    mod = stub_macro do |m|
+    mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| 4 }
       m.define_singleton_method(:job_queue_working) { |*_a| -2 }
     end
@@ -197,12 +197,120 @@ class HireFire::PlanTest < Minitest::Test
       "adapter" => "sidekiq",
       "strategy" => "jqs",
       "queues" => ["default"],
-      "options" => {}
+      "options" => {"skip_working" => true}
     )
 
     flushed = buffer.flush
     assert_equal 4, flushed.dig("worker", "jqs")&.values&.last
     assert_nil flushed.dig("worker", "wrk")
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
+  end
+
+  def test_execute_samples_no_wrk_for_jqs_without_skip_working
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+    original = HireFire::Plan::ADAPTERS
+    original_checks = HireFire::Plan::LIBRARY_CHECKS
+    working_calls = 0
+    mod = stub_macro_taking_skip_working do |m|
+      m.define_singleton_method(:job_queue_size) { |*_a, **_o| 6 }
+      m.define_singleton_method(:job_queue_working) do |*_a|
+        working_calls += 1
+        2
+      end
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
+
+    [nil, {}, {"skip_working" => false}, {"skip_working" => "true"}].each do |options|
+      HireFire::Plan.execute(
+        "name" => "worker",
+        "adapter" => "sidekiq",
+        "strategy" => "jqs",
+        "queues" => ["default"],
+        "options" => options
+      )
+
+      flushed = buffer.flush
+      assert_equal 6, flushed.dig("worker", "jqs")&.values&.last
+      assert_nil flushed.dig("worker", "wrk")
+    end
+    assert_equal 0, working_calls
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
+  end
+
+  def test_execute_samples_wrk_for_jqs_with_skip_working
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+    original = HireFire::Plan::ADAPTERS
+    original_checks = HireFire::Plan::LIBRARY_CHECKS
+    mod = stub_macro_taking_skip_working do |m|
+      m.define_singleton_method(:job_queue_size) { |*_a, **_o| 6 }
+      m.define_singleton_method(:job_queue_working) { |*_a| 2 }
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
+
+    HireFire::Plan.execute(
+      "name" => "worker",
+      "adapter" => "sidekiq",
+      "strategy" => "jqs",
+      "queues" => ["default"],
+      "options" => {"skip_working" => true}
+    )
+
+    flushed = buffer.flush
+    assert_equal 6, flushed.dig("worker", "jqs")&.values&.last
+    assert_equal 2, flushed.dig("worker", "wrk")&.values&.last
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
+  end
+
+  def test_execute_samples_wrk_for_every_jql_entry
+    buffer = HireFire.configuration.buffer
+    buffer.flush
+    original = HireFire::Plan::ADAPTERS
+    original_checks = HireFire::Plan::LIBRARY_CHECKS
+    mod = stub_macro_taking_skip_working do |m|
+      m.define_singleton_method(:job_queue_latency) { |*_a, **_o| 1.5 }
+      m.define_singleton_method(:job_queue_working) { |*_a| 2 }
+    end
+
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
+    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
+    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
+
+    [nil, {}, {"skip_working" => false}].each do |options|
+      HireFire::Plan.execute(
+        "name" => "worker",
+        "adapter" => "sidekiq",
+        "strategy" => "jql",
+        "queues" => ["default"],
+        "options" => options
+      )
+
+      flushed = buffer.flush
+      assert_equal 1.5, flushed.dig("worker", "jql")&.values&.last
+      assert_equal 2, flushed.dig("worker", "wrk")&.values&.last
+    end
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
@@ -729,7 +837,7 @@ class HireFire::PlanTest < Minitest::Test
     buffer.flush
     original = HireFire::Plan::ADAPTERS
     original_checks = HireFire::Plan::LIBRARY_CHECKS
-    mod = stub_macro do |m|
+    mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| 11 }
       m.define_singleton_method(:job_queue_working) { |*_a| 3 }
     end
@@ -745,7 +853,7 @@ class HireFire::PlanTest < Minitest::Test
         "adapter" => "sidekiq",
         "strategy" => "jqs",
         "queues" => ["default"],
-        "options" => {}
+        "options" => {"skip_working" => true}
       },
       -> { false }
     )
@@ -884,5 +992,14 @@ class HireFire::PlanTest < Minitest::Test
     mod.extend(HireFire::Plan::Hooks)
     yield mod
     mod
+  end
+
+  def stub_macro_taking_skip_working
+    stub_macro do |mod|
+      mod.define_singleton_method(:plan_options) do |strategy, options|
+        extract_plan_options(strategy, options, "jqs" => {"skip_working" => :boolean})
+      end
+      yield mod
+    end
   end
 end

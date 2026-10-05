@@ -240,7 +240,7 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     end
   end
 
-  def test_plan_execute_resque_jqs_counts_working_jobs_and_records_wrk
+  def test_plan_execute_resque_jqs_counts_working_jobs_and_samples_no_wrk
     HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
     buffer = HireFire.configuration.buffer
     buffer.flush
@@ -257,7 +257,8 @@ class HireFire::Macro::ResqueTest < Minitest::Test
 
     flushed = buffer.flush
     assert_equal 2, flushed.dig("worker", "jqs")&.values&.last
-    assert_equal 1, flushed.dig("worker", "wrk")&.values&.last
+    assert_equal 1, HireFire::Macro::Resque.job_queue_working(:default)
+    assert_nil flushed.dig("worker", "wrk")
   end
 
   def test_plan_execute_skip_working_true_leaves_working_jobs_out_and_records_wrk

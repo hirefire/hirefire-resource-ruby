@@ -487,7 +487,7 @@ class HireFire::DispatcherTest < Minitest::Test
       "ops" => [{
         "adapter" => "sidekiq",
         "strategy" => "jqs",
-        "queues" => ["q" * 40_000],
+        "queues" => ["q" * HireFire::Dispatcher::PAYLOAD_SIZE_LIMIT],
         "options" => {},
         "ms" => 1.0
       }]
@@ -2004,9 +2004,9 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_equal [], rqt["997"]
   end
 
-  def test_payload_size_limit_is_32768_with_strict_greater_drop
+  def test_payload_size_limit_is_65536_with_strict_greater_drop
     limit = HireFire::Dispatcher::PAYLOAD_SIZE_LIMIT
-    assert_equal 32_768, limit
+    assert_equal 65_536, limit
 
     stub_lease
     ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
@@ -2031,6 +2031,36 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_includes log.string, "exceeds the #{limit}-byte limit"
   ensure
     JSON.unstub(:generate)
+  end
+
+  def test_three_sample_waves_of_a_full_plan_with_working_counts_ship_in_one_payload
+    stub_lease
+    sizes = []
+    bodies = []
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |request|
+      sizes << request.body.bytesize
+      bodies << JSON.parse(request.body)
+      {status: 200}
+    end
+    dispatcher = HireFire.configuration.dispatcher
+    buffer = HireFire.configuration.buffer
+    names = HireFire::Lease::MAX_JOB_QUEUES.times.map { |i| format("worker_%03d", i).ljust(40, "x") }
+
+    [1000, 1015, 1030].each do |second|
+      Timecop.freeze Time.at(second) do
+        names.each do |name|
+          buffer.sample(name, "jqs", 1234)
+          buffer.sample(name, "wrk", 12)
+        end
+      end
+    end
+    Timecop.freeze(Time.at(1030)) { dispatcher.send(:tick) }
+
+    assert_equal 1, bodies.size
+    assert_equal names, bodies[0].map { |entry| entry["name"] }
+    assert(bodies[0].all? { |entry| entry["metrics"].values.map(&:size) == [3, 3] })
+    assert_operator sizes[0], :>, 32_768
+    refute_includes log.string, "Dropped metrics payload"
   end
 
   def test_encode_omits_non_finite_rqt_mean

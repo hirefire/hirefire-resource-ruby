@@ -11,7 +11,7 @@ module HireFire
     DEFAULT_DISPATCH_FREQUENCY = 1
     MAX_DISPATCH_FREQUENCY = 30
     JOIN_TIMEOUT = 5
-    WARN_MAP_LIMIT = 128
+    WARN_MAP_LIMIT = 256
 
     def initialize
       @client = Client.new

@@ -1107,6 +1107,22 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_includes log.string, "Unknown plan adapter"
   end
 
+  def test_a_full_plan_of_unknown_adapters_warns_once_per_entry
+    assert_equal HireFire::Lease::MAX_JOB_QUEUES, HireFire::Dispatcher::WARN_MAP_LIMIT
+
+    stub_lease(granted: true, job_queues: HireFire::Lease::MAX_JOB_QUEUES.times.map { |i|
+      {"name" => "worker_#{i}", "strategy" => "jql", "adapter" => "nope", "queues" => [], "options" => {}}
+    })
+    capture_ingest_bodies
+
+    HireFire.configuration.dyno(:other) { 0 }
+    dispatcher = HireFire.configuration.dispatcher
+    dispatcher.send(:job_queue_tick)
+    dispatcher.send(:sample_job_queues)
+
+    assert_equal HireFire::Lease::MAX_JOB_QUEUES, log.string.scan("Unknown plan adapter").size
+  end
+
   def test_known_unloaded_adapter_skips_without_local_fallback
     HireFire::Plan.stubs(:executable?).with("sidekiq").returns(false)
     HireFire::Plan.stubs(:known_adapter?).with("sidekiq").returns(true)

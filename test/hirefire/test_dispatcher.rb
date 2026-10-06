@@ -2020,9 +2020,9 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_equal [], rqt["997"]
   end
 
-  def test_payload_size_limit_is_65536_with_strict_greater_drop
+  def test_payload_size_limit_is_131072_with_strict_greater_drop
     limit = HireFire::Dispatcher::PAYLOAD_SIZE_LIMIT
-    assert_equal 65_536, limit
+    assert_equal 131_072, limit
 
     stub_lease
     ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
@@ -2049,7 +2049,7 @@ class HireFire::DispatcherTest < Minitest::Test
     JSON.unstub(:generate)
   end
 
-  def test_three_sample_waves_of_a_full_plan_with_working_counts_ship_in_one_payload
+  def test_seven_sample_waves_of_a_full_plan_with_the_longest_names_ship_in_one_payload
     stub_lease
     sizes = []
     bodies = []
@@ -2060,9 +2060,9 @@ class HireFire::DispatcherTest < Minitest::Test
     end
     dispatcher = HireFire.configuration.dispatcher
     buffer = HireFire.configuration.buffer
-    names = HireFire::Lease::MAX_JOB_QUEUES.times.map { |i| format("worker_%03d", i).ljust(40, "x") }
+    names = HireFire::Lease::MAX_JOB_QUEUES.times.map { |i| format("worker_%03d", i).ljust(HireFire::Lease::MAX_NAME_BYTES, "x") }
 
-    [1000, 1015, 1030].each do |second|
+    [1000, 1005, 1010, 1015, 1020, 1025, 1030].each do |second|
       Timecop.freeze Time.at(second) do
         names.each do |name|
           buffer.sample(name, "jqs", 1234)
@@ -2074,8 +2074,8 @@ class HireFire::DispatcherTest < Minitest::Test
 
     assert_equal 1, bodies.size
     assert_equal names, bodies[0].map { |entry| entry["name"] }
-    assert(bodies[0].all? { |entry| entry["metrics"].values.map(&:size) == [3, 3] })
-    assert_operator sizes[0], :>, 32_768
+    assert(bodies[0].all? { |entry| entry["metrics"].values.map(&:size) == [7, 7] })
+    assert_operator sizes[0], :>, 65_536
     refute_includes log.string, "Dropped metrics payload"
   end
 

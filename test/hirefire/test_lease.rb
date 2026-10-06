@@ -428,6 +428,57 @@ class HireFire::LeaseTest < Minitest::Test
     assert_includes log.string, "exceeded"
   end
 
+  def test_accepts_grant_body_of_exactly_max_body_bytes
+    assert_equal 131_072, HireFire::Lease::MAX_BODY_BYTES
+
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    body = {version: 1, job_queues: [
+      {"name" => "worker", "strategy" => "jql", "adapter" => nil, "queues" => [], "options" => {}}
+    ]}.to_json
+    body += " " * (HireFire::Lease::MAX_BODY_BYTES - body.bytesize)
+
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "15"
+      }, body: body)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert_equal ["worker"], lease.job_queues.map { |entry| entry["name"] }
+    assert_empty log.string
+  end
+
+  def test_accepts_a_plan_of_max_job_queues_with_three_queues_each
+    assert_equal 256, HireFire::Lease::MAX_JOB_QUEUES
+
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    entries = HireFire::Lease::MAX_JOB_QUEUES.times.map do |i|
+      {
+        "name" => "background_worker_#{i}",
+        "strategy" => "jqs",
+        "adapter" => "sidekiq",
+        "queues" => ["critical_#{i}", "default_#{i}", "low_priority_#{i}"],
+        "options" => {"skip_working" => true}
+      }
+    end
+    body = {version: 1, job_queues: entries}.to_json
+    assert_operator body.bytesize, :>, 32_768
+
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {
+        "HireFire-Lease-Granted" => "true",
+        "HireFire-Sample-Frequency" => "15"
+      }, body: body)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert_equal entries, lease.job_queues
+    assert_empty log.string
+  end
+
   def test_truncates_plan_to_max_job_queues
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)

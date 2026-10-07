@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+cd "$(dirname "$0")/../.."
+
+bundle install
+for gemfile in gemfiles/*.gemfile; do
+  BUNDLE_GEMFILE="$gemfile" bundle install
+done
+bin/services up

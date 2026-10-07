@@ -1,0 +1,74 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "bundler/setup"
+require "digest"
+require "rails" if Gem.loaded_specs.key?("railties")
+require "hirefire-resource"
+
+def signature(method)
+  method.parameters.map do |kind, name|
+    case kind
+    when :req then name.to_s
+    when :opt then "#{name} = ?"
+    when :rest then "*#{name}"
+    when :keyreq then "#{name}:"
+    when :key then "#{name}: ?"
+    when :keyrest then "**#{name}"
+    when :block then "&#{name}"
+    else kind.to_s
+    end
+  end.join(", ")
+end
+
+def summarize(value)
+  text = value.inspect
+  return text if text.bytesize <= 120
+
+  "#{value.class} (#{text.bytesize} bytes, sha256 #{Digest::SHA256.hexdigest(text)[0, 12]})"
+end
+
+def describe(mod, lines)
+  kind = mod.is_a?(Class) ? "class" : "module"
+  parent = (mod.is_a?(Class) && mod.superclass != Object) ? " < #{mod.superclass}" : ""
+  lines << "#{kind} #{mod.name}#{parent}"
+
+  (mod.singleton_methods - Module.instance_methods).sort.each do |name|
+    method = mod.method(name)
+    next unless method.owner.inspect.include?("HireFire")
+
+    lines << "  .#{name}(#{signature(method)}) [#{method.owner.inspect.sub(/#<Class:(.*)>/, '\1')}]"
+  end
+
+  mod.public_instance_methods(false).sort.each do |name|
+    lines << "  ##{name}(#{signature(mod.instance_method(name))})"
+  end
+end
+
+def walk(mod, seen, lines)
+  return if seen.include?(mod)
+
+  seen << mod
+  describe(mod, lines)
+  mod.constants(false).sort.each do |name|
+    value = mod.const_get(name)
+    if value.is_a?(Module)
+      walk(value, seen, lines) if value.name.to_s.start_with?("HireFire")
+    else
+      lines << "  #{name} = #{summarize(value)}"
+    end
+  end
+end
+
+lines = []
+walk(HireFire, [], lines)
+
+root = File.expand_path("../..", __dir__)
+path = File.join(root, "audit/baseline/public_api.txt")
+header = [
+  "commit #{`git -C #{root} rev-parse HEAD`.strip}",
+  "gemfile #{File.basename(ENV.fetch("BUNDLE_GEMFILE"))}",
+  ""
+]
+File.write(path, (header + lines).join("\n") + "\n")
+puts "#{lines.count { |line| line.start_with?("class ", "module ") }} modules and classes, #{lines.count { |line| line.start_with?("  .", "  #") }} methods, #{lines.count { |line| line.match?(/\A  [A-Z]/) }} constants -> #{path}"

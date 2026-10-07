@@ -1,0 +1,43 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+
+root = File.expand_path("../..", __dir__)
+paths = Dir[File.join(root, "audit/results/matrix/*/summary.json")].sort
+abort "no matrix runs under audit/results/matrix" if paths.empty?
+
+runs = paths.map { |path| JSON.parse(File.read(path)) }
+rows = runs.map do |run|
+  failed = run.fetch("cells").flat_map do |cell|
+    cell.fetch("failed_tests").map { |test| "#{cell.fetch("cell")}: #{test} (seed #{cell.fetch("seed")})" }
+  end
+  timed_out = run.fetch("cells").select { |cell| cell.fetch("timed_out") }.map { |cell| cell.fetch("cell") }
+  {
+    run: run.fetch("run_id"),
+    commit: run.fetch("commit")[0, 7],
+    cells: run.fetch("cells").size,
+    seconds: run.fetch("cells").sum { |cell| cell.fetch("seconds") }.round(1),
+    failed_cells: run.fetch("failed_cells"),
+    failed_tests: failed,
+    timed_out: timed_out
+  }.merge(run.fetch("totals").transform_keys(&:to_sym))
+end
+
+puts "run      commit   cells   runs assertions failures errors skips seconds  failed cells"
+rows.each do |row|
+  puts format("%-8s %-8s %5d %6d %10d %8d %6d %5d %7.1f  %s", row[:run], row[:commit], row[:cells], row[:runs], row[:assertions], row[:failures], row[:errors], row[:skips], row[:seconds], row[:failed_cells].join(","))
+  row[:failed_tests].each { |test| puts "         #{test}" }
+  row[:timed_out].each { |cell| puts "         timed out: #{cell}" }
+end
+
+flaky = rows.flat_map { |row| row[:failed_tests].map { |test| test.sub(/ \(seed \d+\)\z/, "") } }.tally
+aggregate = {
+  runs: rows.size,
+  green_runs: rows.count { |row| row[:failed_cells].empty? },
+  flaky_tests: flaky,
+  rows: rows
+}
+File.write(File.join(root, "audit/results/matrix/summary.json"), JSON.pretty_generate(aggregate) + "\n")
+puts format("runs=%d green=%d flaky_tests=%d", aggregate[:runs], aggregate[:green_runs], flaky.size)
+flaky.each { |test, count| puts "  #{count}x #{test}" }

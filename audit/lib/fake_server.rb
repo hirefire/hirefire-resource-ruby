@@ -15,8 +15,10 @@ module Audit
     attr_reader :port
     attr_accessor :on_accept
 
-    def initialize(&handler)
+    def initialize(record: true, &handler)
       @handler = handler
+      @record = record
+      @counts = Hash.new(0)
       @on_accept = nil
       @requests = []
       @sockets = []
@@ -34,6 +36,10 @@ module Audit
 
     def requests
       @mutex.synchronize { @requests.dup }
+    end
+
+    def request_counts
+      @mutex.synchronize { @counts.dup }
     end
 
     def accepted
@@ -65,6 +71,8 @@ module Audit
         socket = @server.accept
         @mutex.synchronize do
           @accepted += 1
+          @sockets.reject!(&:closed?)
+          @workers.select!(&:alive?)
           @sockets << socket
         end
         worker = Thread.new(socket) { |client| serve(client) }
@@ -85,7 +93,8 @@ module Audit
       loop do
         request = read_request(client) or break
         handler = @mutex.synchronize do
-          @requests << request
+          @counts[request.path] += 1
+          @requests << request if @record
           @handler
         end
         break unless respond(client, handler.call(request))
@@ -149,7 +158,10 @@ module Audit
     end
 
     def stall(client)
-      sleep(0.1) until client.closed? || @server.closed?
+      until @server.closed?
+        next unless client.wait_readable(0.1)
+        break if client.read_nonblock(1024, exception: false).nil?
+      end
       false
     end
 

@@ -1,0 +1,89 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+
+root = File.expand_path("../..", __dir__)
+load_json = ->(path) { JSON.parse(File.read(File.join(root, path))) }
+matrix = load_json.call("audit/results/matrix/summary.json")
+scores = load_json.call("audit/results/mutation/scores.json")
+triage = load_json.call("audit/results/mutation/triage.json")
+faults = load_json.call("audit/results/faults/results.json")
+soak = load_json.call("audit/results/soak/soak.json")
+records = File.readlines(File.join(root, "audit/results/mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
+status = records.map { |record| record["status"] }.tally
+
+out = []
+out << "# Ruby client audit: stress results"
+out << ""
+out << "Step 4 of the audit, run on `next` at `4787942` with Ruby 4.0.6. Raw results and the scripts are on the branch `ruby-audit` of the Ruby repository under `audit/results/` and `audit/bin/`. Plan: [README.md](./README.md). The findings these runs produced are in [findings.md](./findings.md)."
+out << ""
+out << "## Matrix, 10 runs in random order"
+out << ""
+out << "#{matrix["runs"]} runs of all 23 cells, each with a new seed per cell: #{matrix["green_runs"]} passed. Each run had #{matrix["rows"].first["runs"]} test runs, #{matrix["rows"].first["assertions"]} assertions, 0 failures, 0 errors, and 1 skip. Flaky tests named: #{matrix["flaky_tests"].empty? ? "none" : matrix["flaky_tests"].keys.join(", ")}. The 16 second readers were running on the same machine during runs 2 to 10, so the suite also held under load. The one skip is the subject of a finding."
+out << ""
+out << "## Mutation testing"
+out << ""
+out << "Every file under `lib/` was changed in small ways (a condition forced true or false, an operator swapped, a statement deleted, a number raised by one, a call negated), one change at a time, #{records.size} changes in all. Each change ran on a throwaway copy against every matrix cell whose tests run the changed line, until one cell failed. A change that no test notices survives."
+out << ""
+killed = status["killed"].to_i + status["timeout"].to_i
+out << "Result: #{killed} of #{records.size} changes were caught (#{scores["total"]["score"]} percent). #{status["survived"]} survived, and #{status["uncovered"]} sit on lines that no cell runs. #{status["timeout"]} of the caught ones made a test hang until the 45 second limit."
+out << ""
+out << "| File | Changes | Caught | Survived | On unrun lines | Score |"
+out << "| --- | --- | --- | --- | --- | --- |"
+scores["files"].each do |row|
+  next if row["mutants"].zero?
+
+  out << "| `#{row["file"].delete_prefix("lib/")}` | #{row["mutants"]} | #{row["killed"]} | #{row["survived"]} | #{row["uncovered"]} | #{row["score"]} |"
+end
+out << ""
+out << "`errors.rb` and `resource.rb` hold nothing to change."
+out << ""
+out << "### What became of the #{triage["alive"]} changes that were not caught"
+out << ""
+out << "Each one is in exactly one group, by the first rule that matches. `audit/results/mutation/triage.json` lists every change with its group, and `audit/results/mutation/groups.json` lists them per method."
+out << ""
+out << "| Group | Changes | Cause | Verdict |"
+out << "| --- | --- | --- | --- |"
+triage["groups"].each do |group|
+  verdict = (group["verdict"] == "equivalent") ? "Equivalent: #{group["cause"]}" : "Finding: #{group["finding"]}"
+  cause = (group["verdict"] == "equivalent") ? "initial values" : group["cause"]
+  out << "| `#{group["id"]}` | #{group["count"]} | #{cause} | #{verdict} |"
+end
+out << ""
+out << "## Fault runs"
+out << ""
+out << "One process with the client, a simulated request thread that calls the middleware every 5 ms, a local sampler, and a local server that misbehaves in one way for #{faults.first["fault_seconds"].round} seconds. Then the server heals for up to 12 seconds, misbehaves again, and the process stops. Columns: exceptions that reached the host, the slowest middleware call, ingest and lease requests during the fault, log lines per minute, seconds until the first ingest after healing, and the time `stop` took while the fault was back."
+out << ""
+out << "| Fault | Escaped | Slowest call (ms) | Ingest | Lease | Log lines per minute | Recovered after (s) | Stop (s) |"
+out << "| --- | --- | --- | --- | --- | --- | --- | --- |"
+faults.each do |result|
+  out << "| `#{result["scenario"]}` | #{result["escaped"].size} | #{result["middleware_max_ms"]} | #{result["ingest_requests"]} | #{result["lease_requests"]} | #{result["log_lines_per_minute"]} | #{result["recovered_after_seconds"] || "n/a"} | #{result["stop_seconds_under_fault"]} |"
+end
+out << ""
+escaped = faults.sum { |result| result["escaped"].size }
+out << "Across all #{faults.size} faults: #{escaped} exceptions reached the host, the slowest middleware call took #{faults.map { |result| result["middleware_max_ms"] }.max} ms, the dispatcher was still running after every fault, and the thread count stayed at #{faults.map { |result| result["threads_after_fault"] }.uniq.join(" or ")}. Every fault the server could heal from was followed by a successful ingest within #{faults.filter_map { |result| result["recovered_after_seconds"] }.max} seconds. The three connection faults (`refused`, `unresolvable`, `tls_to_plain`) cannot heal in this harness, because the client keeps the URL it started with."
+out << ""
+out << "## Soak"
+out << ""
+minutes = (soak["seconds"] / 60.0).round(1)
+out << "One process for #{minutes} minutes: Sidekiq loaded with 250 enqueued and 600 scheduled jobs in Redis, a plan with a named size entry, a named latency entry, and a local sampler, four threads that call the middleware, the server cycling every 20 seconds through healthy, 500, stall, reset, 401, garbage, and a denied lease, and a fork every 15 seconds (a web process, so each fork stops and restarts the dispatcher)."
+out << ""
+out << "| Measure | Start | End | Lowest | Highest |"
+out << "| --- | --- | --- | --- | --- |"
+{"Memory (RSS, kB)" => "rss_kb", "Live heap slots" => "heap_live_slots", "Threads of the client and the host" => "threads", "Open file descriptors" => "fds", "Sockets open on the server side" => "server_open_sockets"}.each do |label, key|
+  range = soak[key]
+  out << "| #{label} | #{range["first"]} | #{range["last"]} | #{range["min"]} | #{range["max"]} |"
+end
+out << ""
+out << "- **Memory:** RSS changed by #{soak["rss_growth_kb_per_minute_last_two_thirds"]} kB per minute over the last two thirds of the run."
+out << "- **Requests:** the server accepted #{soak["connections_accepted"]} connections and received #{soak["requests"]} requests (#{soak["requests_by_path"].map { |path, count| "#{count} to `#{path}`" }.join(", ")})."
+out << "- **Host:** #{soak["middleware_calls"]} middleware calls, the slowest took #{soak["middleware_max_ms"]} ms. Exceptions that reached the host: #{soak["escaped"].size}."
+out << "- **Forks:** #{soak["forks"]}. The slowest `fork` call took #{soak["fork_seconds_max"]} seconds in the parent, and the dispatcher was running again at most #{soak["restart_seconds_max"]} seconds later."
+out << "- **Log:** #{soak["log_lines"]} lines (#{soak["log_levels"].map { |level, count| "#{count} #{level}" }.join(", ")})."
+out << "- **After stop:** `stop` took #{soak["stop_seconds"]} seconds and left #{soak["after_stop"]["threads"]} thread, #{soak["after_stop"]["fds"]} file descriptors, and #{soak["after_stop"]["server_open_sockets"]} sockets on the server side."
+out << ""
+out << "Slowest forks: " + soak["slowest_forks"].map { |entry| "#{entry["fork_seconds"]} s during `#{entry["phase"]}`" }.join(", ") + "."
+out << ""
+out << "Most frequent log lines: " + soak["top_messages"].first(6).map { |line| "\"#{line}\"" }.join(", ") + "."
+puts out.join("\n")

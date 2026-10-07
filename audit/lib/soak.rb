@@ -50,7 +50,7 @@ module Audit
     end
 
     def run
-      server = FakeServer.new(&HEALTHY)
+      server = FakeServer.new(record: false, &HEALTHY)
       seed_sidekiq
       ENV["HIREFIRE_TOKEN"] = "soak-token"
       ENV["HIREFIRE_DATA_URL"] = server.url
@@ -101,7 +101,7 @@ module Audit
       stop_seconds = now - stop_started
       pids.each { |pid| Process.wait(pid) }
       final = sample(server, started, 0)
-      requests = server.requests
+      requests = server.request_counts
       server.stop
 
       write_csv(rows)
@@ -172,7 +172,7 @@ module Audit
         fds: Dir["/dev/fd/*"].size,
         server_open_sockets: server.open_sockets,
         connections_accepted: server.accepted,
-        requests: server.requests.size,
+        requests: server.request_counts.values.sum,
         heap_live_slots: GC.stat(:heap_live_slots),
         log_lines: @log.string.count("\n"),
         children: children,
@@ -204,8 +204,8 @@ module Audit
         fds: range.call(:fds),
         server_open_sockets: range.call(:server_open_sockets),
         connections_accepted: rows.last[:connections_accepted],
-        requests: requests.size,
-        requests_by_path: requests.map(&:path).tally,
+        requests: requests.values.sum,
+        requests_by_path: requests,
         middleware_calls: @middleware_calls,
         middleware_max_ms: (@middleware_max * 1000).round(2),
         forks: @forks.size,

@@ -1,0 +1,17 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+require "json"
+require_relative "../lib/soak"
+
+root = File.expand_path("../..", __dir__)
+seconds = Integer(ARGV.fetch(0, 1920))
+name = ARGV.fetch(1, "soak")
+abort "set AUDIT_REDIS_URL to a Redis that this script may flush" unless ENV["AUDIT_REDIS_URL"]
+
+directory = File.join(root, "audit/results/soak")
+FileUtils.mkdir_p(directory)
+summary = Audit::Soak.new(seconds: seconds, csv: File.join(directory, "#{name}.csv")).run
+File.write(File.join(directory, "#{name}.json"), JSON.pretty_generate(summary) + "\n")
+puts JSON.pretty_generate(summary)

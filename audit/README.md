@@ -13,6 +13,13 @@ Run every script with the first Ruby in `.tool-versions`, from the repository ro
 | `bin/public-api`      | Writes the public names and signatures by reflection                  |
 | `bin/wire-goldens`    | Captures the ingest and lease requests, or checks them with `--check` |
 | `bin/sandbox`         | Copies the tree to a throwaway directory, with its own services       |
+| `bin/mutate`          | Changes `lib/` one small step at a time and runs the covering cells   |
+| `bin/mutation-groups` | Lists the surviving changes per file and method                       |
+| `bin/mutation-triage` | Puts every surviving change in one group, tied to a finding           |
+| `bin/fault-run`       | Runs the client against a local server that misbehaves in 21 ways     |
+| `bin/soak`            | Runs the client for a long time with faults and forks                 |
+| `bin/stress-report`   | Writes the stress results as one Markdown document                    |
+| `bin/check-audit`     | Checks the map, the lens sections, the findings, and the triage       |
 | `baseline/`           | Coverage, the public API snapshot, and the wire golden copies         |
 | `results/`            | Raw results of the matrix, mutation, fault, and soak runs             |
 | `readers/`            | Reports of the second readers, one per lens                           |

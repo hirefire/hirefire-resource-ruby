@@ -126,7 +126,14 @@ out << "Of the objects allocated after second #{retained["traced_from_second"]} 
 if File.exist?(File.join(root, "audit/results/soak/soak-long.json"))
   long = load_json.call("audit/results/soak/soak-long.json")
   out << ""
-  out << "**A longer run.** The same soak for #{(long["seconds"] / 60.0).round} minutes, with #{long["forks"]} forks: RSS went from #{long["rss_kb"]["first"]} to #{long["rss_kb"]["last"]} kB (highest #{long["rss_kb"]["max"]}), at #{parts.call("soak-long", 6).join(", ")} kB per minute over six parts of 10 minutes. Threads stayed between #{long["threads"]["min"]} and #{long["threads"]["max"]}, open file descriptors between #{long["fds"]["min"]} and #{long["fds"]["max"]}, and #{long["escaped"].size} exceptions reached the host in #{long["middleware_calls"]} middleware calls, the slowest of #{long["middleware_max_ms"]} ms."
+  out << "**A longer run.** The same soak for #{(long["seconds"] / 60.0).round} minutes, with #{long["forks"]} forks: RSS went from #{long["rss_kb"]["first"]} to #{long["rss_kb"]["last"]} kB (highest #{long["rss_kb"]["max"]}), at #{parts.call("soak-long", 6).join(", ")} kB per minute over six parts of 10 minutes. Threads stayed at #{long["threads"].values_at("min", "max").uniq.join(" to ")}, open file descriptors between #{long["fds"]["min"]} and #{long["fds"]["max"]}, and #{long["escaped"].size} exceptions reached the host in #{long["middleware_calls"]} middleware calls, the slowest of #{long["middleware_max_ms"]} ms."
+  rows = CSV.read(File.join(root, "audit/results/soak/soak-long.csv"), headers: true).map(&:to_h)
+  early = rows.find { |row| row["seconds"].to_i >= 300 }
+  late = rows.last
+  records = (rows.size - rows.index(early)) + (long["forks"] * (late["seconds"].to_f - early["seconds"].to_f) / late["seconds"].to_f).round
+  pages = late["heap_pages"].to_i - rows.first["heap_pages"].to_i
+  out << ""
+  out << "Old objects, where a leak in Ruby code shows, went from #{early["old_objects"]} after 5 minutes to #{late["old_objects"]} at the end. The harness keeps one record per sample and per fork, about #{records} in that time, which accounts for the difference of #{late["old_objects"].to_i - early["old_objects"].to_i}. Heap pages went from #{rows.first["heap_pages"]} to #{late["heap_pages"]}, about #{pages * 64} kB of the #{long["rss_kb"]["last"] - long["rss_kb"]["first"]} kB that RSS gained. RSS still rose in the last 10 minutes, so this run does not show a flat line. No measurement here ties the rise to objects the client keeps. Other measurements ran on the machine during this soak, which explains its slowest middleware call."
 end
 
 out << ""

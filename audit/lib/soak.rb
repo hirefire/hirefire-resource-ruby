@@ -2,6 +2,7 @@
 
 require "json"
 require "logger"
+require "objspace"
 require "stringio"
 require_relative "fake_server"
 
@@ -34,6 +35,9 @@ module Audit
     PHASE_SECONDS = 20
     FORK_EVERY = 15
     SAMPLE_EVERY = 10
+    DIAGNOSE = ENV["AUDIT_SOAK_DIAGNOSE"] == "1"
+    TRACE_AFTER = Integer(ENV.fetch("AUDIT_SOAK_TRACE_AFTER", PHASES.size * PHASE_SECONDS + 10))
+    ROOT = File.expand_path("../..", __dir__) + "/"
 
     def initialize(seconds:, csv:)
       @seconds = seconds
@@ -71,6 +75,7 @@ module Audit
       next_phase = started
       phase_index = -1
       pids = []
+      tracing = false
 
       while now - started < @seconds
         if now >= next_phase
@@ -84,6 +89,11 @@ module Audit
           next_fork += FORK_EVERY
         end
         pids.reject! { |pid| Process.wait(pid, Process::WNOHANG) }
+        if DIAGNOSE && !tracing && now - started >= TRACE_AFTER
+          GC.start(full_mark: true, immediate_sweep: true)
+          ObjectSpace.trace_object_allocations_start
+          tracing = true
+        end
         if now >= next_sample
           rows << sample(server, started, pids.size)
           next_sample += SAMPLE_EVERY
@@ -91,6 +101,7 @@ module Audit
         sleep(0.1)
       end
 
+      @retained = retained_objects if tracing
       server.handler = HEALTHY
       sleep(3)
       rows << sample(server, started, pids.size)
@@ -164,6 +175,7 @@ module Audit
     end
 
     def sample(server, started, children)
+      GC.start(full_mark: true, immediate_sweep: true) if DIAGNOSE
       {
         seconds: (now - started).round,
         phase: @phase,
@@ -174,10 +186,37 @@ module Audit
         connections_accepted: server.accepted,
         requests: server.request_counts.values.sum,
         heap_live_slots: GC.stat(:heap_live_slots),
+        old_objects: GC.stat(:old_objects),
+        heap_pages: GC.stat(:heap_allocated_pages),
+        memsize_kb: DIAGNOSE ? ObjectSpace.memsize_of_all / 1024 : 0,
         log_lines: @log.string.count("\n"),
         children: children,
         running: HireFire.configuration.dispatcher.running?
       }
+    end
+
+    def retained_objects
+      ObjectSpace.trace_object_allocations_stop
+      GC.start(full_mark: true, immediate_sweep: true)
+      current = GC.count
+      sites = Hash.new { |hash, key| hash[key] = {objects: 0, bytes: 0, oldest: current} }
+      ObjectSpace.each_object do |object|
+        file = ObjectSpace.allocation_sourcefile(object) or next
+        site = sites["#{file.delete_prefix(ROOT)}:#{ObjectSpace.allocation_sourceline(object)}"]
+        site[:objects] += 1
+        site[:bytes] += ObjectSpace.memsize_of(object)
+        site[:oldest] = [site[:oldest], ObjectSpace.allocation_generation(object)].min
+      end
+      ObjectSpace.trace_object_allocations_clear
+      owner = lambda do |where|
+        if where.start_with?("lib/hirefire") then "client"
+        elsif where.start_with?("audit/") then "harness"
+        else "other"
+        end
+      end
+      totals = sites.group_by { |where, _| owner.call(where) }.transform_values { |list| {objects: list.sum { |_, site| site[:objects] }, bytes: list.sum { |_, site| site[:bytes] }} }
+      top = sites.sort_by { |_, site| -site[:objects] }.first(40).map { |where, site| {site: where, objects: site[:objects], bytes: site[:bytes], gc_runs_since_oldest: current - site[:oldest]} }
+      {traced_from_second: TRACE_AFTER, gc_runs_at_end: current, by_owner: totals, top_sites: top}
     end
 
     def write_csv(rows)
@@ -200,6 +239,9 @@ module Audit
         rss_kb: range.call(:rss_kb),
         rss_growth_kb_per_minute_last_two_thirds: ((steady.last[:rss_kb] - steady.first[:rss_kb]) / minutes).round(1),
         heap_live_slots: range.call(:heap_live_slots),
+        old_objects: range.call(:old_objects),
+        heap_pages: range.call(:heap_pages),
+        memsize_kb: range.call(:memsize_kb),
         threads: range.call(:threads),
         fds: range.call(:fds),
         server_open_sockets: range.call(:server_open_sockets),
@@ -210,6 +252,7 @@ module Audit
         middleware_max_ms: (@middleware_max * 1000).round(2),
         forks: @forks.size,
         fork_seconds_max: @forks.map { |entry| entry[:fork_seconds] }.max,
+        retained_after_gc: @retained,
         slowest_forks: @forks.sort_by { |entry| -entry[:fork_seconds] }.first(5),
         restart_seconds_max: @forks.map { |entry| entry[:restart_seconds] }.max,
         escaped: @escaped,

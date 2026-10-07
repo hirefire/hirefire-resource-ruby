@@ -178,14 +178,14 @@ module HireFire
       end
 
       def encoded_queue(encoded_job)
-        payload = ::Resque.decode(encoded_job)
+        payload = JSON.parse(encoded_job)
         return unless payload.is_a?(Hash)
 
         queue = payload["queue"]
         return if queue.nil? || queue == ""
 
         queue
-      rescue ::Resque::Helpers::DecodeException, TypeError
+      rescue JSON::ParserError, TypeError
         nil
       end
 

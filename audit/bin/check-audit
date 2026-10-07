@@ -35,7 +35,7 @@ end
 problems.concat((sections.keys - LENSES).map { |name| "unknown lens section #{name}" })
 report.call("lenses", problems, "#{LENSES.size} sections, each with Examined, Method, and Result")
 
-text = File.read(File.join(canon, "findings.md"))
+text = %w[findings.md findings-design.md].map { |name| File.read(File.join(canon, name)) }.join("\n")
 blocks = text.split(/^### /).drop(1)
 problems = []
 ranks = []

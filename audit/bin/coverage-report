@@ -23,6 +23,7 @@ end
 result = SimpleCov::ResultMerger.merge_and_store(*resultsets, ignore_timeout: true)
 
 cells_by_line = Hash.new { |hash, file| hash[file] = Hash.new { |lines, line| lines[line] = [] } }
+relevant_lines = Hash.new { |hash, file| hash[file] = [] }
 resultsets.each do |path|
   JSON.parse(File.read(path)).each do |cell, data|
     data.fetch("coverage").each do |file, coverage|
@@ -30,6 +31,7 @@ resultsets.each do |path|
       next unless relative.start_with?("lib/")
 
       coverage.fetch("lines").each_with_index do |hits, index|
+        relevant_lines[relative] << index + 1 unless hits.nil?
         cells_by_line[relative][index + 1] << cell if hits.to_i > 0
       end
     end
@@ -68,7 +70,8 @@ output = {
   cells: resultsets.map { |path| File.basename(File.dirname(path)) },
   totals: totals,
   files: files,
-  line_cells: cells_by_line.transform_values { |lines| lines.sort.to_h }
+  line_cells: cells_by_line.transform_values { |lines| lines.sort.to_h },
+  relevant_lines: relevant_lines.transform_values { |lines| lines.uniq.sort }
 }
 FileUtils.mkdir_p(File.join(root, "audit/baseline"))
 File.write(File.join(root, "audit/baseline/coverage.json"), JSON.generate(output) + "\n")

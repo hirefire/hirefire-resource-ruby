@@ -20,6 +20,7 @@ module Audit
       @on_accept = nil
       @requests = []
       @sockets = []
+      @workers = []
       @accepted = 0
       @mutex = Mutex.new
       @server = TCPServer.new("127.0.0.1", 0)
@@ -43,6 +44,10 @@ module Audit
       @mutex.synchronize { @sockets.count { |socket| !socket.closed? } }
     end
 
+    def live_threads
+      @mutex.synchronize { @workers.count(&:alive?) } + (@thread.alive? ? 1 : 0)
+    end
+
     def handler=(handler)
       @mutex.synchronize { @handler = handler }
     end
@@ -62,7 +67,8 @@ module Audit
           @accepted += 1
           @sockets << socket
         end
-        Thread.new(socket) { |client| serve(client) }
+        worker = Thread.new(socket) { |client| serve(client) }
+        @mutex.synchronize { @workers << worker }
       end
     rescue IOError, SystemCallError
       nil

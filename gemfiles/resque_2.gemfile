@@ -17,5 +17,6 @@ gem "erb", "< 5"
 gem "resque", "~> 2"
 gem "resque-retry", "~> 1.8.0"
 gem "resque-scheduler", "~> 4"
+gem "json", "< 3"
 
 gemspec path: "../"

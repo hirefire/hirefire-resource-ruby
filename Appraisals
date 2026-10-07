@@ -67,6 +67,7 @@ appraise "resque_2" do
 
   gem "resque-retry", "~> 1.8.0"
   gem "resque-scheduler", "~> 4"
+  gem "json", "< 3"
 end
 
 appraise "resque_3" do

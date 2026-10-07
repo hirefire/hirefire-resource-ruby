@@ -14,6 +14,28 @@ class HireFire::PlanTest < Minitest::Test
     refute HireFire::Plan.known_adapter?("unknown")
   end
 
+  def test_every_planned_adapter_takes_the_strategies_and_options_the_server_sends
+    size_only = %w[resque bunny]
+    waiting_only = %w[bunny]
+    queues_required = %w[bunny]
+
+    assert_equal %w[sidekiq solid_queue good_job que queue_classic delayed_job resque bunny],
+      HireFire::Plan::ADAPTERS.keys
+
+    HireFire::Plan::ADAPTERS.each do |adapter, macro|
+      counts_running = !waiting_only.include?(adapter)
+
+      assert macro.supports_plan_strategy?("jqs"), adapter
+      assert_equal !size_only.include?(adapter), macro.supports_plan_strategy?("jql"), adapter
+      assert_equal queues_required.include?(adapter), macro.queues_required?, adapter
+      assert_equal counts_running, macro.respond_to?(:job_queue_working), adapter
+      assert_equal counts_running ? {skip_working: true} : {},
+        macro.plan_options("jqs", {"skip_working" => true}), adapter
+      assert_equal({}, macro.plan_options("jqs", {}), adapter)
+      assert_equal({}, macro.plan_options("jql", {"skip_working" => true}), adapter)
+    end
+  end
+
   def test_executable_requires_loaded_library
     refute HireFire::Plan.executable?("not_a_real_adapter")
   end

@@ -34,8 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Bunny `job_queue_size` counts a queue that does not exist as 0 and logs a warning once, where it raised.
 - Sidekiq `job_queue_latency` returns a Float. 1.x truncated live-queue latency to an Integer.
 - On Rails, HireFire uses `Rails.logger` when `config.logger` is not set.
-- Official Ruby support is 3.1+. Official Sidekiq support is 7+. Official Solid Queue support is 1+. Official Good Job support is 3+. Official Que support is 1+.
-- Process names may be any non-empty string up to 128 bytes. The 1.x letter-start charset and 63-character cap are gone.
+- Official Ruby support is 3.1+. Official Sidekiq support is 7+. Official Solid Queue support is 1+. Official Good Job support is 3+. Official Que support is 1+. Official Rails support is 7+. Official Sinatra support is 3+. Official Hanami support is 2+.
+- Process names may be any non-empty string up to 128 bytes. The 1.x letter-start charset and 63-character cap are gone. An invalid name raises `ArgumentError` (1.x raised `HireFire::Worker::InvalidDynoNameError`).
 - `config.dyno` without a sampler raises `HireFire::Configuration::MissingSamplerError` except when the name is `web` (1.x raised `HireFire::Worker::MissingDynoBlockError`). Duplicate dyno names raise `DuplicateDynoError`.
 
 ### Deprecated

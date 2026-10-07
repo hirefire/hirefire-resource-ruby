@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require "csv"
 require "json"
 
 root = File.expand_path("../..", __dir__)
@@ -37,7 +38,7 @@ scores["files"].each do |row|
   out << "| `#{row["file"].delete_prefix("lib/")}` | #{row["mutants"]} | #{row["killed"]} | #{row["survived"]} | #{row["uncovered"]} | #{row["score"]} |"
 end
 out << ""
-out << "`errors.rb` and `resource.rb` hold nothing to change."
+out << "`errors.rb` and `resource.rb` hold nothing to change. The one change in `version.rb` did not run: the file loads before coverage starts, so no cell maps to its line."
 out << ""
 out << "### What became of the #{triage["alive"]} changes that were not caught"
 out << ""
@@ -86,4 +87,59 @@ out << ""
 out << "Slowest forks: " + soak["slowest_forks"].map { |entry| "#{entry["fork_seconds"]} s during `#{entry["phase"]}`" }.join(", ") + "."
 out << ""
 out << "Most frequent log lines: " + soak["top_messages"].first(6).map { |line| "\"#{line}\"" }.join(", ") + "."
+slope = lambda do |rows, key|
+  xs = rows.map { |row| row["seconds"].to_f / 60 }
+  ys = rows.map { |row| row[key].to_f }
+  mean_x = xs.sum / xs.size
+  mean_y = ys.sum / ys.size
+  (xs.zip(ys).sum { |x, y| (x - mean_x) * (y - mean_y) } / xs.sum { |x| (x - mean_x)**2 }).round
+end
+parts = lambda do |name, count|
+  rows = CSV.read(File.join(root, "audit/results/soak/#{name}.csv"), headers: true).map(&:to_h)
+  size = rows.size / count
+  Array.new(count) { |index| slope.call((index == count - 1) ? rows[(index * size)..] : rows[index * size, size], "rss_kb") }
+end
+
+out << ""
+out << "### Does memory grow"
+out << ""
+out << "RSS rose from #{soak["rss_kb"]["first"]} to #{soak["rss_kb"]["last"]} kB, and the rise slowed: #{parts.call("soak", 3).join(", then ")} kB per minute over the three thirds of the run. The server of the harness runs in the same process, so RSS is the client, the four host threads, and that server together. Two more runs separate them."
+out << ""
+diagnose = load_json.call("audit/results/soak/diagnose.json")
+retained = diagnose["retained_after_gc"]
+out << "**Objects that stay alive.** A run of #{(diagnose["seconds"] / 60.0).round} minutes with the same faults and #{diagnose["forks"]} forks forced a full garbage collection before every sample, and traced every allocation after the first full cycle of faults (from second #{retained["traced_from_second"]})."
+out << ""
+out << "| Measure after a full GC | Start | End | Lowest | Highest |"
+out << "| --- | --- | --- | --- | --- |"
+{"Live heap slots" => "heap_live_slots", "Size of all Ruby objects (kB)" => "memsize_kb", "Heap pages" => "heap_pages"}.each do |label, key|
+  range = diagnose[key]
+  out << "| #{label} | #{range["first"]} | #{range["last"]} | #{range["min"]} | #{range["max"]} |"
+end
+out << ""
+owners = retained["by_owner"]
+client_sites = retained["top_sites"].select { |site| site["site"].start_with?("lib/hirefire") }
+old_sites = retained["top_sites"].select { |site| site["gc_runs_since_oldest"] > 4 }
+abort "a client site is older than 4 collections" if old_sites.any? { |site| site["site"].start_with?("lib/hirefire") }
+threads = client_sites.select { |site| site["bytes"] > 1_000_000 }
+out << "Of the objects allocated after second #{retained["traced_from_second"]} and alive at the end, #{owners["client"]["objects"]} came from the client, #{owners["harness"]["objects"]} from the harness, and #{owners["other"]["objects"]} from Ruby and the other gems. At the #{retained["top_sites"].size} largest allocation sites, no client object was older than #{client_sites.map { |site| site["gc_runs_since_oldest"] }.max} garbage collections of the #{retained["gc_runs_at_end"]} in the run. The other #{owners["client"]["objects"] - client_sites.sum { |site| site["objects"] }} client objects sit at sites with at most #{retained["top_sites"].last["objects"]} objects each, which rules out a site that adds objects with every fork or fault. The client objects are the two loop threads started after the last fork (#{threads.map { |site| "`#{site["site"]}`" }.join(" and ")}, 1 MB of stack each) and objects of requests in flight. The only objects older than 4 collections were records the harness keeps (#{old_sites.map { |site| "`#{site["site"]}`" }.join(", ")}). The client keeps no object alive over time. The RSS of this run is not comparable, because the tracing takes memory itself."
+
+if File.exist?(File.join(root, "audit/results/soak/soak-long.json"))
+  long = load_json.call("audit/results/soak/soak-long.json")
+  out << ""
+  out << "**A longer run.** The same soak for #{(long["seconds"] / 60.0).round} minutes, with #{long["forks"]} forks: RSS went from #{long["rss_kb"]["first"]} to #{long["rss_kb"]["last"]} kB (highest #{long["rss_kb"]["max"]}), at #{parts.call("soak-long", 6).join(", ")} kB per minute over six parts of 10 minutes. Threads stayed between #{long["threads"]["min"]} and #{long["threads"]["max"]}, open file descriptors between #{long["fds"]["min"]} and #{long["fds"]["max"]}, and #{long["escaped"].size} exceptions reached the host in #{long["middleware_calls"]} middleware calls, the slowest of #{long["middleware_max_ms"]} ms."
+end
+
+out << ""
+out << "## Lease stability"
+out << ""
+out << "Processes with the real library compete for the lease of a local server that grants it when it is free, when it has expired, or when its holder asks, which is the rule of the real server (`audit/evidence/lease_stability.rb`). Each run lasts 100 seconds with a sample frequency of 15 seconds, so 7 samples are due. The client TTL is 5 seconds, and the lease of the real server lasts 5 seconds."
+out << ""
+out << "| Processes | Server lease (s) | Response time (ms) | A sample takes (s) | Holder changes | Holders | Samples | Renewal after expiry (s, median) |"
+out << "| --- | --- | --- | --- | --- | --- | --- | --- |"
+File.read(File.join(root, "audit/results/lease-stability.txt")).split(/\n\n+/).each do |run|
+  field = ->(pattern) { run[pattern, 1] }
+  out << "| #{field.call(/clients=(\d+)/)} | #{field.call(/server_lease=([\d.]+)s/).to_f.round} | #{field.call(/response_latency=(\d+)ms/)} | #{field.call(/sample_takes=([\d.]+)s/).to_f.round} | #{field.call(/holder_changes=(\d+)/)} | #{field.call(/distinct_holders=(\d+)/)} | #{field.call(/samples received=(\d+)/)} | #{field.call(/median=(-?[\d.]+)s/) || "never renewed"} |"
+end
+out << ""
+out << "The client asks again one TTL after a response arrives, so with a server lease of the same length every renewal comes after the expiry, by the response time. A negative value in the last column is a renewal before the expiry."
 puts out.join("\n")

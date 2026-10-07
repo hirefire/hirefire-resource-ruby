@@ -1,0 +1,486 @@
+commit 478794230cb37f3c73c1b76f13048b91e68401f4
+gemfile rails_8.gemfile
+
+module HireFire
+  .after_fork_in_child() [HireFire]
+  .after_fork_in_parent() [HireFire]
+  .boot() [HireFire]
+  .configuration() [HireFire]
+  .configure() [HireFire]
+  .install_fork_hooks!() [HireFire]
+  .reset() [HireFire]
+  #after_fork_in_child()
+  #after_fork_in_parent()
+  #boot()
+  #configuration()
+  #configure()
+  #install_fork_hooks!()
+  #reset()
+class HireFire::Buffer
+  .rqt_parts(bucket) [HireFire::Buffer]
+  #discard_inherited()
+  #flush()
+  #reinit_after_fork()
+  #repopulate(name, strategy, data)
+  #sample(name, strategy, value)
+  SAMPLE_COUNT_LIMIT = 1000000
+class HireFire::Client
+  #close()
+  #request_lease(process_id)
+  #submit_samples(body)
+class HireFire::Client::RequestError < StandardError
+  STALE_CONNECTION_ERRORS = [EOFError, Errno::ECONNRESET, Errno::ECONNABORTED, Errno::EPIPE, Net::HTTPBadResponse, Net::ProtocolError]
+module HireFire::Clock
+  .monotonic() [HireFire::Clock]
+  #monotonic()
+class HireFire::Configuration
+  #active_cpu_sources()
+  #buffer()
+  #dispatcher()
+  #dyno(name, &sampler)
+  #http()
+  #http_name()
+  #http_source()
+  #job_queues()
+  #log_queue_metrics()
+  #log_queue_metrics=(value)
+  #logger()
+  #logger=(value)
+  #mark_http_active!()
+  #prefork_web_handoff?()
+  #reset_after_fork()
+  #rqt_enabled?()
+  #rqt_liveness?()
+  #stop_dispatcher(flush: ?)
+  #token()
+  #token=()
+  #using_default_logger?()
+class HireFire::Configuration::DuplicateDynoError < StandardError
+  MAX_NAME_BYTES = 128
+class HireFire::Configuration::MissingSamplerError < StandardError
+class HireFire::Dispatcher
+  #abandon_inherited_state!()
+  #ensure_job_queue_loop()
+  #running?()
+  #start()
+  #stop(flush: ?)
+  DEFAULT_DISPATCH_FREQUENCY = 1
+  JOIN_TIMEOUT = 5
+  MAX_DISPATCH_FREQUENCY = 30
+  METRIC_VALUE_LIMIT = 1.0e+15
+  PAYLOAD_SIZE_LIMIT = 131072
+  RQT_BACKFILL_LIMIT = 60
+  SAMPLE_COUNT_LIMIT = 1000000
+  WARN_MAP_LIMIT = 256
+module HireFire::Errors
+module HireFire::Errors::JobQueueLatencyUnsupported
+  #job_queue_latency(**, ****)
+class HireFire::Errors::JobQueueLatencyUnsupportedError < StandardError
+class HireFire::Errors::MissingQueueError < StandardError
+class HireFire::Errors::SampleIncomplete < StandardError
+module HireFire::Identity
+  .explicit() [HireFire::Identity]
+  .heroku_conflict?() [HireFire::Identity]
+  .heroku_dyno() [HireFire::Identity]
+  .heroku_web_process?() [HireFire::Identity]
+  .platform_http_role?() [HireFire::Identity]
+  .render_service() [HireFire::Identity]
+  .render_web_service?() [HireFire::Identity]
+  .resolve() [HireFire::Identity]
+  #explicit()
+  #heroku_conflict?()
+  #heroku_dyno()
+  #heroku_web_process?()
+  #platform_http_role?()
+  #presence(value)
+  #render_service()
+  #render_web_service?()
+  #resolve()
+class HireFire::Lease
+  #close()
+  #demote!()
+  #granted?()
+  #job_queues()
+  #process_id()
+  #request_if_due(hold:)
+  #sample_frequency()
+  #sample_if_due()
+  #trace?()
+class HireFire::Lease::GrantBody < Struct
+  .[](*) [HireFire::Lease::GrantBody(keyword_init: true)]
+  .keyword_init?() [HireFire::Lease::GrantBody(keyword_init: true)]
+  .members() [HireFire::Lease::GrantBody(keyword_init: true)]
+  .new(*) [HireFire::Lease::GrantBody(keyword_init: true)]
+  #job_queues()
+  #job_queues=(_)
+  #trace()
+  #trace=(_)
+  MAX_BODY_BYTES = 131072
+  MAX_JOB_QUEUES = 256
+  MAX_NAME_BYTES = 128
+  SAMPLE_FREQUENCY_BOUNDS = 1..3600
+  TTL_BOUNDS = 5..3600
+module HireFire::Log
+  .format_error(error) [HireFire::Log]
+  .safe(logger, level, message) [HireFire::Log]
+  #format_error(error)
+  #safe(logger, level, message)
+module HireFire::Macro
+module HireFire::Macro::Bunny
+  .after_sample_job_queues(token = ?) [HireFire::Plan::Hooks]
+  .before_sample_job_queues() [HireFire::Plan::Hooks]
+  .coerce_plan_value(type, value) [HireFire::Plan::Hooks]
+  .extract_plan_options(strategy, options, schema) [HireFire::Plan::Hooks]
+  .job_queue_latency(**, ****) [HireFire::Errors::JobQueueLatencyUnsupported]
+  .job_queue_size(*queues, amqp_url: ?, connection: ?, reuse_connection: ?) [HireFire::Macro::Bunny]
+  .plan_connection_options() [HireFire::Macro::Bunny]
+  .plan_options(strategy, options) [HireFire::Plan::Hooks]
+  .queue(*queues) [HireFire::Macro::Deprecated::Bunny]
+  .queues_required?() [HireFire::Macro::Bunny]
+  .reinit_after_fork() [HireFire::Macro::Bunny]
+  .supports_plan_strategy?(strategy) [HireFire::Plan::SizeOnly]
+  #job_queue_size(*queues, amqp_url: ?, connection: ?, reuse_connection: ?)
+  #plan_connection_options()
+  #queues_required?()
+  #reinit_after_fork()
+  MISSING_QUEUE_WARN_LIMIT = 256
+  SAMPLE_CONNECTION_OPTIONS = {connection_timeout: 5, continuation_timeout: 5000, read_timeout: 5, write_timeout: 5, automatically_recover: false}
+module HireFire::Macro::Delayed
+module HireFire::Macro::Delayed::Job
+  .after_sample_job_queues(token = ?) [HireFire::Plan::Hooks]
+  .before_sample_job_queues() [HireFire::Plan::Hooks]
+  .coerce_plan_value(type, value) [HireFire::Plan::Hooks]
+  .extract_plan_options(strategy, options, schema) [HireFire::Plan::Hooks]
+  .job_queue_latency(*queues, min_priority: ?, max_priority: ?) [HireFire::Macro::Delayed::Job]
+  .job_queue_size(*queues, skip_working: ?, min_priority: ?, max_priority: ?) [HireFire::Macro::Delayed::Job]
+  .job_queue_working(*queues) [HireFire::Macro::Delayed::Job]
+  .plan_connection_options() [HireFire::Plan::Hooks]
+  .plan_options(strategy, options) [HireFire::Macro::Delayed::Job]
+  .queue(*queues) [HireFire::Macro::Deprecated::Delayed::Job]
+  .queues_required?() [HireFire::Plan::Hooks]
+  .reinit_after_fork() [HireFire::Plan::Hooks]
+  .supports_plan_strategy?(strategy) [HireFire::Plan::Hooks]
+  #job_queue_latency(*queues, min_priority: ?, max_priority: ?)
+  #job_queue_size(*queues, skip_working: ?, min_priority: ?, max_priority: ?)
+  #job_queue_working(*queues)
+  #plan_options(strategy, options)
+class HireFire::Macro::Delayed::Job::MapperNotDetectedError < StandardError
+  PLAN_OPTION_SCHEMA = {"jqs" => {"skip_working" => :boolean}}
+module HireFire::Macro::Deprecated
+module HireFire::Macro::Deprecated::Bunny
+  #queue(*queues)
+  QUEUE_OPTIONS = [:connection, :amqp_url]
+module HireFire::Macro::Deprecated::Delayed
+module HireFire::Macro::Deprecated::Delayed::Job
+  #queue(*queues)
+  QUEUE_OPTIONS = [:min_priority, :max_priority]
+module HireFire::Macro::Deprecated::GoodJob
+  #queue(*queues)
+module HireFire::Macro::Deprecated::QC
+  #queue(queue = ?)
+module HireFire::Macro::Deprecated::Que
+  #queue(*queues)
+module HireFire::Macro::Deprecated::Resque
+  #queue(*queues)
+module HireFire::Macro::Deprecated::Sidekiq
+  #latency(queue = ?)
+  #queue(*args)
+  QUEUE_OPTIONS = [:skip_scheduled, :skip_retries, :skip_working, :max_scheduled]
+module HireFire::Macro::GoodJob
+  .after_sample_job_queues(token = ?) [HireFire::Plan::Hooks]
+  .before_sample_job_queues() [HireFire::Plan::Hooks]
+  .coerce_plan_value(type, value) [HireFire::Plan::Hooks]
+  .extract_plan_options(strategy, options, schema) [HireFire::Plan::Hooks]
+  .job_queue_latency(*queues) [HireFire::Macro::GoodJob]
+  .job_queue_size(*queues, skip_working: ?) [HireFire::Macro::GoodJob]
+  .job_queue_working(*queues) [HireFire::Macro::GoodJob]
+  .plan_connection_options() [HireFire::Plan::Hooks]
+  .plan_options(strategy, options) [HireFire::Macro::GoodJob]
+  .queue(*queues) [HireFire::Macro::Deprecated::GoodJob]
+  .queues_required?() [HireFire::Plan::Hooks]
+  .reinit_after_fork() [HireFire::Plan::Hooks]
+  .supports_plan_strategy?(strategy) [HireFire::Plan::Hooks]
+  #job_queue_latency(*queues)
+  #job_queue_size(*queues, skip_working: ?)
+  #job_queue_working(*queues)
+  #plan_options(strategy, options)
+  PLAN_OPTION_SCHEMA = {"jqs" => {"skip_working" => :boolean}}
+module HireFire::Macro::Helpers
+module HireFire::Macro::Helpers::ActiveRecordConnection
+module HireFire::Macro::Helpers::GoodJob
+  .extended(base) [HireFire::Macro::Helpers::GoodJob]
+  .privatize_helpers(base) [HireFire::Macro::Helpers::GoodJob]
+  #discarded_enum()
+  #error_event_supported?()
+  #good_job_class()
+module HireFire::Macro::QC
+  .after_sample_job_queues(token = ?) [HireFire::Plan::Hooks]
+  .before_sample_job_queues() [HireFire::Plan::Hooks]
+  .coerce_plan_value(type, value) [HireFire::Plan::Hooks]
+  .extract_plan_options(strategy, options, schema) [HireFire::Plan::Hooks]
+  .job_queue_latency(*queues) [HireFire::Macro::QC]
+  .job_queue_size(*queues, skip_working: ?) [HireFire::Macro::QC]
+  .job_queue_working(*queues) [HireFire::Macro::QC]
+  .plan_connection_options() [HireFire::Plan::Hooks]
+  .plan_options(strategy, options) [HireFire::Macro::QC]
+  .queue(queue = ?) [HireFire::Macro::Deprecated::QC]
+  .queues_required?() [HireFire::Plan::Hooks]
+  .reinit_after_fork() [HireFire::Plan::Hooks]
+  .supports_plan_strategy?(strategy) [HireFire::Plan::Hooks]
+  #job_queue_latency(*queues)
+  #job_queue_size(*queues, skip_working: ?)
+  #job_queue_working(*queues)
+  #plan_options(strategy, options)
+  PLAN_OPTION_SCHEMA = {"jqs" => {"skip_working" => :boolean}}
+module HireFire::Macro::Que
+  .after_sample_job_queues(token = ?) [HireFire::Plan::Hooks]
+  .before_sample_job_queues() [HireFire::Plan::Hooks]
+  .coerce_plan_value(type, value) [HireFire::Plan::Hooks]
+  .extract_plan_options(strategy, options, schema) [HireFire::Plan::Hooks]
+  .job_queue_latency(*queues) [HireFire::Macro::Que]
+  .job_queue_size(*queues, skip_working: ?) [HireFire::Macro::Que]
+  .job_queue_working(*queues) [HireFire::Macro::Que]
+  .plan_connection_options() [HireFire::Plan::Hooks]
+  .plan_options(strategy, options) [HireFire::Macro::Que]
+  .queue(*queues) [HireFire::Macro::Deprecated::Que]
+  .queues_required?() [HireFire::Plan::Hooks]
+  .reinit_after_fork() [HireFire::Plan::Hooks]
+  .supports_plan_strategy?(strategy) [HireFire::Plan::Hooks]
+  #job_queue_latency(*queues)
+  #job_queue_size(*queues, skip_working: ?)
+  #job_queue_working(*queues)
+  #plan_options(strategy, options)
+  PLAN_OPTION_SCHEMA = {"jqs" => {"skip_working" => :boolean}}
+  VERSION_1_0_0 = #<Gem::Version "1.0.0">
+module HireFire::Macro::Resque
+  .after_sample_job_queues(token = ?) [HireFire::Plan::Hooks]
+  .before_sample_job_queues() [HireFire::Plan::Hooks]
+  .coerce_plan_value(type, value) [HireFire::Plan::Hooks]
+  .extract_plan_options(strategy, options, schema) [HireFire::Plan::Hooks]
+  .job_queue_latency(**, ****) [HireFire::Errors::JobQueueLatencyUnsupported]
+  .job_queue_size(*queues, skip_working: ?) [HireFire::Macro::Resque]
+  .job_queue_working(*queues) [HireFire::Macro::Resque]
+  .plan_connection_options() [HireFire::Plan::Hooks]
+  .plan_options(strategy, options) [HireFire::Macro::Resque]
+  .queue(*queues) [HireFire::Macro::Deprecated::Resque]
+  .queues_required?() [HireFire::Plan::Hooks]
+  .reinit_after_fork() [HireFire::Plan::Hooks]
+  .supports_plan_strategy?(strategy) [HireFire::Plan::SizeOnly]
+  #job_queue_size(*queues, skip_working: ?)
+  #job_queue_working(*queues)
+  #plan_options(strategy, options)
+  PLAN_OPTION_SCHEMA = {"jqs" => {"skip_working" => :boolean}}
+  SIZE_METHODS = [:enqueued_size, :scheduled_size]
+  WALK_BATCH = 1000
+  WALK_JOB_BUDGET = 50000
+  WALK_TIME_BUDGET = 2.0
+module HireFire::Macro::Sidekiq
+  .after_sample_job_queues(token = ?) [HireFire::Macro::Sidekiq]
+  .before_sample_job_queues() [HireFire::Macro::Sidekiq]
+  .coerce_plan_value(type, value) [HireFire::Plan::Hooks]
+  .extract_plan_options(strategy, options, schema) [HireFire::Plan::Hooks]
+  .job_queue_latency(*queues, **options) [HireFire::Macro::Sidekiq]
+  .job_queue_size(*queues, **options) [HireFire::Macro::Sidekiq]
+  .job_queue_working(*queues) [HireFire::Macro::Sidekiq]
+  .latency(queue = ?) [HireFire::Macro::Deprecated::Sidekiq]
+  .plan_connection_options() [HireFire::Plan::Hooks]
+  .plan_options(strategy, options) [HireFire::Macro::Sidekiq]
+  .queue(*args) [HireFire::Macro::Deprecated::Sidekiq]
+  .queues_required?() [HireFire::Plan::Hooks]
+  .reinit_after_fork() [HireFire::Macro::Sidekiq]
+  .supports_plan_strategy?(strategy) [HireFire::Plan::Hooks]
+  #after_sample_job_queues(token = ?)
+  #before_sample_job_queues()
+  #job_queue_latency(*queues, **options)
+  #job_queue_size(*queues, **options)
+  #job_queue_working(*queues)
+  #plan_options(strategy, options)
+  #reinit_after_fork()
+module HireFire::Macro::Sidekiq::Common
+class HireFire::Macro::Sidekiq::DueCache
+  .begin_sample!() [HireFire::Macro::Sidekiq::DueCache]
+  .clear_all() [HireFire::Macro::Sidekiq::DueCache]
+  .end_sample!(wave = ?) [HireFire::Macro::Sidekiq::DueCache]
+  .ensure_walk(set_name, mode:, needed:, max_scheduled: ?) [HireFire::Macro::Sidekiq::DueCache]
+  .latency(set_name, queues) [HireFire::Macro::Sidekiq::DueCache]
+  .now_f() [HireFire::Macro::Sidekiq::DueCache]
+  .peek(set_name) [HireFire::Macro::Sidekiq::DueCache]
+  .reinit_after_fork() [HireFire::Macro::Sidekiq::DueCache]
+  .sample_active?() [HireFire::Macro::Sidekiq::DueCache]
+  .size(set_name, queues, max_scheduled: ?) [HireFire::Macro::Sidekiq::DueCache]
+  .working_jobs() [HireFire::Macro::Sidekiq::DueCache]
+  #complete()
+  #complete=()
+  #cursor_rank()
+  #cursor_rank=()
+  #dup_for_fill()
+  #generation()
+  #now_fill()
+  #oldest_at()
+  #record_due(queue, score)
+  #set_name()
+  #size()
+  #total_due()
+  BATCH = 1000
+  FILL_STUCK_SECONDS = 5.0
+  FILL_WAIT_SECONDS = 1.0
+  WALK_MEMBER_BUDGET = 50000
+  WALK_TIME_BUDGET = 2.0
+  WORKING_MEMBER_BUDGET = 20000
+module HireFire::Macro::Sidekiq::JobQueueLatency
+  .call(*queues, skip_retries: ?, skip_scheduled: ?) [HireFire::Macro::Sidekiq::JobQueueLatency]
+  #call(*queues, skip_retries: ?, skip_scheduled: ?)
+module HireFire::Macro::Sidekiq::JobQueueSize
+  .call(*queues, server: ?, **options) [HireFire::Macro::Sidekiq::JobQueueSize]
+  #call(*queues, server: ?, **options)
+  SERVER_SIDE_SCRIPT = String (2564 bytes, sha256 d899c174c5ad)
+  SERVER_SIDE_SCRIPT_SHA = "32a15d30914c737d2e579799a449fedd56e20275"
+module HireFire::Macro::Sidekiq::JobQueueWorking
+  .call(*queues) [HireFire::Macro::Sidekiq::JobQueueWorking]
+  #call(*queues)
+  PLAN_OPTION_SCHEMA = Hash (230 bytes, sha256 41b7558562fc)
+module HireFire::Macro::SolidQueue
+  .after_sample_job_queues(_token = ?) [HireFire::Macro::SolidQueue]
+  .before_sample_job_queues() [HireFire::Macro::SolidQueue]
+  .coerce_plan_value(type, value) [HireFire::Plan::Hooks]
+  .extract_plan_options(strategy, options, schema) [HireFire::Plan::Hooks]
+  .job_queue_latency(*queues) [HireFire::Macro::SolidQueue]
+  .job_queue_size(*queues, skip_working: ?) [HireFire::Macro::SolidQueue]
+  .job_queue_working(*queues) [HireFire::Macro::SolidQueue]
+  .plan_connection_options() [HireFire::Plan::Hooks]
+  .plan_options(strategy, options) [HireFire::Macro::SolidQueue]
+  .queues_required?() [HireFire::Plan::Hooks]
+  .reinit_after_fork() [HireFire::Macro::SolidQueue]
+  .supports_plan_strategy?(strategy) [HireFire::Plan::Hooks]
+  #after_sample_job_queues(_token = ?)
+  #before_sample_job_queues()
+  #job_queue_latency(*queues)
+  #job_queue_size(*queues, skip_working: ?)
+  #job_queue_working(*queues)
+  #plan_options(strategy, options)
+  #reinit_after_fork()
+  LATENCY_METHODS = [:ready_latency, :scheduled_latency]
+  PLAN_OPTION_SCHEMA = {"jqs" => {"skip_working" => :boolean}}
+  REGISTERED_QUEUE_TTL = 60.0
+  SIZE_METHODS = [:ready_size, :scheduled_size]
+module HireFire::Macro::Utility
+class HireFire::Middleware
+  #call(env)
+  REQUEST_QUEUE_TIME_LIMIT = 60000
+module HireFire::Plan
+  .any_allowlisted_job_queue_library_loaded?() [HireFire::Plan]
+  .around_job_queue_sample() [HireFire::Plan]
+  .executable?(adapter) [HireFire::Plan]
+  .execute(entry, live = ?) [HireFire::Plan]
+  .known_adapter?(adapter) [HireFire::Plan]
+  .known_strategy?(strategy) [HireFire::Plan]
+  .library_loaded?(adapter) [HireFire::Plan]
+  .named_plan_queues?(queues) [HireFire::Plan]
+  .queues_required?(adapter) [HireFire::Plan]
+  .reinit_macros_after_fork() [HireFire::Plan]
+  .sampleable_entry?(entry) [HireFire::Plan]
+  .supports_strategy?(adapter, strategy) [HireFire::Plan]
+  #any_allowlisted_job_queue_library_loaded?()
+  #around_job_queue_sample()
+  #executable?(adapter)
+  #execute(entry, live = ?)
+  #known_adapter?(adapter)
+  #known_strategy?(strategy)
+  #library_loaded?(adapter)
+  #named_plan_queues?(queues)
+  #queues_required?(adapter)
+  #reinit_macros_after_fork()
+  #sampleable_entry?(entry)
+  #supports_strategy?(adapter, strategy)
+  ADAPTERS = Hash (316 bytes, sha256 ec5673af668b)
+module HireFire::Plan::Hooks
+  #after_sample_job_queues(token = ?)
+  #before_sample_job_queues()
+  #coerce_plan_value(type, value)
+  #extract_plan_options(strategy, options, schema)
+  #plan_connection_options()
+  #plan_options(strategy, options)
+  #queues_required?()
+  #reinit_after_fork()
+  #supports_plan_strategy?(strategy)
+  LIBRARY_CHECKS = Hash (1256 bytes, sha256 60aa23afb0a1)
+  MAX_QUEUES = 64
+  MAX_QUEUE_NAME_BYTES = 128
+  STRATEGIES = {"jql" => :job_queue_latency, "jqs" => :job_queue_size}
+module HireFire::Plan::SizeOnly
+  #supports_plan_strategy?(strategy)
+class HireFire::Probe
+  .start() [HireFire::Probe]
+  #finish()
+  #log_to(logger)
+  #measure(entry)
+  #record(entry, ms)
+class HireFire::Railtie < Rails::Railtie
+module HireFire::Sample
+  .coerce(value) [HireFire::Sample]
+  .format(value) [HireFire::Sample]
+  .valid?(value) [HireFire::Sample]
+  #coerce(value)
+  #format(value)
+  #valid?(value)
+module HireFire::Source
+class HireFire::Source::CPU
+  #name()
+  #sample()
+module HireFire::Source::CPU::Usage
+  .available_cpus() [HireFire::Source::CPU::Usage]
+  .cgroup_v1_quota() [HireFire::Source::CPU::Usage]
+  .cgroup_v1_seconds() [HireFire::Source::CPU::Usage]
+  .cgroup_v2_quota() [HireFire::Source::CPU::Usage]
+  .cgroup_v2_seconds() [HireFire::Source::CPU::Usage]
+  .clock_ticks() [HireFire::Source::CPU::Usage]
+  .heroku_entitlement() [HireFire::Source::CPU::Usage]
+  .number(value) [HireFire::Source::CPU::Usage]
+  .positive_clock_ticks() [HireFire::Source::CPU::Usage]
+  .proc_namespace_seconds() [HireFire::Source::CPU::Usage]
+  .process_seconds() [HireFire::Source::CPU::Usage]
+  .processor_count() [HireFire::Source::CPU::Usage]
+  .read(path) [HireFire::Source::CPU::Usage]
+  .reading() [HireFire::Source::CPU::Usage]
+  .render_entitlement() [HireFire::Source::CPU::Usage]
+  .stat_ticks(content) [HireFire::Source::CPU::Usage]
+  #available_cpus()
+  #cgroup_v1_quota()
+  #cgroup_v1_seconds()
+  #cgroup_v2_quota()
+  #cgroup_v2_seconds()
+  #clock_ticks()
+  #heroku_entitlement()
+  #number(value)
+  #positive_clock_ticks()
+  #proc_namespace_seconds()
+  #process_seconds()
+  #processor_count()
+  #read(path)
+  #reading()
+  #render_entitlement()
+  #stat_ticks(content)
+  CEDAR_MEMORY_LIMIT = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+  CEDAR_SHARED_ENTITLEMENTS = {536870912 => 1.0, 1073741824 => 2.0}
+  CGROUP_V1_PERIOD = "/sys/fs/cgroup/cpu/cpu.cfs_period_us"
+  CGROUP_V1_QUOTA = "/sys/fs/cgroup/cpu/cpu.cfs_quota_us"
+  CGROUP_V1_USAGE = "/sys/fs/cgroup/cpuacct/cpuacct.usage"
+  CGROUP_V2_QUOTA = "/sys/fs/cgroup/cpu.max"
+  CGROUP_V2_USAGE = "/sys/fs/cgroup/cpu.stat"
+  PROC_STAT_GLOB = "/proc/[0-9]*/stat"
+class HireFire::Source::HTTP
+  #name()
+  #sample(request_queue_time)
+class HireFire::Source::JobQueue
+  #name()
+  #sample()
+class HireFire::Source::JobQueues
+  #<<(job_queue)
+  #each(&block)
+  #find_by_name(name)
+  #sample_job_queue(job_queue, strategy, live: ?, name: ?)
+module HireFire::Strategy
+  .rqt?(strategy) [HireFire::Strategy]
+  #rqt?(strategy)
+  RQT = "rqt"
+  VERSION = "2.0.0"

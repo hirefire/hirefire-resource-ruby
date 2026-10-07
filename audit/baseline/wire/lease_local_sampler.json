@@ -1,0 +1,86 @@
+{
+  "scenario": "lease_local_sampler",
+  "epoch": 1767225600,
+  "requests": [
+    {
+      "verb": "POST",
+      "path": "/metrics/lease",
+      "headers": [
+        [
+          "Accept-Encoding",
+          "gzip;q=1.0,deflate;q=0.6,identity;q=0.3"
+        ],
+        [
+          "Accept",
+          "*/*"
+        ],
+        [
+          "User-Agent",
+          "Ruby"
+        ],
+        [
+          "Hirefire-Token",
+          "golden-token"
+        ],
+        [
+          "Hirefire-Agent",
+          "Ruby-2.0.0"
+        ],
+        [
+          "Hirefire-Process-Id",
+          "<uuid>"
+        ],
+        [
+          "Host",
+          "<host>"
+        ],
+        [
+          "Content-Length",
+          "0"
+        ]
+      ],
+      "body": "",
+      "body_normalized": false
+    },
+    {
+      "verb": "POST",
+      "path": "/metrics/ingest",
+      "headers": [
+        [
+          "Accept-Encoding",
+          "gzip;q=1.0,deflate;q=0.6,identity;q=0.3"
+        ],
+        [
+          "Accept",
+          "*/*"
+        ],
+        [
+          "User-Agent",
+          "Ruby"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "Hirefire-Token",
+          "golden-token"
+        ],
+        [
+          "Hirefire-Agent",
+          "Ruby-2.0.0"
+        ],
+        [
+          "Host",
+          "<host>"
+        ],
+        [
+          "Content-Length",
+          "55"
+        ]
+      ],
+      "body": "[{\"name\":\"worker\",\"metrics\":{\"jqs\":{\"1767225600\":42}}}]",
+      "body_normalized": false
+    }
+  ]
+}

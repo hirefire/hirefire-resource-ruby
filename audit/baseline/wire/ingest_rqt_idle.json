@@ -1,0 +1,46 @@
+{
+  "scenario": "ingest_rqt_idle",
+  "epoch": 1767225600,
+  "requests": [
+    {
+      "verb": "POST",
+      "path": "/metrics/ingest",
+      "headers": [
+        [
+          "Accept-Encoding",
+          "gzip;q=1.0,deflate;q=0.6,identity;q=0.3"
+        ],
+        [
+          "Accept",
+          "*/*"
+        ],
+        [
+          "User-Agent",
+          "Ruby"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "Hirefire-Token",
+          "golden-token"
+        ],
+        [
+          "Hirefire-Agent",
+          "Ruby-2.0.0"
+        ],
+        [
+          "Host",
+          "<host>"
+        ],
+        [
+          "Content-Length",
+          "52"
+        ]
+      ],
+      "body": "[{\"name\":\"web\",\"metrics\":{\"rqt\":{\"1767225600\":[]}}}]",
+      "body_normalized": false
+    }
+  ]
+}

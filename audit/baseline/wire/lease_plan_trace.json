@@ -1,0 +1,86 @@
+{
+  "scenario": "lease_plan_trace",
+  "epoch": 1767225600,
+  "requests": [
+    {
+      "verb": "POST",
+      "path": "/metrics/lease",
+      "headers": [
+        [
+          "Accept-Encoding",
+          "gzip;q=1.0,deflate;q=0.6,identity;q=0.3"
+        ],
+        [
+          "Accept",
+          "*/*"
+        ],
+        [
+          "User-Agent",
+          "Ruby"
+        ],
+        [
+          "Hirefire-Token",
+          "golden-token"
+        ],
+        [
+          "Hirefire-Agent",
+          "Ruby-2.0.0"
+        ],
+        [
+          "Hirefire-Process-Id",
+          "<uuid>"
+        ],
+        [
+          "Host",
+          "<host>"
+        ],
+        [
+          "Content-Length",
+          "0"
+        ]
+      ],
+      "body": "",
+      "body_normalized": false
+    },
+    {
+      "verb": "POST",
+      "path": "/metrics/ingest",
+      "headers": [
+        [
+          "Accept-Encoding",
+          "gzip;q=1.0,deflate;q=0.6,identity;q=0.3"
+        ],
+        [
+          "Accept",
+          "*/*"
+        ],
+        [
+          "User-Agent",
+          "Ruby"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "Hirefire-Token",
+          "golden-token"
+        ],
+        [
+          "Hirefire-Agent",
+          "Ruby-2.0.0"
+        ],
+        [
+          "Host",
+          "<host>"
+        ],
+        [
+          "Content-Length",
+          "<length>"
+        ]
+      ],
+      "body": "[{\"name\":\"worker\",\"metrics\":{\"jqs\":{\"1767225600\":3},\"wrk\":{\"1767225600\":0}},\"sample_trace\":{\"wave_ms\":\"<Float>\",\"ops\":[{\"adapter\":\"sidekiq\",\"strategy\":\"jqs\",\"queues\":[\"default\"],\"options\":{\"skip_working\":true},\"ms\":\"<Float>\"},{\"adapter\":\"sidekiq\",\"strategy\":\"jql\",\"queues\":[\"empty\"],\"options\":{},\"ms\":\"<Float>\"}]}},{\"name\":\"latency\",\"metrics\":{\"jql\":{\"1767225600\":0.0},\"wrk\":{\"1767225600\":0}}}]",
+      "body_normalized": true
+    }
+  ]
+}

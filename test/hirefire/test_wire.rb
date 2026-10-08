@@ -2,6 +2,8 @@
 
 require "test_helper"
 require "support/fake_server"
+require "tmpdir"
+require "rbconfig"
 
 class HireFire::WireTest < Minitest::Test
   EPOCH = 1_767_225_600
@@ -292,6 +294,36 @@ class HireFire::WireTest < Minitest::Test
     wait_for_log("HireFire::Client::RequestError: Lease request failed with 500 status.")
 
     assert HireFire.configuration.dispatcher.running?
+  end
+
+  def test_a_process_that_daemonizes_keeps_reporting
+    skip "Process.fork unavailable" unless Process.respond_to?(:fork)
+    Dir.mktmpdir("hirefire-daemon") do |dir|
+      go = File.join(dir, "go")
+      pid_file = File.join(dir, "pid")
+      script = <<~RUBY
+        require "hirefire-resource"
+        require "logger"
+        HireFire.configure { |config| config.logger = Logger.new(File::NULL) }
+        sleep(0.01) until File.exist?(ARGV[0])
+        Process.daemon(true, true)
+        File.write(ARGV[1], Process.pid.to_s)
+        sleep(10)
+      RUBY
+      env = {"HIREFIRE_TOKEN" => "wire-token", "HIREFIRE_DATA_URL" => @server.url, "DYNO" => "web.1", "RUBYOPT" => nil}
+      starter = Process.spawn(env, RbConfig.ruby, "-I", File.expand_path("../../lib", __dir__), "-e", script, go, pid_file)
+
+      wait_for_request("/metrics/ingest")
+      before = @server.requests.size
+      File.write(go, "")
+      Process.wait(starter)
+      wait_for("the pid of the daemon") { File.exist?(pid_file) && !File.read(pid_file).empty? }
+
+      wait_for("a request from the daemon") { @server.accepted >= 2 && @server.requests.size > before }
+      assert_operator @server.accepted, :>=, 2
+    ensure
+      Process.kill("KILL", File.read(pid_file).to_i) if pid_file && File.exist?(pid_file)
+    end
   end
 
   private

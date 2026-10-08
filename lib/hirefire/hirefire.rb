@@ -57,6 +57,13 @@ module HireFire
     Log.safe(configuration.logger, :error, "[HireFire] After-fork parent stop failed: #{e.message}")
   end
 
+  def after_daemon(restart)
+    @handoffs = @handoff_watch = nil
+    configuration.dispatcher.start if restart
+  rescue => e
+    Log.safe(configuration.logger, :error, "[HireFire] After-daemon restart failed: #{e.message}")
+  end
+
   module ForkHook
     def _fork
       pid = super
@@ -66,6 +73,11 @@ module HireFire
         HireFire.after_fork_in_parent(pid)
       end
       pid
+    end
+
+    def daemon(*)
+      running = HireFire.configuration.dispatcher.running?
+      super.tap { HireFire.after_daemon(running) }
     end
   end
   private_constant :ForkHook

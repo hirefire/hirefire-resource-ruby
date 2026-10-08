@@ -121,7 +121,7 @@ class HireFire::Macro::QCTest < Minitest::Test
     refute_nil other.lock
     other.enqueue_at(1.minute.from_now.to_i, "BasicJob.perform")
     other.conn_adapter.execute(
-      "UPDATE #{::QC.table_name} SET locked_at = now() WHERE q_name = 'other' AND scheduled_at > now()"
+      "UPDATE #{::QC.table_name} SET locked_at = now(), locked_by = pg_backend_pid() WHERE q_name = 'other' AND scheduled_at > now()"
     )
 
     assert_equal 3, HireFire::Macro::QC.job_queue_size
@@ -213,6 +213,26 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_equal 1, HireFire::Macro::QC.job_queue_size(:default)
     assert_equal 1, HireFire::Macro::QC.job_queue_size(:other)
     assert_equal 0, HireFire::Macro::QC.job_queue_size(:other, skip_working: true)
+  end
+
+  def test_a_job_locked_by_a_backend_that_no_longer_exists_counts_as_waiting
+    QC::Queue.new("default").enqueue_at(1.minute.ago.to_i, "BasicJob.perform")
+    ActiveRecord::Base.connection.execute("UPDATE #{::QC.table_name} SET locked_at = now(), locked_by = 2000000000")
+
+    assert_equal 0, HireFire::Macro::QC.job_queue_working
+    assert_equal 0, HireFire::Macro::QC.job_queue_working(:default)
+    assert_equal 1, HireFire::Macro::QC.job_queue_size(skip_working: true)
+    assert_equal 1, HireFire::Macro::QC.job_queue_size
+    assert_in_delta 60, HireFire::Macro::QC.job_queue_latency, 2
+  end
+
+  def test_a_locked_job_that_names_no_backend_counts_as_waiting
+    QC::Queue.new("default").enqueue_at(1.minute.ago.to_i, "BasicJob.perform")
+    ActiveRecord::Base.connection.execute("UPDATE #{::QC.table_name} SET locked_at = now(), locked_by = NULL")
+
+    assert_equal 0, HireFire::Macro::QC.job_queue_working
+    assert_equal 1, HireFire::Macro::QC.job_queue_size(skip_working: true)
+    assert_in_delta 60, HireFire::Macro::QC.job_queue_latency, 2
   end
 
   def test_plan_execute_queue_classic_jqs_counts_running_jobs_and_samples_no_wrk

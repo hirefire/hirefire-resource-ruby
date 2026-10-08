@@ -53,10 +53,10 @@ module HireFire
 
             case mapper
             when :active_record
-              query = ::Delayed::Job.where(failed_at: nil).where.not(locked_at: nil)
+              query = unfailed_scope.where("locked_at >= ?", lock_expiry)
               query = query.where(queue: queues) if queues.any?
             when :mongoid
-              query = ::Delayed::Job.where(:failed_at => nil, :locked_at.ne => nil)
+              query = unfailed_scope.where(locked_at: {"$gte" => lock_expiry})
               query = query.in(queue: queues.to_a) if queues.any?
             end
 
@@ -90,7 +90,16 @@ module HireFire
         end
 
         def waiting_scope
-          unfailed_scope.where(locked_at: nil)
+          case mapper
+          when :active_record
+            unfailed_scope.where("locked_at IS NULL OR locked_at < ?", lock_expiry)
+          when :mongoid
+            unfailed_scope.where("$or" => [{locked_at: nil}, {locked_at: {"$lt" => lock_expiry}}])
+          end
+        end
+
+        def lock_expiry
+          Time.now - ::Delayed::Worker.max_run_time
         end
 
         def mapper

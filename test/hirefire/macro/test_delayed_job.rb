@@ -310,6 +310,29 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size(:other, skip_working: true)
   end
 
+  def test_a_job_locked_longer_than_max_run_time_counts_as_waiting
+    expired = Time.now - Delayed::Worker.max_run_time - 60
+    BasicJob.delay(queue: :default, run_at: 10.minutes.ago).perform.update(locked_at: expired, locked_by: "a worker that was killed")
+
+    if Delayed::Job.respond_to?(:ready_to_run)
+      assert_equal 1, Delayed::Job.ready_to_run("another worker", Delayed::Worker.max_run_time).count
+    end
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_working(:default)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:default, skip_working: true)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:default)
+    assert_in_delta 600, HireFire::Macro::Delayed::Job.job_queue_latency(:default), LATENCY_DELTA
+  end
+
+  def test_a_job_locked_within_max_run_time_counts_as_working
+    fresh = Time.now - Delayed::Worker.max_run_time + 60
+    BasicJob.delay(queue: :default, run_at: 10.minutes.ago).perform.update(locked_at: fresh, locked_by: "worker-1")
+
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_working(:default)
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_size(:default, skip_working: true)
+    assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_size(:default)
+    assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_latency(:default)
+  end
+
   def test_plan_execute_delayed_job_jqs_counts_running_jobs_and_samples_no_wrk
     HireFire.configure { |c| c.logger = Logger.new(File::NULL) }
     buffer = HireFire.configuration.buffer

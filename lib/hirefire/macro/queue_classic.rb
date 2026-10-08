@@ -20,6 +20,9 @@ module HireFire
         }.freeze
       }.freeze
 
+      LOCKED = "locked_at IS NOT NULL AND locked_by IN (SELECT pid FROM pg_stat_activity)"
+      UNLOCKED = "(locked_at IS NULL OR locked_by IS NULL OR locked_by NOT IN (SELECT pid FROM pg_stat_activity))"
+
       def plan_options(strategy, options)
         extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
       end
@@ -31,7 +34,7 @@ module HireFire
             SELECT EXTRACT(EPOCH FROM (now() - scheduled_at)) AS latency
             FROM #{::QC.table_name}
             WHERE scheduled_at <= now()
-              AND locked_at IS NULL
+              AND #{UNLOCKED}
             #{filter_by_queues_if_any(queues, style: connection ? :ar : :dollar)}
             ORDER BY scheduled_at ASC
             LIMIT 1
@@ -47,7 +50,7 @@ module HireFire
           query = <<~SQL
             SELECT COUNT(*) FROM #{::QC.table_name}
             WHERE scheduled_at <= now()
-            #{"AND locked_at IS NULL" if skip_working}
+            #{"AND #{UNLOCKED}" if skip_working}
             #{filter_by_queues_if_any(queues, style: connection ? :ar : :dollar)}
           SQL
           result = query_one(connection, query, queues.to_a)
@@ -60,7 +63,7 @@ module HireFire
           queues = normalize_queues(queues, allow_empty: true)
           query = <<~SQL
             SELECT COUNT(*) FROM #{::QC.table_name}
-            WHERE locked_at IS NOT NULL
+            WHERE #{LOCKED}
             #{filter_by_queues_if_any(queues, style: connection ? :ar : :dollar)}
           SQL
           result = query_one(connection, query, queues.to_a)

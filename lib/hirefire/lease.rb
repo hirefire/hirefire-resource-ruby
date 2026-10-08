@@ -165,48 +165,36 @@ module HireFire
         return empty_grant_body(trace: trace)
       end
 
-      accepted = []
-      skipped = 0
-      entries.each do |entry|
-        if accepted.size >= MAX_JOB_QUEUES
-          skipped += 1
-          next
-        end
-        unless entry.is_a?(Hash)
-          skipped += 1
-          next
-        end
+      valid = entries.filter_map { |entry| normalize_entry(entry) }
+      invalid = entries.size - valid.size
 
-        name = entry["name"].to_s.strip
-        strategy = entry["strategy"].to_s.strip
-        adapter = entry.key?("adapter") ? entry["adapter"].to_s.strip : nil
-        if name.empty? || strategy.empty? || name.bytesize > MAX_NAME_BYTES
-          skipped += 1
-          next
-        end
-
-        normalized = entry.merge("name" => name, "strategy" => strategy)
-        if entry.key?("adapter")
-          normalized["adapter"] = adapter
-        end
-        accepted << normalized
-      end
-
-      if entries.size > MAX_JOB_QUEUES
+      if valid.size > MAX_JOB_QUEUES
         Log.safe(HireFire.configuration.logger, :error,
           "[HireFire] Lease plan truncated to #{MAX_JOB_QUEUES} job queue entries" \
-          "#{" (#{skipped} invalid also skipped)" if skipped.positive?}.")
-      elsif skipped.positive?
-        label = (skipped == 1) ? "entry" : "entries"
+          "#{" (#{invalid} invalid also skipped)" if invalid.positive?}.")
+      elsif invalid.positive?
+        label = (invalid == 1) ? "entry" : "entries"
         Log.safe(HireFire.configuration.logger, :error,
-          "[HireFire] Lease plan skipped #{skipped} invalid job queue #{label}.")
+          "[HireFire] Lease plan skipped #{invalid} invalid job queue #{label}.")
       end
 
-      GrantBody.new(job_queues: accepted, trace: trace)
+      GrantBody.new(job_queues: valid.first(MAX_JOB_QUEUES), trace: trace)
     rescue JSON::ParserError
       Log.safe(HireFire.configuration.logger, :error,
         "[HireFire] Lease grant body was not valid JSON. Plan ignored.")
       empty_grant_body
+    end
+
+    def normalize_entry(entry)
+      return unless entry.is_a?(Hash)
+
+      name = entry["name"].to_s.strip
+      strategy = entry["strategy"].to_s.strip
+      return if name.empty? || strategy.empty? || name.bytesize > MAX_NAME_BYTES
+
+      normalized = entry.merge("name" => name, "strategy" => strategy)
+      normalized["adapter"] = entry["adapter"].to_s.strip if entry.key?("adapter")
+      normalized
     end
 
     def clear_grant

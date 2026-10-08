@@ -495,7 +495,39 @@ class HireFire::LeaseTest < Minitest::Test
     lease.request_if_due(hold: ->(_) { true })
 
     assert_equal HireFire::Lease::MAX_JOB_QUEUES, lease.job_queues.size
-    assert_includes log.string, "truncated"
+    assert_equal "w255", lease.job_queues.last["name"]
+    assert_includes log.string, "Lease plan truncated to 256 job queue entries.\n"
+  end
+
+  def test_truncation_counts_only_the_invalid_entries_as_invalid
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    entries = Array.new(HireFire::Lease::MAX_JOB_QUEUES + 1) { |i| {"name" => "w#{i}", "strategy" => "jql"} }
+    entries.insert(3, "not-a-hash", {"name" => "", "strategy" => "jql"})
+
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"}, body: {job_queues: entries}.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert_equal HireFire::Lease::MAX_JOB_QUEUES, lease.job_queues.size
+    assert_includes log.string, "Lease plan truncated to 256 job queue entries (2 invalid also skipped).\n"
+  end
+
+  def test_a_plan_at_the_limit_after_invalid_entries_are_skipped_is_not_truncated
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    entries = Array.new(HireFire::Lease::MAX_JOB_QUEUES) { |i| {"name" => "w#{i}", "strategy" => "jql"} }
+    entries << "not-a-hash"
+
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"}, body: {job_queues: entries}.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert_equal HireFire::Lease::MAX_JOB_QUEUES, lease.job_queues.size
+    assert_includes log.string, "Lease plan skipped 1 invalid job queue entry.\n"
+    refute_includes log.string, "truncated"
   end
 
   def test_skips_invalid_plan_entries

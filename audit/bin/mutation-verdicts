@@ -2,51 +2,18 @@
 # frozen_string_literal: true
 
 require "json"
-require "prism"
 require_relative "../lib/results"
 require_relative "../lib/mutation/verdicts"
 
 MINIMUM = 90.0
 
-class Methods < Prism::Visitor
-  attr_reader :ranges
-
-  def initialize
-    super
-    @ranges = []
-  end
-
-  def visit_def_node(node)
-    @ranges << [node.location.start_line, node.location.end_line, node.name.to_s]
-    super
-  end
-end
-
-methods = Hash.new do |hash, file|
-  visitor = Methods.new
-  visitor.visit(Prism.parse_file(File.join(Audit::ROOT, file)).value)
-  hash[file] = visitor.ranges
-end
-enclosing = lambda do |record|
-  range = methods[record["file"]].select { |first, last, _| record["line"].between?(first, last) }.min_by { |first, last, _| last - first }
-  range ? range[2] : "(top level)"
-end
-matches = lambda do |rule, record, name|
-  first = record["original"].lines.first.to_s.strip
-  (rule[:file].nil? || record["file"] == "lib/hirefire/#{rule[:file]}.rb" || record["file"] == rule[:file]) &&
-    (rule[:method].nil? || Array(rule[:method]).include?(name)) &&
-    (rule[:kind].nil? || Array(rule[:kind]).include?(record["kind"])) &&
-    (rule[:original].nil? || rule[:original] === first) &&
-    (rule[:replacement].nil? || rule[:replacement] === record["replacement"].lines.first.to_s.strip)
-end
-
 records = File.readlines(Audit.results("mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
 survivors = records.select { |record| %w[survived uncovered].include?(record["status"]) }
 used = Hash.new(0)
 survivors.each do |record|
-  name = enclosing.call(record)
-  index = Audit::Mutation::VERDICTS.index { |rule| matches.call(rule, record, name) }
-  record["method"] = name
+  mutant = record.slice("file", "line", "kind", "original", "replacement").transform_keys(&:to_sym)
+  index = Audit::Mutation.verdict_index(Audit::ROOT, **mutant)
+  record["method"] = Audit::Mutation.enclosing_method(Audit::ROOT, record["file"], record["line"])
   next unless index
 
   used[index] += 1

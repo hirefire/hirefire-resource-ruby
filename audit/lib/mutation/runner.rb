@@ -4,6 +4,7 @@ require "bundler"
 require "fileutils"
 require "json"
 require_relative "generator"
+require_relative "verdicts"
 
 module Audit
   module Mutation
@@ -123,12 +124,16 @@ module Audit
 
           if killer
             finish(job, status: timed_out ? "timeout" : "killed", killed_by: killer)
-          elsif pool == :free && job.fetch(:service).any?
+          elsif pool == :free && job.fetch(:service).any? && !verdict?(mutant)
             @service_queue << job
           else
             finish(job, status: "survived")
           end
         end
+      end
+
+      def verdict?(mutant)
+        Mutation.verdict_index(@root, file: mutant.file, line: mutant.line, kind: mutant.kind, original: mutant.original, replacement: mutant.replacement)
       end
 
       def finish(job, **fields)

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "prism"
+
 module Audit
   module Mutation
     NIL_INITIALIZER = "the deleted line sets an instance variable to nil or false where the object is built, and an unset instance variable reads nil, which every reader treats the same"
@@ -35,5 +37,42 @@ module Audit
       {file: "macro/sidekiq/due_cache", method: "first_due_age", kind: "operator", original: "<=", verdict: "equivalent",
        reason: "a member that is due at this very moment has an age of zero, which is also the answer for a member that is not due"}
     ].freeze
+
+    class MethodRanges < Prism::Visitor
+      attr_reader :ranges
+
+      def initialize
+        super
+        @ranges = []
+      end
+
+      def visit_def_node(node)
+        @ranges << [node.location.start_line, node.location.end_line, node.name.to_s]
+        super
+      end
+    end
+
+    RANGES = Hash.new do |ranges, path|
+      visitor = MethodRanges.new
+      visitor.visit(Prism.parse_file(path).value)
+      ranges[path] = visitor.ranges
+    end
+
+    def self.enclosing_method(root, file, line)
+      range = RANGES[File.join(root, file)].select { |first, last, _| line.between?(first, last) }.min_by { |first, last, _| last - first }
+      range ? range[2] : "(top level)"
+    end
+
+    def self.verdict_index(root, file:, line:, kind:, original:, replacement:)
+      name = enclosing_method(root, file, line)
+      first = original.lines.first.to_s.strip
+      VERDICTS.index do |rule|
+        (rule[:file].nil? || file == "lib/hirefire/#{rule[:file]}.rb" || file == rule[:file]) &&
+          (rule[:method].nil? || Array(rule[:method]).include?(name)) &&
+          (rule[:kind].nil? || Array(rule[:kind]).include?(kind)) &&
+          (rule[:original].nil? || rule[:original] === first) &&
+          (rule[:replacement].nil? || rule[:replacement] === replacement.lines.first.to_s.strip)
+      end
+    end
   end
 end

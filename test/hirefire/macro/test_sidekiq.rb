@@ -1160,14 +1160,16 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     seed_due_scheduled(60_000)
     options = {skip_retries: true, skip_working: true}
 
-    wave = HireFire::Macro::Sidekiq::DueCache.begin_sample!
-    before = zrange_calls
-    sizes = %w[default one two three four].map { |queue| HireFire::Macro::Sidekiq.job_queue_size(queue, **options) }
-    calls = zrange_calls - before
-    HireFire::Macro::Sidekiq::DueCache.end_sample!(wave)
+    stub_due_cache_const(:WALK_TIME_BUDGET, Float::INFINITY) do
+      wave = HireFire::Macro::Sidekiq::DueCache.begin_sample!
+      before = zrange_calls
+      sizes = %w[default one two three four].map { |queue| HireFire::Macro::Sidekiq.job_queue_size(queue, **options) }
+      calls = zrange_calls - before
+      HireFire::Macro::Sidekiq::DueCache.end_sample!(wave)
 
-    assert_equal [60_000, 10_001, 10_001, 10_001, 10_001], sizes
-    assert_equal 50, calls
+      assert_equal [60_000, 10_001, 10_001, 10_001, 10_001], sizes
+      assert_equal 50, calls
+    end
   end
 
   def test_plan_records_the_upper_bound_when_the_named_walk_budget_is_exceeded
@@ -1219,11 +1221,15 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
   def seed_due_scheduled(count, queue: "default", set: "schedule")
     script = <<~LUA
-      for i = 1, tonumber(ARGV[1]) do
-        redis.call("zadd", ARGV[4], ARGV[2], '{"class":"SampleWorker","args":[],"queue":"' .. ARGV[3] .. '","jid":"' .. i .. '"}')
+      for i = tonumber(ARGV[1]), tonumber(ARGV[2]) do
+        redis.call("zadd", ARGV[5], ARGV[3], '{"class":"SampleWorker","args":[],"queue":"' .. ARGV[4] .. '","jid":"' .. i .. '"}')
       end
     LUA
-    Sidekiq.redis { |connection| connection.call("eval", script, 0, count, Time.now.to_f - 60, queue, set) }
+    score = Time.now.to_f - 60
+    1.step(count, 20_000) do |first|
+      last = [first + 19_999, count].min
+      Sidekiq.redis { |connection| connection.call("eval", script, 0, first, last, score, queue, set) }
+    end
   end
 
   def stub_due_cache_const(name, value)

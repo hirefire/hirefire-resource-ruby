@@ -7,6 +7,7 @@ require "json"
 require "optparse"
 require "time"
 require_relative "../lib/matrix"
+require_relative "../lib/results"
 
 options = {coverage: false, cells: nil, timeout: 1800, seed: nil}
 parser = OptionParser.new do |opts|
@@ -20,7 +21,7 @@ parser.parse!
 run_id = ARGV.shift or abort(parser.banner)
 
 root = Audit::Matrix::ROOT
-run_dir = File.join(root, "audit/results/matrix", run_id)
+run_dir = Audit.results("matrix", run_id)
 FileUtils.mkdir_p(run_dir)
 cells = options[:cells] || Audit::Matrix.cells.keys
 
@@ -45,7 +46,7 @@ results = cells.map do |cell|
     "BUNDLE_GEMFILE" => Audit::Matrix.gemfile(cell),
     "COVERAGE" => options[:coverage].to_s,
     "COVERAGE_CELL" => cell,
-    "COVERAGE_DIR" => File.join("audit/results/coverage/cells", cell)
+    "COVERAGE_DIR" => Audit.results("coverage/cells", cell)
   }
   command = ["bundle", "exec", "ruby", "-Ilib:test", "-e", "ARGV.shift(#{paths.size}).each { |file| require file }", *paths]
   command += ["--seed", options[:seed].to_s] if options[:seed]

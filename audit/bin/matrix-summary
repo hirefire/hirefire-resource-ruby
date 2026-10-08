@@ -2,9 +2,9 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "../lib/results"
 
-root = File.expand_path("../..", __dir__)
-paths = Dir[File.join(root, "audit/results/matrix/*/summary.json")].sort
+paths = Dir[Audit.results("matrix/*/summary.json")].sort
 abort "no matrix runs under audit/results/matrix" if paths.empty?
 
 runs = paths.map { |path| JSON.parse(File.read(path)) }
@@ -38,6 +38,6 @@ aggregate = {
   flaky_tests: flaky,
   rows: rows
 }
-File.write(File.join(root, "audit/results/matrix/summary.json"), JSON.pretty_generate(aggregate) + "\n")
+File.write(Audit.results("matrix/summary.json"), JSON.pretty_generate(aggregate) + "\n")
 puts format("runs=%d green=%d flaky_tests=%d", aggregate[:runs], aggregate[:green_runs], flaky.size)
 flaky.each { |test, count| puts "  #{count}x #{test}" }

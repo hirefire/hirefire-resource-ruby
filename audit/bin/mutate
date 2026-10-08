@@ -4,10 +4,11 @@
 require "json"
 require "optparse"
 require_relative "../lib/matrix"
+require_relative "../lib/results"
 require_relative "../lib/mutation/runner"
 
 root = Audit::Matrix::ROOT
-results = File.join(root, "audit/results/mutation/mutants.jsonl")
+results = Audit.results("mutation/mutants.jsonl")
 FileUtils.mkdir_p(File.dirname(results))
 files = Dir.chdir(root) { Dir["lib/**/*.rb"].sort }
 
@@ -41,7 +42,7 @@ when "run"
     free_dirs: options[:free],
     service_dirs: options[:service],
     cells: Audit::Matrix.cells,
-    coverage: JSON.parse(File.read(File.join(root, "audit/baseline/coverage.json"))),
+    coverage: JSON.parse(File.read(Audit.coverage_file)),
     files: options[:only] || files
   ).run
 when "report"
@@ -64,14 +65,14 @@ when "report"
   end
   killed, total, percent = score(records)
   puts format("%-48s %7d %6d %8d %9d %7d %6s", "TOTAL", total, killed, records.count { |record| record["status"] == "survived" }, records.count { |record| record["status"] == "uncovered" }, records.count { |record| record["status"] == "timeout" }, percent)
-  File.write(File.join(root, "audit/results/mutation/scores.json"), JSON.pretty_generate(files: rows, total: {mutants: total, killed: killed, score: percent}) + "\n")
+  File.write(Audit.results("mutation/scores.json"), JSON.pretty_generate(files: rows, total: {mutants: total, killed: killed, score: percent}) + "\n")
 
   survivors = records.select { |record| %w[survived uncovered].include?(record["status"]) }.sort_by { |record| [record["file"], record["line"], record["kind"]] }
   lines = survivors.map do |record|
     [record["id"], record["status"], "#{record["file"]}:#{record["line"]}", record["kind"], record["original"].lines.first.to_s.strip[0, 70], record["replacement"].lines.first.to_s.strip[0, 50]].join("\t")
   end
-  File.write(File.join(root, "audit/results/mutation/survivors.tsv"), lines.join("\n") + "\n")
-  puts "#{survivors.size} survivors -> audit/results/mutation/survivors.tsv"
+  File.write(Audit.results("mutation/survivors.tsv"), lines.join("\n") + "\n")
+  puts "#{survivors.size} survivors -> #{Audit.results("mutation/survivors.tsv")}"
 else
   abort "usage: mutate count | run --free DIRS --service DIRS [--only FILES] | report"
 end

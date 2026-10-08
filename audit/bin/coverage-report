@@ -3,16 +3,17 @@
 
 require "json"
 require "simplecov"
+require_relative "../lib/results"
 
 root = File.expand_path("../..", __dir__)
 Dir.chdir(root)
 
-resultsets = Dir[File.join(root, "audit/results/coverage/cells/*/.resultset.json")].sort
+resultsets = Dir[Audit.results("coverage/cells/*/.resultset.json")].sort
 abort "no coverage results under audit/results/coverage/cells" if resultsets.empty?
 
 SimpleCov.configure do
   root root
-  coverage_dir "audit/results/coverage/merged"
+  coverage_dir Audit.results("coverage/merged")
   enable_coverage :branch
   primary_coverage :line
   filters.clear
@@ -74,8 +75,8 @@ output = {
   line_cells: cells_by_line.transform_values { |lines| lines.sort.to_h },
   relevant_lines: relevant_lines.transform_values { |lines| lines.uniq.sort }
 }
-FileUtils.mkdir_p(File.join(root, "audit/baseline"))
-File.write(File.join(root, "audit/baseline/coverage.json"), JSON.generate(output) + "\n")
+FileUtils.mkdir_p(File.dirname(Audit.coverage_file))
+File.write(Audit.coverage_file, JSON.generate(output) + "\n")
 
 puts "file                                              lines   line % branches branch %    missed"
 files.each do |file|

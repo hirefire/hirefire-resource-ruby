@@ -3,9 +3,10 @@
 
 require "json"
 require "prism"
+require_relative "../lib/results"
 
 root = File.expand_path("../..", __dir__)
-records = File.readlines(File.join(root, "audit/results/mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
+records = File.readlines(Audit.results("mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
 alive = records.select { |record| %w[survived uncovered].include?(record["status"]) }
 
 class Methods < Prism::Visitor
@@ -93,7 +94,7 @@ output = {
     group.merge(count: group[:mutants].size, files: files.to_h)
   end
 }
-File.write(File.join(root, "audit/results/mutation/triage.json"), JSON.pretty_generate(output) + "\n")
+File.write(Audit.results("mutation/triage.json"), JSON.pretty_generate(output) + "\n")
 
 output[:groups].each do |group|
   target = (group[:verdict] == :equivalent) ? "equivalent" : group[:finding]

@@ -3,9 +3,10 @@
 
 require "json"
 require "prism"
+require_relative "../lib/results"
 
 root = File.expand_path("../..", __dir__)
-records = File.readlines(File.join(root, "audit/results/mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
+records = File.readlines(Audit.results("mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
 alive = records.select { |record| %w[survived uncovered].include?(record["status"]) }
 
 class Methods < Prism::Visitor
@@ -42,7 +43,7 @@ rows = groups.map do |(file, name), list|
   }
 end
 
-File.write(File.join(root, "audit/results/mutation/groups.json"), JSON.pretty_generate(rows.sort_by { |row| [row[:file], row[:lines].first] }) + "\n")
+File.write(Audit.results("mutation/groups.json"), JSON.pretty_generate(rows.sort_by { |row| [row[:file], row[:lines].first] }) + "\n")
 only = ARGV.first
 rows.select { |row| only.nil? || row[:file].include?(only) }.sort_by { |row| [row[:file], row[:lines].first] }.each do |row|
   puts format("%-44s %-34s s=%-3d u=%-3d %s", row[:file].delete_prefix("lib/hirefire/"), "#{row[:method]} (#{row[:lines].join("-")})", row[:survived], row[:uncovered], row[:kinds][0, 70])

@@ -12,7 +12,7 @@ module Audit
       CELL_TIMEOUT = 45
       FOCUSED = {
         "dispatcher/session" => %w[test_dispatcher.rb test_wire.rb],
-        "dispatcher/failure_log" => %w[test_dispatcher.rb],
+        "dispatcher/failure_log" => %w[dispatcher/test_failure_log.rb test_dispatcher.rb],
         "plan/entry" => %w[plan/test_entry.rb test_sampler.rb],
         "sample" => %w[test_sampler.rb],
         "source/cpu/usage" => %w[test_cpu.rb test_cpu_platform.rb],

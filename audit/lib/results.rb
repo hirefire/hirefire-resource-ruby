@@ -2,12 +2,18 @@
 
 module Audit
   ROOT = File.expand_path("../..", __dir__)
+  LOCAL = File.join(ROOT, "audit/results")
+  RECORDED = ENV.fetch("AUDIT_RECORDED", LOCAL)
 
   def self.results(*parts)
-    File.join(ROOT, "audit/results", ENV.fetch("AUDIT_RUN", ""), *parts)
+    File.join(LOCAL, ENV.fetch("AUDIT_RUN", ""), *parts)
+  end
+
+  def self.recorded(*parts)
+    File.join(RECORDED, *parts)
   end
 
   def self.coverage_file
-    ENV["AUDIT_RUN"] ? results("coverage.json") : File.join(ROOT, "audit/baseline/coverage.json")
+    results("coverage.json")
   end
 end

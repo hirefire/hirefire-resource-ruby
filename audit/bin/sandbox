@@ -11,7 +11,7 @@ dest="$1"
 mkdir -p "$dest"
 rsync -a --delete \
   --exclude .git --exclude .env --exclude coverage --exclude pkg \
-  --exclude audit/results --exclude audit/readers \
+  --exclude audit/results \
   "$src/" "$dest/"
 cd "$dest"
 [ -d .git ] || git init -q .

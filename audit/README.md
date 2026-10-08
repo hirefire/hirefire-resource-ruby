@@ -1,6 +1,6 @@
 # Audit workspace
 
-Scripts, snapshots, and raw results of the Ruby client audit. The plan, the map, the lens results, and the findings are in the canon under `hirefire-resource/ruby-audit/`. Nothing here ships: the gemspec packs `lib/` and three documents only.
+Scripts and golden copies of the Ruby client audit. The plan, the map, the lens results, and the findings are in the canon under `hirefire-resource/ruby-audit/`. Nothing here ships: the gemspec packs `lib/` and three documents only.
 
 Run every script with the first Ruby in `.tool-versions`, from the repository root, after `audit/bin/setup`.
 
@@ -20,11 +20,9 @@ Run every script with the first Ruby in `.tool-versions`, from the repository ro
 | `bin/soak`            | Runs the client for a long time with faults and forks. `AUDIT_SOAK_DIAGNOSE=1` counts what stays alive after a full GC |
 | `bin/stress-report`   | Writes the stress results as one Markdown document                                                                     |
 | `bin/check-audit`     | Checks the map, the lens sections, the findings, and the triage                                                        |
-| `baseline/`           | Coverage, the public API snapshot, and the wire golden copies                                                          |
-| `results/`            | Raw results of the matrix, mutation, fault, soak, and lease runs                                                       |
-| `readers/`            | Notes of the second reading, which replaced the second readers                                                         |
+| `baseline/`           | The public API snapshot and the wire golden copies, which the checks compare against                                   |
+| `results/`            | Where every script writes. Ignored by git                                                                              |
 | `evidence/`           | Tests and scripts that prove a finding, outside the regular suite                                                      |
-| `notes/`              | Working notes of the first read                                                                                        |
 
 A test in `evidence/` that ends in `_test.rb` runs inside a sandbox with the gemfile of its cell, for example:
 
@@ -35,3 +33,15 @@ BUNDLE_GEMFILE=gemfiles/sidekiq_8.gemfile COVERAGE=false bundle exec ruby -Ilib:
 ```
 
 Each of these tests fails on purpose: it states the behavior that would be correct. The other files in `evidence/` are scripts that print a measurement, run with `ruby -Ilib`.
+
+## Results
+
+No result is committed to this repository: no test output, coverage, mutation record, fault or soak number, and no report built from them. Every script writes under `audit/results/`, which git ignores. `AUDIT_RUN=<name>` sends a run to `audit/results/<name>/`.
+
+Results worth keeping are stored in the canon, under `hirefire-resource/ruby-audit/results/`, without paths of the machine that produced them. The scripts that compare against a recorded run read it from the directory in `AUDIT_RECORDED`:
+
+```sh
+AUDIT_RECORDED=../hirefire-canon/hirefire-resource/ruby-audit/results AUDIT_RUN=fixes audit/bin/stress-compare
+```
+
+`bin/mutate` needs the coverage map of the same run, so `bin/matrix-run <run> --coverage` and `bin/coverage-report` come first.

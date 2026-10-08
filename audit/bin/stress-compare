@@ -2,20 +2,20 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "../lib/results"
 
-ROOT = File.expand_path("../..", __dir__)
 RUN = ENV.fetch("AUDIT_RUN", "fixes")
 
 def load(*parts)
-  JSON.parse(File.read(File.join(ROOT, "audit/results", *parts)))
+  JSON.parse(File.read(File.join(*parts)))
 end
 
 def pair(before, after)
   format("%9s %9s", before.nil? ? "n/a" : before, after.nil? ? "n/a" : after)
 end
 
-audit_faults = load("faults/results.json").to_h { |result| [result["scenario"], result] }
-fixes_faults = load(RUN, "faults/results.json").to_h { |result| [result["scenario"], result] }
+audit_faults = load(Audit.recorded("faults/results.json")).to_h { |result| [result["scenario"], result] }
+fixes_faults = load(Audit::LOCAL, RUN, "faults/results.json").to_h { |result| [result["scenario"], result] }
 columns = {
   "escaped" => ->(result) { result["escaped"].size },
   "slowest ms" => ->(result) { result["middleware_max_ms"] },
@@ -46,8 +46,8 @@ puts "only on this branch: #{extra.join(", ")}" if extra.any?
   puts format("%-38s %s", label, pair(read.call(audit_faults.values), read.call(fixes_faults.values)))
 end
 
-audit_soak = load("soak/soak.json")
-fixes_soak = load(RUN, "soak/soak.json")
+audit_soak = load(Audit.recorded("soak/soak.json"))
+fixes_soak = load(Audit::LOCAL, RUN, "soak/soak.json")
 puts
 puts "Soak: the audit (4787942) and then this branch"
 rows = [

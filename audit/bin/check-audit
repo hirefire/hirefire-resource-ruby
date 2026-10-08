@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "../lib/results"
 
 root = File.expand_path("../..", __dir__)
 canon = ARGV.fetch(0) { abort "usage: check-audit PATH_TO_CANON_RUBY_AUDIT_DIRECTORY" }
@@ -66,8 +67,8 @@ problems << "severity order is not most serious first" unless ranks == ranks.sor
 counts = blocks.map { |block| block[/^- \*\*Severity:\*\* (.*)$/, 1] }.tally
 report.call("findings", problems, "#{blocks.size} findings, fields complete: #{SEVERITIES.map { |severity| "#{counts[severity].to_i} #{severity}" }.join(", ")}")
 
-triage = JSON.parse(File.read(File.join(root, "audit/results/mutation/triage.json")))
-records = File.readlines(File.join(root, "audit/results/mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
+triage = JSON.parse(File.read(Audit.recorded("mutation/triage.json")))
+records = File.readlines(Audit.recorded("mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
 alive = records.select { |record| %w[survived uncovered].include?(record["status"]) }.map { |record| record["id"] }
 assigned = triage.fetch("groups").flat_map { |group| group.fetch("mutants").map { |mutant| mutant.fetch("id") } }
 problems = []

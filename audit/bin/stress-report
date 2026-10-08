@@ -3,21 +3,21 @@
 
 require "csv"
 require "json"
+require_relative "../lib/results"
 
-root = File.expand_path("../..", __dir__)
-load_json = ->(path) { JSON.parse(File.read(File.join(root, path))) }
-matrix = load_json.call("audit/results/matrix/summary.json")
-scores = load_json.call("audit/results/mutation/scores.json")
-triage = load_json.call("audit/results/mutation/triage.json")
-faults = load_json.call("audit/results/faults/results.json")
-soak = load_json.call("audit/results/soak/soak.json")
-records = File.readlines(File.join(root, "audit/results/mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
+load_json = ->(path) { JSON.parse(File.read(Audit.recorded(path))) }
+matrix = load_json.call("matrix/summary.json")
+scores = load_json.call("mutation/scores.json")
+triage = load_json.call("mutation/triage.json")
+faults = load_json.call("faults/results.json")
+soak = load_json.call("soak/soak.json")
+records = File.readlines(Audit.recorded("mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
 status = records.map { |record| record["status"] }.tally
 
 out = []
 out << "# Ruby client audit: stress results"
 out << ""
-out << "Step 4 of the audit, run on `next` at `4787942` with Ruby 4.0.6. Raw results and the scripts are on the branch `ruby-audit` of the Ruby repository under `audit/results/` and `audit/bin/`. Plan: [README.md](./README.md). The findings these runs produced are in [findings.md](./findings.md)."
+out << "Step 4 of the audit, run on `next` at `4787942` with Ruby 4.0.6. Raw results are in [results/](./results/), and the scripts are in `audit/bin/` of the Ruby repository. Plan: [README.md](./README.md). The findings these runs produced are in [findings.md](./findings.md)."
 out << ""
 out << "## Matrix, 10 runs in random order"
 out << ""
@@ -42,7 +42,7 @@ out << "`errors.rb` and `resource.rb` hold nothing to change. The one change in 
 out << ""
 out << "### What became of the #{triage["alive"]} changes that were not caught"
 out << ""
-out << "Each one is in exactly one group, by the first rule that matches. `audit/results/mutation/triage.json` lists every change with its group, and `audit/results/mutation/groups.json` lists them per method."
+out << "Each one is in exactly one group, by the first rule that matches. [triage.json](./results/mutation/triage.json) lists every change with its group, and [groups.json](./results/mutation/groups.json) lists them per method."
 out << ""
 out << "| Group | Changes | Cause | Verdict |"
 out << "| --- | --- | --- | --- |"
@@ -95,7 +95,7 @@ slope = lambda do |rows, key|
   (xs.zip(ys).sum { |x, y| (x - mean_x) * (y - mean_y) } / xs.sum { |x| (x - mean_x)**2 }).round
 end
 parts = lambda do |name, count|
-  rows = CSV.read(File.join(root, "audit/results/soak/#{name}.csv"), headers: true).map(&:to_h)
+  rows = CSV.read(Audit.recorded("soak/#{name}.csv"), headers: true).map(&:to_h)
   size = rows.size / count
   Array.new(count) { |index| slope.call((index == count - 1) ? rows[(index * size)..] : rows[index * size, size], "rss_kb") }
 end
@@ -105,7 +105,7 @@ out << "### Does memory grow"
 out << ""
 out << "RSS rose from #{soak["rss_kb"]["first"]} to #{soak["rss_kb"]["last"]} kB, and the rise slowed: #{parts.call("soak", 3).join(", then ")} kB per minute over the three thirds of the run. The server of the harness runs in the same process, so RSS is the client, the four host threads, and that server together. Two more runs separate them."
 out << ""
-diagnose = load_json.call("audit/results/soak/diagnose.json")
+diagnose = load_json.call("soak/diagnose.json")
 retained = diagnose["retained_after_gc"]
 out << "**Objects that stay alive.** A run of #{(diagnose["seconds"] / 60.0).round} minutes with the same faults and #{diagnose["forks"]} forks forced a full garbage collection before every sample, and traced every allocation after the first full cycle of faults (from second #{retained["traced_from_second"]})."
 out << ""
@@ -123,11 +123,11 @@ abort "a client site is older than 4 collections" if old_sites.any? { |site| sit
 threads = client_sites.select { |site| site["bytes"] > 1_000_000 }
 out << "Of the objects allocated after second #{retained["traced_from_second"]} and alive at the end, #{owners["client"]["objects"]} came from the client, #{owners["harness"]["objects"]} from the harness, and #{owners["other"]["objects"]} from Ruby and the other gems. At the #{retained["top_sites"].size} largest allocation sites, no client object was older than #{client_sites.map { |site| site["gc_runs_since_oldest"] }.max} garbage collections of the #{retained["gc_runs_at_end"]} in the run. The other #{owners["client"]["objects"] - client_sites.sum { |site| site["objects"] }} client objects sit at sites with at most #{retained["top_sites"].last["objects"]} objects each, which rules out a site that adds objects with every fork or fault. The client objects are the two loop threads started after the last fork (#{threads.map { |site| "`#{site["site"]}`" }.join(" and ")}, 1 MB of stack each) and objects of requests in flight. The only objects older than 4 collections were records the harness keeps (#{old_sites.map { |site| "`#{site["site"]}`" }.join(", ")}). The client keeps no object alive over time. The RSS of this run is not comparable, because the tracing takes memory itself."
 
-if File.exist?(File.join(root, "audit/results/soak/soak-long.json"))
-  long = load_json.call("audit/results/soak/soak-long.json")
+if File.exist?(Audit.recorded("soak/soak-long.json"))
+  long = load_json.call("soak/soak-long.json")
   out << ""
   out << "**A longer run.** The same soak for #{(long["seconds"] / 60.0).round} minutes, with #{long["forks"]} forks: RSS went from #{long["rss_kb"]["first"]} to #{long["rss_kb"]["last"]} kB (highest #{long["rss_kb"]["max"]}), at #{parts.call("soak-long", 6).join(", ")} kB per minute over six parts of 10 minutes. Threads stayed at #{long["threads"].values_at("min", "max").uniq.join(" to ")}, open file descriptors between #{long["fds"]["min"]} and #{long["fds"]["max"]}, and #{long["escaped"].size} exceptions reached the host in #{long["middleware_calls"]} middleware calls, the slowest of #{long["middleware_max_ms"]} ms."
-  rows = CSV.read(File.join(root, "audit/results/soak/soak-long.csv"), headers: true).map(&:to_h)
+  rows = CSV.read(Audit.recorded("soak/soak-long.csv"), headers: true).map(&:to_h)
   early = rows.find { |row| row["seconds"].to_i >= 300 }
   late = rows.last
   records = (rows.size - rows.index(early)) + (long["forks"] * (late["seconds"].to_f - early["seconds"].to_f) / late["seconds"].to_f).round
@@ -143,7 +143,7 @@ out << "Processes with the real library compete for the lease of a local server 
 out << ""
 out << "| Processes | Server lease (s) | Response time (ms) | A sample takes (s) | Holder changes | Holders | Samples | Renewal after expiry (s, median) |"
 out << "| --- | --- | --- | --- | --- | --- | --- | --- |"
-File.read(File.join(root, "audit/results/lease-stability.txt")).split(/\n\n+/).each do |run|
+File.read(Audit.recorded("lease-stability.txt")).split(/\n\n+/).each do |run|
   field = ->(pattern) { run[pattern, 1] }
   out << "| #{field.call(/clients=(\d+)/)} | #{field.call(/server_lease=([\d.]+)s/).to_f.round} | #{field.call(/response_latency=(\d+)ms/)} | #{field.call(/sample_takes=([\d.]+)s/).to_f.round} | #{field.call(/holder_changes=(\d+)/)} | #{field.call(/distinct_holders=(\d+)/)} | #{field.call(/samples received=(\d+)/)} | #{field.call(/median=(-?[\d.]+)s/) || "never renewed"} |"
 end

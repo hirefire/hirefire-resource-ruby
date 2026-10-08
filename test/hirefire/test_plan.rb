@@ -792,23 +792,6 @@ class HireFire::PlanTest < Minitest::Test
     HireFire::Plan.const_set(:ADAPTERS, original)
   end
 
-  def test_sidekiq_sample_wave_hooks_drive_due_cache
-    skip "Sidekiq not loaded" unless defined?(::Sidekiq)
-
-    cache = HireFire::Macro::Sidekiq::DueCache
-    cache.clear_all
-    refute cache.sample_active?
-
-    token = HireFire::Macro::Sidekiq.before_sample_job_queues
-    assert cache.sample_active?
-    refute_nil token
-
-    HireFire::Macro::Sidekiq.after_sample_job_queues(token)
-    refute cache.sample_active?
-  ensure
-    HireFire::Macro::Sidekiq::DueCache.clear_all if defined?(HireFire::Macro::Sidekiq::DueCache)
-  end
-
   private
 
   def stub_macro

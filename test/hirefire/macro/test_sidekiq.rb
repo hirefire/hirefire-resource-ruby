@@ -991,18 +991,85 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     )
   end
 
-  def test_named_due_walk_raises_instead_of_undercounting_when_budget_is_exceeded
-    20.times { enqueue_scheduled }
+  def test_a_named_due_walk_over_its_budget_counts_every_member_it_did_not_read
+    20.times { enqueue_scheduled(at: Time.now.to_i - 60) }
+    3.times { enqueue_scheduled(queue: "mailer", at: Time.now.to_i - 10) }
+    options = {skip_retries: true, skip_working: true}
+
     stub_due_cache_const(:WALK_MEMBER_BUDGET, 5) do
-      assert_raises(HireFire::Errors::SampleIncomplete) do
-        HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
-      end
+      assert_equal 23, HireFire::Macro::Sidekiq.job_queue_size(:default, **options)
+      assert_equal 19, HireFire::Macro::Sidekiq.job_queue_size(:mailer, **options)
+      assert_equal 23, HireFire::Macro::Sidekiq.job_queue_size(:default, :mailer, **options)
+      assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:mailer, max_scheduled: 2, **options)
     end
-    assert_equal 20, HireFire::Macro::Sidekiq.job_queue_size(skip_retries: true, skip_working: true)
+    assert_equal 20, HireFire::Macro::Sidekiq.job_queue_size(:default, **options)
+    assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:mailer, **options)
+    assert_equal 23, HireFire::Macro::Sidekiq.job_queue_size(**options)
   end
 
-  def test_plan_drops_named_due_sample_when_walk_budget_is_exceeded
-    20.times { enqueue_scheduled }
+  def test_a_named_latency_walk_over_its_budget_reports_the_age_of_the_first_member_it_did_not_read
+    20.times { enqueue_scheduled(at: Time.now.to_i - 60) }
+    enqueue_scheduled(queue: "mailer", at: Time.now.to_i - 10)
+
+    stub_due_cache_const(:WALK_MEMBER_BUDGET, 5) do
+      assert_in_delta 60, HireFire::Macro::Sidekiq.job_queue_latency(:mailer, skip_retries: true), 2
+      assert_in_delta 60, HireFire::Macro::Sidekiq.job_queue_latency(:default, skip_retries: true), 2
+    end
+    assert_in_delta 10, HireFire::Macro::Sidekiq.job_queue_latency(:mailer, skip_retries: true), 2
+  end
+
+  def test_a_walk_past_the_time_budget_counts_every_member_it_did_not_read
+    3.times { enqueue_scheduled(at: Time.now.to_i - 60) }
+
+    stub_due_cache_const(:WALK_TIME_BUDGET, 0) do
+      assert_equal 3, HireFire::Macro::Sidekiq.job_queue_size(:mailer, skip_retries: true, skip_working: true)
+    end
+  end
+
+  def test_a_walk_that_ends_on_the_last_member_inside_its_budget_is_exact
+    4.times { enqueue_scheduled(at: Time.now.to_i - 60) }
+    enqueue_scheduled_future
+
+    stub_due_cache_const(:WALK_MEMBER_BUDGET, 5) do
+      assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+      assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:mailer, skip_retries: true, skip_working: true)
+    end
+  end
+
+  def test_a_walk_over_its_budget_is_not_repeated_for_the_other_entries_of_a_sample_round
+    20.times { enqueue_scheduled(at: Time.now.to_i - 60) }
+    options = {skip_retries: true, skip_working: true}
+
+    stub_due_cache_const(:WALK_MEMBER_BUDGET, 5) do
+      wave = HireFire::Macro::Sidekiq::DueCache.begin_sample!
+      before = zrange_calls
+      sizes = %w[default mailer other].map { |queue| HireFire::Macro::Sidekiq.job_queue_size(queue, **options) }
+      latency = HireFire::Macro::Sidekiq.job_queue_latency(:mailer, skip_retries: true)
+      calls = zrange_calls - before
+      HireFire::Macro::Sidekiq::DueCache.end_sample!(wave)
+
+      assert_equal [20, 16, 16], sizes
+      assert_in_delta 60, latency, 2
+      assert_equal 1, calls
+    end
+  end
+
+  def test_a_named_size_at_the_real_walk_budget_reports_a_number_and_reads_the_set_once_per_sample_round
+    seed_due_scheduled(60_000)
+    options = {skip_retries: true, skip_working: true}
+
+    wave = HireFire::Macro::Sidekiq::DueCache.begin_sample!
+    before = zrange_calls
+    sizes = %w[default one two three four].map { |queue| HireFire::Macro::Sidekiq.job_queue_size(queue, **options) }
+    calls = zrange_calls - before
+    HireFire::Macro::Sidekiq::DueCache.end_sample!(wave)
+
+    assert_equal [60_000, 10_001, 10_001, 10_001, 10_001], sizes
+    assert_equal 50, calls
+  end
+
+  def test_plan_records_the_upper_bound_when_the_named_walk_budget_is_exceeded
+    20.times { enqueue_scheduled(at: Time.now.to_i - 60) }
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
     stub_due_cache_const(:WALK_MEMBER_BUDGET, 5) do
@@ -1014,8 +1081,8 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
         "options" => {"skip_retries" => true, "skip_working" => true}
       )
     end
-    refute HireFire.configuration.buffer.flush.dig("worker", "jqs")
-    assert_includes log.string, "SampleIncomplete"
+    assert_equal [20], HireFire.configuration.buffer.flush.dig("worker", "jqs").values
+    assert_empty log.string
   end
 
   def test_working_map_is_read_once_per_sample_wave
@@ -1043,6 +1110,19 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   end
 
   private
+
+  def zrange_calls
+    Sidekiq.redis { |connection| connection.call("info", "commandstats") }[/cmdstat_zrange:calls=(\d+)/, 1].to_i
+  end
+
+  def seed_due_scheduled(count, queue: "default")
+    script = <<~LUA
+      for i = 1, tonumber(ARGV[1]) do
+        redis.call("zadd", "schedule", ARGV[2], '{"class":"SampleWorker","args":[],"queue":"' .. ARGV[3] .. '","jid":"' .. i .. '"}')
+      end
+    LUA
+    Sidekiq.redis { |connection| connection.call("eval", script, 0, count, Time.now.to_f - 60, queue) }
+  end
 
   def stub_due_cache_const(name, value)
     cache = HireFire::Macro::Sidekiq::DueCache

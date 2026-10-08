@@ -12,7 +12,7 @@ module HireFire
         WORKING_MEMBER_BUDGET = 20_000
 
         attr_reader :set_name, :oldest_at, :size, :total_due, :complete,
-          :cursor_rank, :now_fill, :generation
+          :cursor_rank, :now_fill, :generation, :unwalked, :unwalked_from
         attr_writer :complete, :cursor_rank
 
         class << self
@@ -99,7 +99,7 @@ module HireFire
             cache = ensure_walk(set_name, mode: :jql, needed: needed)
             return 0.0 unless cache
 
-            score = needed.filter_map { |q| cache.oldest_at[q] }.min
+            score = needed.filter_map { |q| cache.oldest_at[q] }.min || cache.unwalked_from
             return 0.0 unless score
 
             Time.now.to_f - score
@@ -113,7 +113,7 @@ module HireFire
             cache = ensure_walk(set_name, mode: :jqs, needed: needed, max_scheduled: max_scheduled)
             return 0 unless cache
 
-            count = matching_count(cache, needed)
+            count = matching_count(cache, needed) + cache.unwalked.to_i
             if set_name == "schedule" && !max_scheduled.nil?
               return 0 if max_scheduled <= 0
 
@@ -245,14 +245,12 @@ module HireFire
           end
 
           def walk_satisfied?(cache, mode, needed, max_scheduled)
+            return true if cache.complete || cache.unwalked
+
             if mode == :jql
               jql_call_satisfied?(cache, needed)
-            elsif max_scheduled.nil?
-              cache.complete
-            elsif cache.complete
-              true
             else
-              matching_count(cache, needed) >= max_scheduled
+              !max_scheduled.nil? && matching_count(cache, needed) >= max_scheduled
             end
           end
 
@@ -321,17 +319,17 @@ module HireFire
               end
 
               batch.each_with_index do |(member, score), i|
-                members_seen += 1
-                if members_seen >= WALK_MEMBER_BUDGET || (monotonic_now - started) >= WALK_TIME_BUDGET
-                  raise HireFire::Errors::SampleIncomplete,
-                    "Sidekiq named #{cache.set_name} walk exceeded budget"
-                end
-
                 score = score.to_f
                 if score > cache.now_fill
                   cache.complete = true
                   cache.cursor_rank = rank + i + 1
                   return :ok
+                end
+
+                members_seen += 1
+                if members_seen >= WALK_MEMBER_BUDGET || (monotonic_now - started) >= WALK_TIME_BUDGET
+                  cache.stop_over_budget(zcount_due(cache.set_name, cache.now_fill), score)
+                  return :partial
                 end
 
                 queue = parse_queue(member)
@@ -411,6 +409,13 @@ module HireFire
           @oldest_at = {}
           @size = Hash.new(0)
           @total_due = 0
+          @unwalked = nil
+          @unwalked_from = nil
+        end
+
+        def stop_over_budget(due, score)
+          @unwalked = [due - @cursor_rank, 0].max
+          @unwalked_from = score
         end
 
         def record_due(queue, score)
@@ -431,6 +436,8 @@ module HireFire
           size_copy.default = 0
           copy.instance_variable_set(:@size, size_copy)
           copy.instance_variable_set(:@total_due, @total_due)
+          copy.instance_variable_set(:@unwalked, @unwalked)
+          copy.instance_variable_set(:@unwalked_from, @unwalked_from)
           copy
         end
       end

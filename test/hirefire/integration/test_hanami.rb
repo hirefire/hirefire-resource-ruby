@@ -33,7 +33,6 @@ module HireFire
 
       def test_zero_config_boot_starts_dispatcher_when_token_present
         HireFire::Dispatcher.any_instance.expects(:start).at_least_once
-        HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
         ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
         ENV["DYNO"] = "web.1"
         HireFire.boot
@@ -41,7 +40,6 @@ module HireFire
 
       def test_zero_config_samples_via_dyno_identity
         HireFire::Dispatcher.any_instance.stubs(:start)
-        HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
         ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
         ENV["DYNO"] = "web.1"
         HireFire.boot
@@ -67,7 +65,6 @@ module HireFire
 
       def configure_web
         HireFire::Dispatcher.any_instance.stubs(:start)
-        HireFire::Dispatcher.any_instance.stubs(:ensure_job_queue_loop)
         ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
         ENV["DYNO"] = "web.1"
         HireFire.configure { |config| config.dyno(:web) }

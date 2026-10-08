@@ -27,14 +27,12 @@ class HireFireTest < Minitest::Test
   def test_configure_starts_dispatcher_when_token_is_set
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
     HireFire::Dispatcher.any_instance.expects(:start).once
-    HireFire::Dispatcher.any_instance.expects(:ensure_job_queue_loop).once
 
     HireFire.configure { |config| config.dyno(:web) }
   end
 
-  def test_configure_token_assignment_starts_dispatcher_and_job_queue_loop
+  def test_configure_token_assignment_starts_dispatcher
     HireFire::Dispatcher.any_instance.expects(:start).once
-    HireFire::Dispatcher.any_instance.expects(:ensure_job_queue_loop).once
 
     HireFire.configure do |config|
       config.token = "inline-token-value"
@@ -70,7 +68,6 @@ class HireFireTest < Minitest::Test
   def test_boot_is_configure_with_empty_block
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
     HireFire::Dispatcher.any_instance.expects(:start).once
-    HireFire::Dispatcher.any_instance.expects(:ensure_job_queue_loop).once
 
     config = HireFire.boot
     assert_equal config, HireFire.configuration
@@ -84,35 +81,39 @@ class HireFireTest < Minitest::Test
     HireFire.boot
   end
 
-  def test_additive_configure_after_boot_starts_worker_loop
+  def test_a_sampler_configured_after_boot_is_sampled_once_the_lease_is_granted
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
-    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    HireFire::Plan.stubs(:any_allowlisted_job_queue_library_loaded?).returns(false)
+    bodies = []
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |request|
+      bodies << JSON.parse(request.body)
+      {status: 200}
+    end
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {
         "HireFire-Lease-Granted" => "true",
         "HireFire-Sample-Frequency" => "15"
       }, body: {version: 1, job_queues: [{name: "worker", strategy: "jql", adapter: nil, queues: [], options: {}}]}.to_json)
+    original_tick = HireFire::Dispatcher::TICK
+    HireFire::Dispatcher.send(:remove_const, :TICK)
+    HireFire::Dispatcher.const_set(:TICK, 0.01)
 
     HireFire.boot
     assert HireFire.configuration.dispatcher.running?
-
     HireFire.configure do |config|
       config.dyno(:worker) { 42 }
     end
 
-    dispatcher = HireFire.configuration.dispatcher
-    assert dispatcher.instance_variable_get(:@job_queue_thread)&.alive?
+    400.times do
+      break if bodies.any?
 
-    dispatcher.send(:job_queue_tick)
-    bodies = []
-    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
-      .to_return do |request|
-        bodies << JSON.parse(request.body)
-        {status: 200}
-      end
-    dispatcher.send(:tick)
-
-    assert(bodies[0]&.any? { |e| e["name"] == "worker" && e.dig("metrics", "jql") })
+      sleep(0.005)
+    end
+    assert_equal 42, bodies.dig(0, 0, "metrics", "jql")&.values&.first
+    assert_equal "worker", bodies.dig(0, 0, "name")
+  ensure
+    HireFire::Dispatcher.send(:remove_const, :TICK)
+    HireFire::Dispatcher.const_set(:TICK, original_tick)
   end
 
   def test_reset_stops_dispatcher_and_replaces_configuration
@@ -128,7 +129,6 @@ class HireFireTest < Minitest::Test
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
     ENV["DYNO"] = "web.1"
     HireFire::Dispatcher.any_instance.expects(:start).once
-    HireFire::Dispatcher.any_instance.expects(:ensure_job_queue_loop).once
 
     HireFire.after_fork_in_child
   end

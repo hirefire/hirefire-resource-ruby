@@ -35,7 +35,6 @@ module HireFire
       return unless configuration.token
 
       configuration.dispatcher.start
-      configuration.dispatcher.ensure_job_queue_loop
     else
       configuration.dispatcher.abandon_inherited_state!
     end
@@ -70,7 +69,6 @@ module HireFire
     return unless configuration.token
 
     configuration.dispatcher.start
-    configuration.dispatcher.ensure_job_queue_loop
   end
 end
 

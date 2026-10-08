@@ -81,7 +81,16 @@ class Minitest::Test
     ENV["HIREFIRE_VERBOSE"] = nil
     IDENTITY_ENV.each { |key| ENV[key] = nil }
     HireFire.reset
+    wait_for_hirefire_threads
     super
+  end
+
+  def wait_for_hirefire_threads
+    200.times do
+      return if Thread.list.none? { |thread| thread.name.to_s.start_with?("hirefire-") }
+
+      sleep(0.005)
+    end
   end
 
   def assert_integer_count(value)

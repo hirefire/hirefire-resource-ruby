@@ -1506,12 +1506,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Cache.clear_all
     refute Cache.sample_active?
 
-    dispatcher = HireFire.configuration.dispatcher
-    lease = dispatcher.instance_variable_get(:@lease)
-    prior_granted = lease.granted?
-    prior_queues = lease.job_queues
-    lease.instance_variable_set(:@granted, true)
-    lease.instance_variable_set(:@job_queues, [
+    session = granted_session([
       {
         "name" => "worker",
         "adapter" => "sidekiq",
@@ -1534,7 +1529,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
       raise "sampler boom"
     end
 
-    error = assert_raises(RuntimeError) { dispatcher.send(:sample_job_queues) }
+    error = assert_raises(RuntimeError) { session.sample }
     assert_match(/sampler boom/, error.message)
     assert saw_active, "dispatcher must open a sample wave before plan execute"
     refute Cache.sample_active?, "ensure must end_sample! after raising sampler"
@@ -1542,10 +1537,6 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   ensure
     if defined?(original) && original
       HireFire::Plan.singleton_class.define_method(:execute, original)
-    end
-    if defined?(lease) && lease
-      lease.instance_variable_set(:@granted, prior_granted)
-      lease.instance_variable_set(:@job_queues, prior_queues)
     end
   end
 
@@ -1557,12 +1548,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     Cache.clear_all
     refute Cache.sample_active?
 
-    dispatcher = HireFire.configuration.dispatcher
-    lease = dispatcher.instance_variable_get(:@lease)
-    prior_granted = lease.granted?
-    prior_queues = lease.job_queues
-    lease.instance_variable_set(:@granted, true)
-    lease.instance_variable_set(:@job_queues, [
+    session = granted_session([
       {
         "name" => "mailer",
         "adapter" => "sidekiq",
@@ -1580,18 +1566,13 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     ])
 
     clear_zrange_starts!
-    dispatcher.send(:sample_job_queues)
+    session.sample
 
     starts = schedule_start_ranks
     assert_equal [0, 1], starts, "first plan entry rank 0, second resumes at cursor 1, got #{starts.inspect}"
 
     refute Cache.sample_active?, "sample_job_queues must end the wave on return"
     assert_nil Cache.peek("schedule"), "end_sample! must clear maps after happy path"
-  ensure
-    if defined?(lease) && lease
-      lease.instance_variable_set(:@granted, prior_granted)
-      lease.instance_variable_set(:@job_queues, prior_queues)
-    end
   end
 
   def test_stale_end_sample_wave_token_does_not_clear_live_wave
@@ -1864,6 +1845,13 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   end
 
   private
+
+  def granted_session(job_queues)
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"}, body: {job_queues: job_queues}.to_json)
+    HireFire::Dispatcher::Session.new(HireFire.configuration).tap(&:renew)
+  end
 
   class SampleWorker
     include Sidekiq::Worker

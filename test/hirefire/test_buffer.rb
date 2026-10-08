@@ -18,13 +18,13 @@ class HireFire::BufferTest < Minitest::Test
     assert_equal({sum: 60.0, count: 3}, data["web"]["rqt"][100])
   end
 
-  def test_discard_inherited_clears_all_strategies
+  def test_discard_clears_all_strategies
     Timecop.freeze Time.at(100) do
       buffer.sample("web", "rqt", 7)
       buffer.sample("worker", "jql", 5)
       buffer.sample("web", "cpu", 12.5)
 
-      buffer.discard_inherited
+      buffer.discard
 
       assert_empty buffer.flush
     end

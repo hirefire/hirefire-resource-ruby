@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "json"
-
 module HireFire
   class Dispatcher
     RQT_BACKFILL_LIMIT = 60
@@ -10,74 +8,30 @@ module HireFire
     METRIC_VALUE_LIMIT = 1e15
     DEFAULT_DISPATCH_FREQUENCY = 1
     MAX_DISPATCH_FREQUENCY = 30
+    SAMPLE_ROUND_LIMIT = 60
     JOIN_TIMEOUT = 5
+    TICK = 1
     WARN_MAP_LIMIT = 256
 
-    def initialize
-      @client = Client.new
-      @lease = Lease.new
+    def initialize(configuration)
+      @configuration = configuration
       @mutex = Mutex.new
-      @loop_wait = Thread::ConditionVariable.new
-      @join_timeout = JOIN_TIMEOUT
-      @running = false
-      @stopping = false
-      @stopping_flush = false
+      @session = nil
       @pid = nil
-      @generation = 0
-      @thread = nil
-      @job_queue_thread = nil
-      @last_rqt_second = nil
-      @dispatch_frequency = DEFAULT_DISPATCH_FREQUENCY
-      @next_dispatch_at = nil
-      @pending_sample_trace = nil
-      @unloaded_adapter_warned = {}
-      @plan_override_warned = {}
-      @unknown_adapter_warned = {}
-      @unsupported_strategy_warned = {}
-      @unknown_strategy_warned = {}
-      @empty_queues_warned = {}
+      @stopping = false
     end
 
     def start
-      return false if healthy_running?
-
-      retired_jq = nil
+      return false if healthy?
 
       @mutex.synchronize do
-        return false if @stopping
-        return false if healthy_running?
+        return false if @stopping || healthy?
 
-        if @running && @pid == Process.pid && !@thread&.alive?
-          @running = false
-          @thread = nil
-          if @job_queue_thread&.alive?
-            retired_jq = @job_queue_thread
-            @job_queue_thread = nil
-          end
-        end
-
-        after_fork = @pid && @pid != Process.pid
-        if after_fork
-          buffer.reinit_after_fork
-          Plan.reinit_macros_after_fork
-          reset_dispatch_state_after_fork
-        else
-          reset_dispatch_state_for_restart
-          @lease.demote!
-        end
-
-        @generation += 1
-        generation = @generation
-        @loop_wait.broadcast
-        @thread = Thread.new { loop_until_stopped(generation) { tick(generation) } }
-        if enter_race?
-          @job_queue_thread = Thread.new { loop_until_stopped(generation) { job_queue_tick(generation) } }
-        end
-        @running = true
+        @session&.halt
+        reset_after_fork if @pid && @pid != Process.pid
+        @session = Session.new(@configuration).start
         @pid = Process.pid
       end
-
-      join_loop_thread(retired_jq) if retired_jq
 
       Log.safe(logger, :info, "[HireFire] Starting dispatcher.")
 
@@ -87,555 +41,64 @@ module HireFire
       false
     end
 
-    def ensure_job_queue_loop
-      return if @job_queue_thread&.alive? && @running && @pid == Process.pid && !@stopping
-      return unless enter_race?
-
-      @mutex.synchronize do
-        return if @stopping
-        return unless @running && @pid == Process.pid
-        return if @job_queue_thread&.alive?
-        return unless enter_race?
-
-        generation = @generation
-        @job_queue_thread = Thread.new { loop_until_stopped(generation) { job_queue_tick(generation) } }
-      end
-    rescue => e
-      Log.safe(logger, :error, "[HireFire] Could not start job-queue loop: #{e.message}")
-    end
-
     def stop(flush: true)
-      threads = nil
-
-      @mutex.synchronize do
-        return false unless @running
-        return false if @stopping
+      session = @mutex.synchronize do
+        return false if @stopping || !@session&.live?
 
         @stopping = true
-        @stopping_flush = flush
-        @running = false
-        @loop_wait.broadcast
-        threads = [@thread, @job_queue_thread].compact if @pid == Process.pid
-        @thread = nil
-        @job_queue_thread = nil
+        @session.tap { @session = nil }
       end
 
       begin
-        threads&.each { |thread| join_loop_thread(thread) }
-
-        if flush
-          dispatch
+        session.halt(handoff: flush)
+        if !flush
+          @configuration.buffer.discard
+        elsif @pid != Process.pid || session.join(JOIN_TIMEOUT)
+          session.flush
+          session.close
         else
-          buffer.discard_inherited
+          Log.safe(logger, :warn, "[HireFire] The dispatch loop did not stop within " \
+            "#{JOIN_TIMEOUT} seconds. The final flush is skipped.")
         end
 
         Log.safe(logger, :info, "[HireFire] Dispatcher stopped.")
 
         true
       ensure
-        begin
-          @client.close
-        rescue => e
-          Log.safe(logger, :error, "[HireFire] Client close error: #{e.message}")
-        end
-        begin
-          @lease.demote!
-          @lease.close
-        rescue => e
-          Log.safe(logger, :error, "[HireFire] Lease close error: #{e.message}")
-        end
-        @mutex.synchronize do
-          @stopping = false
-          @stopping_flush = false
-        end
+        @mutex.synchronize { @stopping = false }
       end
     end
 
     def running?
-      @mutex.synchronize { healthy_running? }
+      @mutex.synchronize { healthy? }
     end
 
     def abandon_inherited_state!
       @mutex.synchronize do
-        @running = false
-        @stopping = false
-        @stopping_flush = false
-        @thread = nil
-        @job_queue_thread = nil
+        @session&.halt
+        @session = nil
         @pid = nil
-        @generation += 1
-        @loop_wait.broadcast
+        @stopping = false
       end
-      buffer.reinit_after_fork
-      Plan.reinit_macros_after_fork
-      configuration.reset_after_fork
-      @lease.demote!
-      @client.close
-      @lease.close
+      reset_after_fork
     rescue => e
       Log.safe(logger, :error, "[HireFire] Could not abandon inherited dispatcher state: #{e.message}")
     end
 
     private
 
-    def healthy_running?
-      @running && !@stopping && @pid == Process.pid && @thread&.alive?
+    def healthy?
+      !@stopping && @pid == Process.pid && !!@session&.alive?
     end
 
-    def loop_active?(generation)
-      @mutex.synchronize { loop_active_locked?(generation) }
-    end
-
-    def loop_active_locked?(generation)
-      @running && !@stopping && @pid == Process.pid && @generation == generation
-    end
-
-    def loop_until_stopped(generation)
-      while loop_active?(generation)
-        begin
-          yield
-        rescue => e
-          Log.safe(logger, :error, "[HireFire] #{Log.format_error(e)}")
-        end
-        wait_loop_interval(generation)
-      end
-    end
-
-    def wait_loop_interval(generation)
-      @mutex.synchronize do
-        @loop_wait.wait(@mutex, 1) if loop_active_locked?(generation)
-      end
-    end
-
-    def join_loop_thread(thread)
-      return if thread.join(@join_timeout)
-
-      Log.safe(logger, :warn,
-        "[HireFire] Dispatcher loop did not stop within #{@join_timeout}s. Abandoning thread.")
-    end
-
-    def tick(generation = nil)
-      return if generation && !loop_active?(generation)
-
-      sources = []
-      guard { sources = configuration.active_cpu_sources }
-      sources.each { |source| guard { source.sample } }
-      dispatch_if_due(generation)
-    end
-
-    def job_queue_tick(generation = nil)
-      live = loop_live_proc(generation)
-      return unless live.call
-
-      guard { @lease.request_if_due(hold: method(:hold_lease?)) }
-      return unless live.call
-
-      guard { @lease.sample_if_due { sample_job_queues(live: live) } }
-    end
-
-    def reset_dispatch_state_after_fork
-      reset_dispatch_state_for_restart
-      configuration.reset_after_fork
-    end
-
-    def reset_dispatch_state_for_restart
-      @next_dispatch_at = nil
-      @last_rqt_second = nil
-      @dispatch_frequency = DEFAULT_DISPATCH_FREQUENCY
-      @pending_sample_trace = nil
-      @unloaded_adapter_warned = {}
-      @plan_override_warned = {}
-      @unknown_adapter_warned = {}
-      @unsupported_strategy_warned = {}
-      @unknown_strategy_warned = {}
-      @empty_queues_warned = {}
-    end
-
-    def enter_race?
-      configuration.job_queues.any? || Plan.any_allowlisted_job_queue_library_loaded?
-    end
-
-    def hold_lease?(plan_job_queues)
-      return true if configuration.job_queues.any?
-
-      plan_job_queues.any? do |entry|
-        adapter_present?(entry) && Plan.sampleable_entry?(entry)
-      end
-    end
-
-    def sample_job_queues(live: nil)
-      probe = Probe.start
-      Plan.around_job_queue_sample do
-        local_job_queues = configuration.job_queues
-
-        @lease.job_queues.each do |entry|
-          break if live && !live.call
-
-          probe.measure(entry) do
-            if adapter_present?(entry)
-              sample_plan_adapter(entry, local_job_queues, live: live)
-            else
-              sample_strategy_only(entry, local_job_queues, live: live)
-            end
-          end
-        end
-      end
-      payload = probe.finish
-      probe.log_to(logger) if verbose?
-      @pending_sample_trace = payload if @lease.trace?
-    end
-
-    def verbose?
-      value = ENV["HIREFIRE_VERBOSE"].to_s
-      !value.empty? && !%w[0 false no].include?(value.downcase)
-    end
-
-    def sample_plan_adapter(entry, local_job_queues, live: nil)
-      return if live && !live.call
-
-      name = entry["name"].to_s
-      adapter = entry["adapter"]
-      strategy = entry["strategy"]
-
-      if Plan.executable?(adapter)
-        unless Plan.supports_strategy?(adapter, strategy)
-          warn_unsupported_strategy_once(name, adapter, strategy)
-          return
-        end
-
-        if Plan.queues_required?(adapter) && !Plan.named_plan_queues?(entry["queues"])
-          warn_empty_queues_once(name, adapter)
-          return
-        end
-
-        warn_plan_override_once(name) if local_job_queues.find_by_name(name)
-        return if live && !live.call
-
-        Plan.execute(entry, live)
-      elsif Plan.known_adapter?(adapter)
-        warn_unloaded_adapter_once(name, adapter)
-      else
-        warn_unknown_adapter_once(name, adapter)
-      end
-    end
-
-    def sample_strategy_only(entry, local_job_queues, live: nil)
-      return if live && !live.call
-
-      name = entry["name"].to_s
-      strategy = entry["strategy"].to_s
-
-      unless Plan.known_strategy?(strategy)
-        warn_unknown_strategy_once(name, strategy)
-        return
-      end
-
-      job_queue = local_job_queues.find_by_name(name)
-      local_job_queues.sample_job_queue(job_queue, strategy, live: live, name: name.strip) if job_queue
-    end
-
-    def loop_live_proc(generation)
-      if generation
-        -> { loop_active?(generation) }
-      else
-        -> { true }
-      end
-    end
-
-    def remember_warn(map, key)
-      return true if map[key]
-
-      map.shift while map.size >= WARN_MAP_LIMIT
-      map[key] = true
-      false
-    end
-
-    def warn_unloaded_adapter_once(name, adapter)
-      return if remember_warn(@unloaded_adapter_warned, name)
-
-      Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} for #{name.inspect} " \
-        "is not loaded in this process. Entry skipped.")
-    end
-
-    def warn_plan_override_once(name)
-      return if remember_warn(@plan_override_warned, name)
-
-      Log.safe(logger, :warn, "[HireFire] A HireFire UI adapter is configured for " \
-        "#{name.inspect}, so config.dyno(#{name.inspect}) with a local sampler is ignored. " \
-        "You can remove that local configuration. The UI adapter is used instead.")
-    end
-
-    def warn_unknown_adapter_once(name, adapter)
-      return if remember_warn(@unknown_adapter_warned, name)
-
-      Log.safe(logger, :error, "[HireFire] Unknown plan adapter " \
-        "#{adapter.inspect} for #{name.inspect}. Entry skipped.")
-    end
-
-    def warn_unsupported_strategy_once(name, adapter, strategy)
-      return if remember_warn(@unsupported_strategy_warned, "#{name}\0#{adapter}\0#{strategy}")
-
-      Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} does not support " \
-        "strategy #{strategy.inspect} for #{name.inspect}. Entry skipped.")
-    end
-
-    def warn_unknown_strategy_once(name, strategy)
-      return if remember_warn(@unknown_strategy_warned, "#{name}\0#{strategy}")
-
-      Log.safe(logger, :error, "[HireFire] Unknown plan strategy #{strategy.inspect} for " \
-        "#{name.inspect}. Entry skipped.")
-    end
-
-    def warn_empty_queues_once(name, adapter)
-      return if remember_warn(@empty_queues_warned, "#{name}\0#{adapter}")
-
-      Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} for #{name.inspect} " \
-        "requires named queues. Entry skipped.")
-    end
-
-    def adapter_present?(entry)
-      adapter = entry["adapter"]
-      !(adapter.nil? || adapter == "")
-    end
-
-    def dispatch_if_due(generation = nil)
-      return if @next_dispatch_at && Clock.monotonic < @next_dispatch_at
-      return if generation && !loop_active?(generation)
-
-      dispatch(generation)
-      if generation.nil? || loop_active?(generation)
-        @next_dispatch_at = Clock.monotonic + @dispatch_frequency
-      end
-    end
-
-    def guard
-      yield
-    rescue => e
-      Log.safe(logger, :error, "[HireFire] #{Log.format_error(e)}")
-    end
-
-    def dispatch(generation = nil)
-      return if generation && !loop_active?(generation)
-
-      data = buffer.flush
-      payload, watermark = build_payload(data)
-      return if payload.empty?
-
-      body = JSON.generate(payload)
-      if body.bytesize > PAYLOAD_SIZE_LIMIT && payload_has_sample_trace?(payload)
-        payload = strip_sample_trace(payload)
-        body = JSON.generate(payload)
-      end
-      if body.bytesize > PAYLOAD_SIZE_LIMIT
-        return unless generation.nil? || loop_active?(generation) || handoff_to_final_flush?
-
-        return drop_oversized_payload(body, watermark)
-      end
-
-      if generation && !loop_active?(generation)
-        repopulate_rqt(data) if handoff_to_final_flush?
-        return
-      end
-
-      Log.safe(logger, :info, "[HireFire] Dispatching metrics: #{body}") if verbose?
-      response = @client.submit_samples(body)
-
-      if generation && !loop_active?(generation)
-        return
-      end
-
-      case response
-      when :payload_too_large
-        drop_oversized_payload(body, watermark, server: true)
-      else
-        apply_dispatch_frequency(response)
-        @last_rqt_second = watermark if watermark
-        @pending_sample_trace = nil
-      end
-    rescue => e
-      if data && (generation.nil? || loop_active?(generation) || handoff_to_final_flush?)
-        repopulate_rqt(data)
-      end
-      Log.safe(logger, :error, "[HireFire] Dispatch error: #{Log.format_error(e)}")
-    end
-
-    def handoff_to_final_flush?
-      @mutex.synchronize { @stopping && @stopping_flush }
-    end
-
-    def repopulate_rqt(data)
-      data.each do |name, strategies|
-        series = strategies[Strategy::RQT]
-        next unless series&.any?
-
-        buffer.repopulate(name, Strategy::RQT, series)
-      end
-    end
-
-    def apply_dispatch_frequency(response)
-      value = Client.header_integer(response, "HireFire-Dispatch-Frequency") if response
-      @dispatch_frequency = value.clamp(DEFAULT_DISPATCH_FREQUENCY, MAX_DISPATCH_FREQUENCY) if value
-    end
-
-    def drop_oversized_payload(body, watermark, server: false)
-      @pending_sample_trace = nil
-      @last_rqt_second = watermark if watermark
-      source = server ? "server rejected (413)" : "exceeds the #{PAYLOAD_SIZE_LIMIT}-byte limit"
-      Log.safe(logger, :error, "[HireFire] Dropped metrics payload: #{body.bytesize} bytes " \
-        "#{source}. Resuming from the current second.")
-    end
-
-    def payload_has_sample_trace?(payload)
-      payload.first.is_a?(Hash) && payload.first.key?("sample_trace")
-    end
-
-    def strip_sample_trace(payload)
-      @pending_sample_trace = nil
-      payload.map do |entry|
-        next entry unless entry.is_a?(Hash) && entry.key?("sample_trace")
-
-        entry.dup.tap { |copy| copy.delete("sample_trace") }
-      end
-    end
-
-    def build_payload(data)
-      entries_by_name = {}
-      http_name = configuration.http_name
-      watermark = append_http_rqt!(entries_by_name, data, http_name)
-
-      data.each do |name, strategies|
-        strategies.each do |strategy, series|
-          strategy = strategy.to_s
-          next if series.nil? || series.empty?
-          next if Strategy.rqt?(strategy) && name == http_name
-
-          merge_metrics(entries_by_name, name, strategy, series)
-        end
-      end
-
-      entries = []
-      entries_by_name.each do |name, metrics|
-        encoded = {}
-        metrics.each do |strategy, series|
-          strategy_key = strategy.to_s
-          leaf_series = {}
-          series.each do |second, bucket|
-            leaf = encode_leaf(strategy_key, bucket)
-            next if leaf == :omit
-
-            leaf_series[second.to_s] = leaf
-          end
-          encoded[strategy_key] = leaf_series unless leaf_series.empty?
-        end
-        next if encoded.empty?
-
-        entries << {"name" => name, "metrics" => encoded}
-      end
-
-      attach_sample_trace!(entries)
-      [entries, watermark]
-    end
-
-    def attach_sample_trace!(entries)
-      return if @pending_sample_trace.nil? || entries.empty? || !@lease.trace?
-
-      entries.first["sample_trace"] = @pending_sample_trace
-    end
-
-    def append_http_rqt!(entries_by_name, data, http_name)
-      return nil unless http_name
-
-      rqt_buckets = data.dig(http_name, Strategy::RQT) || {}
-
-      if configuration.rqt_enabled? && configuration.rqt_liveness?
-        payload_rqt = backfill_rqt_seconds(rqt_buckets)
-        merge_metrics(entries_by_name, http_name, Strategy::RQT, payload_rqt)
-        payload_rqt.keys.max
-      elsif rqt_buckets.any?
-        merge_metrics(entries_by_name, http_name, Strategy::RQT, rqt_buckets)
-        nil
-      end
-    end
-
-    def merge_metrics(entries_by_name, name, strategy, series_buckets)
-      strategy = strategy.to_s
-      entries_by_name[name] ||= {}
-      entries_by_name[name][strategy] ||= {}
-      dest = entries_by_name[name][strategy]
-
-      series_buckets.each do |second, bucket|
-        if Strategy.rqt?(strategy)
-          if dest[second].nil?
-            dest[second] = copy_rqt_bucket(bucket)
-          else
-            sum, count = Buffer.rqt_parts(bucket)
-            dest[second] = {
-              sum: dest[second][:sum] + sum,
-              count: dest[second][:count] + count
-            }
-          end
-        else
-          dest[second] = bucket
-        end
-      end
-    end
-
-    def copy_rqt_bucket(bucket)
-      sum, count = Buffer.rqt_parts(bucket)
-      {sum: sum, count: count}
-    end
-
-    def encode_leaf(strategy, bucket)
-      if Strategy.rqt?(strategy)
-        sum, count = Buffer.rqt_parts(bucket)
-        return [] if count == 0
-
-        mean = sum / count
-        unless mean.finite? && mean.between?(0, METRIC_VALUE_LIMIT)
-          Log.safe(logger, :error, "[HireFire] Omitting rqt second: non-finite or out-of-range mean.")
-          return :omit
-        end
-
-        n = count
-        n = SAMPLE_COUNT_LIMIT if n > SAMPLE_COUNT_LIMIT
-        [mean, n]
-      else
-        return :omit unless bucket.is_a?(Numeric)
-        unless bucket.finite? && bucket.between?(0, METRIC_VALUE_LIMIT)
-          Log.safe(logger, :error, "[HireFire] Omitting #{strategy} second: non-finite or out-of-range value.")
-          return :omit
-        end
-
-        bucket
-      end
-    end
-
-    def backfill_rqt_seconds(buckets)
-      now = Time.now.to_i
-      from = @last_rqt_second ? @last_rqt_second + 1 : now
-      from = now - RQT_BACKFILL_LIMIT if from < now - RQT_BACKFILL_LIMIT
-      from = now if from > now
-
-      payload = {}
-      buckets.each do |second, bucket|
-        payload[second] = copy_rqt_bucket(bucket)
-      end
-      (from..now).each do |second|
-        payload[second] ||= {sum: 0.0, count: 0}
-      end
-      payload
-    end
-
-    def buffer
-      HireFire.configuration.buffer
-    end
-
-    def configuration
-      HireFire.configuration
+    def reset_after_fork
+      @configuration.buffer.reinit_after_fork
+      Plan.reinit_macros_after_fork
+      @configuration.reset_after_fork
     end
 
     def logger
-      configuration.logger
+      @configuration.logger
     end
   end
 end

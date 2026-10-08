@@ -31,7 +31,6 @@ module HireFire
         configuration.mark_http_active!
         configuration.http_source&.sample(request_queue_time)
         configuration.dispatcher.start
-        configuration.dispatcher.ensure_job_queue_loop
       end
     rescue => e
       Log.safe(HireFire.configuration.logger, :error, "[HireFire] Middleware error: #{e.message}")

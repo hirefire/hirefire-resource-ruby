@@ -38,7 +38,7 @@ module HireFire
       end
     end
 
-    def discard_inherited
+    def discard
       @mutex.synchronize { @metrics = {} }
     end
 

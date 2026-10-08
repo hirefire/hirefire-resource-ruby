@@ -158,7 +158,7 @@ module HireFire
         .merge(macro.plan_connection_options)
       sample_job_strategy(macro, name, strategy, method_name, queues, options, live: live)
       sample_working(macro, name, queues, live: live) if sample_working?(macro, strategy, options)
-    rescue => e
+    rescue StandardError, ScriptError => e
       Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " +
         Log.format_error(e))
     end
@@ -183,7 +183,7 @@ module HireFire
 
       record_sample(name, strategy, Sample.coerce(value))
       true
-    rescue => e
+    rescue StandardError, ScriptError => e
       Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " +
         Log.format_error(e))
       false
@@ -200,7 +200,7 @@ module HireFire
       end
 
       record_sample(name, "wrk", Sample.coerce(wrk))
-    rescue => e
+    rescue StandardError, ScriptError => e
       Log.safe(logger, :error, "[HireFire] Plan working sampler for #{name.inspect} raised " +
         Log.format_error(e))
     end

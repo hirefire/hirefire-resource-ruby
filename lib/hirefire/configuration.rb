@@ -76,7 +76,7 @@ module HireFire
     end
 
     def dispatcher
-      @dispatcher || @mutex.synchronize { @dispatcher ||= Dispatcher.new }
+      @dispatcher || @mutex.synchronize { @dispatcher ||= Dispatcher.new(self) }
     end
 
     def stop_dispatcher(flush: true)

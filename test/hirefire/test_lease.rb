@@ -176,8 +176,135 @@ class HireFire::LeaseTest < Minitest::Test
       lease.request_if_due(hold: ->(_) { true })
     end
 
-    assert_includes error.message, "Lease request failed"
+    assert_equal "Lease request failed with 500 status.", error.message
     refute lease.granted?
+  end
+
+  def test_a_new_lease_has_no_grant_no_trace_and_no_plan
+    refute lease.granted?
+    assert_equal false, lease.trace?
+    assert_equal [], lease.job_queues
+    assert_equal 15, lease.sample_frequency
+  end
+
+  def test_a_request_reports_whether_a_response_was_applied
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "false"})
+
+    assert_equal true, request_at(0)
+    assert_nil request_at(1)
+  end
+
+  def test_a_denied_response_keeps_no_plan_and_no_trace_and_does_not_ask_whether_the_plan_can_be_sampled
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "false"},
+        body: {trace: true, job_queues: [{"name" => "worker", "strategy" => "jql"}]}.to_json)
+    process_id = lease.process_id
+
+    lease.request_if_due(hold: ->(_) { flunk "a denied response must not ask" })
+
+    refute lease.granted?
+    assert_equal false, lease.trace?
+    assert_equal [], lease.job_queues
+    assert_equal process_id, lease.process_id
+    assert_empty log.string
+  end
+
+  def test_a_grant_that_can_no_longer_be_sampled_ends_the_grant_held_before
+    body = {job_queues: [{"name" => "worker", "strategy" => "jql"}]}.to_json
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true", "HireFire-Lease-TTL" => "5"}, body: body)
+    holds = [true, false].each
+
+    Timecop.freeze(Time.at(1000)) { lease.request_if_due(hold: ->(_) { holds.next }) }
+    assert lease.granted?
+    Timecop.freeze(Time.at(1005)) { lease.request_if_due(hold: ->(_) { holds.next }) }
+
+    refute lease.granted?
+    assert_equal [], lease.job_queues
+  end
+
+  def test_a_forked_child_does_not_sample_under_the_grant_it_inherited
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"})
+    lease.request_if_due(hold: ->(_) { true })
+    child_pid = Process.pid + 1
+    Process.stubs(:pid).returns(child_pid)
+
+    lease.sample_if_due { flunk "the child sampled under the grant of its parent" }
+
+    refute lease.granted?
+  end
+
+  def test_a_grant_with_an_empty_body_holds_with_an_empty_plan_and_logs_nothing
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"}, body: "")
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert lease.granted?
+    assert_equal false, lease.trace?
+    assert_equal [], lease.job_queues
+    assert_empty log.string
+  end
+
+  def test_a_plan_that_is_not_a_list_is_ignored_with_its_reason_and_the_trace_flag_is_kept
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"}, body: {trace: true, job_queues: "worker"}.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert lease.granted?
+    assert_equal true, lease.trace?
+    assert_equal [], lease.job_queues
+    assert_includes log.string, "[HireFire] Lease grant body job_queues was not an array. Plan ignored."
+  end
+
+  def test_a_body_that_cannot_be_read_grants_without_a_trace
+    ["not-json{", "[1, 2]"].each do |body|
+      @lease = nil
+      stub_request(:post, "https://data.hirefire.io/metrics/lease")
+        .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"}, body: body)
+
+      lease.request_if_due(hold: ->(_) { true })
+
+      assert lease.granted?
+      assert_equal false, lease.trace?, body
+    end
+  end
+
+  def test_entries_that_are_not_objects_are_skipped_and_counted
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"},
+        body: {job_queues: [5, [1], "worker", nil, {"name" => "worker", "strategy" => "jql"}]}.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert_equal ["worker"], lease.job_queues.map { |entry| entry["name"] }
+    assert_includes log.string, "[HireFire] Lease plan skipped 4 invalid job queue entries."
+  end
+
+  def test_losing_the_grant_also_ends_the_trace
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(
+        {status: 200, headers: {"HireFire-Lease-Granted" => "true", "HireFire-Lease-TTL" => "5"}, body: {trace: true, job_queues: []}.to_json},
+        {status: 401}
+      )
+
+    request_at(0)
+    assert_equal true, lease.trace?
+    request_at(5)
+
+    refute lease.granted?
+    assert_equal false, lease.trace?
   end
 
   def test_sends_process_id_header

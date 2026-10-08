@@ -110,8 +110,8 @@ module HireFire
           queues = normalize_queues(queues, allow_empty: true)
           latencies = []
           latencies << enqueued_latency(queues)
-          latencies << set_latency(::Sidekiq::RetrySet.new, queues) unless skip_retries
-          latencies << set_latency(::Sidekiq::ScheduledSet.new, queues) unless skip_scheduled
+          latencies << DueCache.latency("retry", queues) unless skip_retries
+          latencies << DueCache.latency("schedule", queues) unless skip_scheduled
           (latencies.max || 0.0).to_f
         end
 
@@ -160,10 +160,6 @@ module HireFire
             end
 
           [Time.now.to_f - epoch, 0.0].max
-        end
-
-        def set_latency(set, queues)
-          DueCache.latency(set.name, queues)
         end
       end
 

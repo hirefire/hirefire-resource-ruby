@@ -4,19 +4,7 @@ module HireFire
   module Macro
     module Helpers
       module GoodJob
-        def self.extended(base)
-          privatize_helpers(base)
-        end
-
-        def self.privatize_helpers(base)
-          base.send(
-            :private_class_method,
-            :good_job_class,
-            :error_event_supported?,
-            :lock_type_supported?,
-            :discarded_enum
-          )
-        end
+        private
 
         def good_job_class
           (::GoodJob::VERSION.to_i >= 4) ? ::GoodJob::Job : ::GoodJob::Execution

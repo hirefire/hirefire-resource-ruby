@@ -16,10 +16,6 @@ module HireFire
       extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
 
-      SIZE_METHODS = [
-        :enqueued_size,
-        :scheduled_size
-      ].freeze
       WALK_BATCH = 1_000
       WALK_JOB_BUDGET = 50_000
       WALK_TIME_BUDGET = 2.0
@@ -40,10 +36,7 @@ module HireFire
 
       def job_queue_size(*queues, skip_working: false)
         queues = normalize_queues(queues, allow_empty: true)
-
-        size = SIZE_METHODS.sum do |size_method|
-          method(size_method).call(queues)
-        end
+        size = enqueued_size(queues) + scheduled_size(queues)
 
         skip_working ? size : size + working_size(queues)
       end

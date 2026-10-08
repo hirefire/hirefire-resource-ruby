@@ -28,33 +28,18 @@ module HireFire
         extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
       end
 
-      LATENCY_METHODS = [
-        :ready_latency,
-        :scheduled_latency
-      ].freeze
-
       def job_queue_latency(*queues)
         with_connection(::SolidQueue::Record) do
           queues, now = determine_queues(queues), Time.now
 
-          LATENCY_METHODS.map do |latency_method|
-            method(latency_method).call(queues, now: now)
-          end.max
+          [ready_latency(queues, now: now), scheduled_latency(queues, now: now)].max
         end
       end
-
-      SIZE_METHODS = [
-        :ready_size,
-        :scheduled_size
-      ].freeze
 
       def job_queue_size(*queues, skip_working: false)
         with_connection(::SolidQueue::Record) do
           queues = determine_queues(queues)
-
-          size = SIZE_METHODS.sum do |count_method|
-            method(count_method).call(queues)
-          end
+          size = ready_size(queues) + scheduled_size(queues)
 
           skip_working ? size : size + claimed_size(queues)
         end

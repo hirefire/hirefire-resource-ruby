@@ -18,13 +18,13 @@ end
 inner = ->(_env) { [200, {}, []] }
 app = (state == "bare") ? inner : HireFire::Middleware.new(inner)
 env = {"HTTP_X_REQUEST_START" => "t=#{Time.now.to_f}"}
-20_000.times { app.call(env) }
+20_000.times { app.call(env.dup) }
 
 calls = 300_000
 GC.start
 allocated = GC.stat(:total_allocated_objects)
 started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-calls.times { app.call(env) }
+calls.times { app.call(env.dup) }
 elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 objects = GC.stat(:total_allocated_objects) - allocated
 

@@ -57,6 +57,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Request queue time ignores samples older than 60 seconds.
+- A request that passes `HireFire::Middleware` twice is measured once. On Rails this happened when an application mounted the middleware that HireFire already inserts.
 - Named Sidekiq scheduled and retry samples stop at a time/job budget instead of walking the whole set, and count the jobs they did not read as waiting, so the result is never too low. Named Resque delayed samples that cannot finish within the budget are dropped instead of hanging. A Resque sample without queue names is dropped only when it takes longer than two seconds.
 - Bunny samples fail within five seconds when RabbitMQ does not complete the handshake.
 - Bunny treats an empty `AMQP_URL`, `RABBITMQ_URL`, `RABBITMQ_BIGWIG_URL`, or `CLOUDAMQP_URL` as not set and reads the next one.

@@ -3,13 +3,17 @@
 module HireFire
   class Middleware
     REQUEST_QUEUE_TIME_LIMIT = 60_000
+    MEASURED = "hirefire.measured"
 
     def initialize(app)
       @app = app
     end
 
     def call(env)
-      process_request_queue_time(env)
+      unless env[MEASURED]
+        env[MEASURED] = true
+        process_request_queue_time(env)
+      end
       @app.call(env)
     end
 

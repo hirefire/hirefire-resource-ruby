@@ -170,6 +170,33 @@ class HireFire::MiddlewareTest < Minitest::Test
     @middleware.call(request)
   end
 
+  def test_a_request_that_passes_two_instances_is_measured_and_printed_once
+    ENV["DYNO"] = "web.1"
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire.configure { |config| config.log_queue_metrics = true }
+    HireFire.configuration.dispatcher.stubs(:start)
+    twice = Rack::MockRequest.new(HireFire::Middleware.new(@middleware))
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      out, = capture_io { twice.get("/", "HTTP_X_REQUEST_START" => "1700000000000") }
+
+      assert_equal ["[hirefire:router] queue=1000ms"], out.lines.map(&:chomp)
+      assert_equal({1_700_000_001 => {sum: 1000.0, count: 1}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
+    end
+  end
+
+  def test_two_requests_through_one_instance_are_each_measured
+    ENV["DYNO"] = "web.1"
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire.configuration.dispatcher.stubs(:start)
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      2.times { @request.get("/", "HTTP_X_REQUEST_START" => "1700000000000") }
+
+      assert_equal({1_700_000_001 => {sum: 2000.0, count: 2}}, HireFire.configuration.buffer.flush.dig("web", "rqt"))
+    end
+  end
+
   def test_pass_through_without_log_queue_metrics
     output = capture do
       Timecop.freeze Time.at(1) do

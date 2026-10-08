@@ -33,13 +33,6 @@ module HireFire
         assert_equal HireFire::Middleware, app.middleware.first.klass
       end
 
-      def test_middleware_already_queued_is_callable_from_railtie_instance
-        railtie = HireFire::Railtie.instance
-        assert railtie.respond_to?(:middleware_already_queued?, true)
-        refute HireFire::Railtie.respond_to?(:middleware_already_queued?)
-        assert_equal true, railtie.send(:middleware_already_queued?, app)
-      end
-
       def test_railtie_is_loaded_for_boot_on_token
         assert defined?(HireFire::Railtie)
         assert HireFire::Railtie < ::Rails::Railtie
@@ -92,6 +85,19 @@ module HireFire
         assert_equal "not started with the Rails logger", railtie_boot({"DYNO" => "web.1"}, "module Rails; class Console; end; end")
       end
 
+      def test_a_request_is_measured_once_when_the_application_also_mounts_the_middleware
+        mount = "RailtieBootApp.config.middleware.use HireFire::Middleware"
+        request = <<~RUBY
+          require "rack/mock"
+          RailtieBootApp.routes.draw { get "/", to: ->(_env) { [200, {}, ["Hello"]] } }
+          Rack::MockRequest.new(RailtieBootApp).get("/", "HTTP_X_REQUEST_START" => (Time.now.to_f * 1000).to_i.to_s)
+          HireFire.configuration.buffer.flush.dig("web", "rqt").values.sum { |bucket| bucket[:count] }
+        RUBY
+
+        assert_equal "1", railtie_boot({"DYNO" => "web.1"}, "", "", "begin; #{request}; end")
+        assert_equal "1", railtie_boot({"DYNO" => "web.1"}, "", mount, "begin; #{request}; end")
+      end
+
       def test_an_explicit_configure_starts_in_a_console_and_not_in_a_one_off_dyno
         configure = "Rails.application.config.after_initialize { HireFire.configure { |config| config.dyno(:worker) { 1 } } }"
 
@@ -99,7 +105,11 @@ module HireFire
         assert_equal "not started with the Rails logger", railtie_boot({"DYNO" => "run.4821"}, "", configure)
       end
 
-      def railtie_boot(identity, before_load = "", before_initialize = "")
+      BOOT_RESULT = <<~'RUBY'
+        "#{started ? "started" : "not started"} with #{HireFire.configuration.logger.equal?(::Rails.logger) ? "the Rails logger" : "its own logger"}"
+      RUBY
+
+      def railtie_boot(identity, before_load = "", before_initialize = "", result = BOOT_RESULT)
         Dir.mktmpdir("hirefire-railtie-boot") do |dir|
           marker = File.join(dir, "result")
           script = File.join(dir, "boot_app.rb")
@@ -131,8 +141,7 @@ module HireFire
 
             #{before_initialize}
             RailtieBootApp.initialize!
-            logger = HireFire.configuration.logger.equal?(::Rails.logger) ? "the Rails logger" : "its own logger"
-            File.write(#{marker.inspect}, "\#{started ? "started" : "not started"} with \#{logger}")
+            File.write(#{marker.inspect}, (#{result}).to_s)
           RUBY
 
           env = {

@@ -739,7 +739,7 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   end
 
   def open_sessions
-    ObjectSpace.each_object(::Bunny::Session).count(&:open?)
+    ObjectSpace.each_object(::Bunny::Session).count { |session| session.instance_variable_get(:@status_mutex) && session.open? }
   end
 
   def wait_for(seconds = 3)

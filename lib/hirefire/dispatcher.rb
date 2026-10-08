@@ -43,7 +43,7 @@ module HireFire
 
     def stop(flush: true)
       session = @mutex.synchronize do
-        return false if @stopping || !@session&.live?
+        return false unless @session&.live?
 
         @stopping = true
         @session.tap { @session = nil }
@@ -53,7 +53,7 @@ module HireFire
         session.halt(handoff: flush)
         if !flush
           @configuration.buffer.discard
-        elsif @pid != Process.pid || session.join(JOIN_TIMEOUT)
+        elsif session.join(JOIN_TIMEOUT)
           session.flush
           session.close
         else
@@ -88,7 +88,7 @@ module HireFire
     private
 
     def healthy?
-      !@stopping && @pid == Process.pid && !!@session&.alive?
+      @pid == Process.pid && !!@session&.alive?
     end
 
     def reset_after_fork

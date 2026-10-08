@@ -371,10 +371,19 @@ class HireFireTest < Minitest::Test
     HireFire.instance_variable_set(:@configuration, nil)
   end
 
-  def test_install_fork_hooks_is_idempotent
+  def test_installing_the_fork_hooks_again_leaves_one_hook
     HireFire.install_fork_hooks!
     HireFire.install_fork_hooks!
-    assert HireFire.instance_variable_get(:@fork_hooks_installed)
+
+    assert_equal 1, Process.singleton_class.ancestors.count { |ancestor| ancestor.name == "HireFire::ForkHook" }
+  end
+
+  def test_fork_hooks_are_not_installed_where_the_platform_cannot_fork
+    Process.stubs(:respond_to?).returns(true)
+    Process.stubs(:respond_to?).with(:_fork).returns(false)
+    Process.singleton_class.expects(:prepend).never
+
+    HireFire.install_fork_hooks!
   end
 
   def test_real_fork_restarts_child_and_stops_parent

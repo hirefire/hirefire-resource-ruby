@@ -25,11 +25,7 @@ module HireFire
   end
 
   def install_fork_hooks!
-    return if defined?(@fork_hooks_installed) && @fork_hooks_installed
-    return unless Process.respond_to?(:_fork)
-
-    @fork_hooks_installed = true
-    Process.singleton_class.prepend(ForkHook)
+    Process.singleton_class.prepend(ForkHook) if Process.respond_to?(:_fork)
   end
 
   def after_fork_in_child

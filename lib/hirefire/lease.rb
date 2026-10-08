@@ -103,9 +103,8 @@ module HireFire
 
     def apply_cadence(response)
       if (frequency = response.integer("HireFire-Sample-Frequency"))
-        frequency = frequency.clamp(SAMPLE_FREQUENCY_BOUNDS)
-        @next_sample_at = [@next_sample_at, Clock.monotonic + frequency].min if frequency < @sample_frequency
-        @sample_frequency = frequency
+        @sample_frequency = frequency.clamp(SAMPLE_FREQUENCY_BOUNDS)
+        @next_sample_at = [@next_sample_at, Clock.monotonic + @sample_frequency].min
       end
 
       if (ttl = response.integer("HireFire-Lease-TTL"))
@@ -115,9 +114,9 @@ module HireFire
     end
 
     def apply_grant(granted, grant)
-      @next_sample_at = Clock.monotonic if granted && !@granted
+      @next_sample_at = Clock.monotonic unless @granted
       @granted = granted
-      @trace = granted && grant.trace
+      @trace = grant.trace
       @job_queues = grant.job_queues
     end
 
@@ -135,7 +134,7 @@ module HireFire
     end
 
     def parse_grant_body(body)
-      return empty_grant_body if body.nil? || body.empty?
+      return empty_grant_body if body.empty?
 
       payload = JSON.parse(body)
       return ignore_plan("was not a JSON object") unless payload.is_a?(Hash)
@@ -193,7 +192,6 @@ module HireFire
       @epoch += 1
       clear_grant
       @expires_at = Clock.monotonic
-      @next_sample_at = Clock.monotonic
     end
 
     def reset_after_fork

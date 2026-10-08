@@ -51,8 +51,7 @@ module HireFire
       end
 
       def join(timeout)
-        thread = @dispatch_thread
-        thread.nil? || !!thread.join(timeout)
+        !!@dispatch_thread.join(timeout)
       end
 
       def close
@@ -75,8 +74,7 @@ module HireFire
       def sample
         @lease.sample_if_due do
           @round_started_at = Clock.monotonic
-          trace = @sampler.round(@lease.job_queues, method(:sampling?))
-          @pending_sample_trace = trace if @lease.trace?
+          @pending_sample_trace = @sampler.round(@lease.job_queues, method(:sampling?))
         ensure
           @round_started_at = nil
         end
@@ -177,10 +175,7 @@ module HireFire
       end
 
       def dispatch_interval
-        failures = @dispatch_failures.count
-        return @dispatch_frequency if failures.zero?
-
-        [@dispatch_frequency * 2**[failures, BACKOFF_DOUBLINGS].min, MAX_DISPATCH_FREQUENCY].min
+        [@dispatch_frequency * 2**[@dispatch_failures.count, BACKOFF_DOUBLINGS].min, MAX_DISPATCH_FREQUENCY].min
       end
 
       def dispatch(final: false)
@@ -195,7 +190,7 @@ module HireFire
 
         submit(body, watermark)
       rescue => e
-        repopulate_rqt(data) if data && (final || @live || @handoff)
+        repopulate_rqt(data) if data && (@live || @handoff)
         @dispatch_failures.failed(e)
       end
 
@@ -203,7 +198,6 @@ module HireFire
         body = JSON.generate(payload)
         return body unless body.bytesize > PAYLOAD_SIZE_LIMIT && Payload.traced?(payload)
 
-        @pending_sample_trace = nil
         JSON.generate(Payload.without_trace(payload))
       end
 
@@ -215,7 +209,7 @@ module HireFire
         if response.too_large?
           drop_oversized_payload(body, watermark, server: true)
         else
-          @last_rqt_second = watermark if watermark
+          @last_rqt_second = watermark
           @pending_sample_trace = nil
         end
         @dispatch_failures.recovered
@@ -235,7 +229,7 @@ module HireFire
 
       def drop_oversized_payload(body, watermark, server: false)
         @pending_sample_trace = nil
-        @last_rqt_second = watermark if watermark
+        @last_rqt_second = watermark
         source = server ? "server rejected (413)" : "exceeds the #{PAYLOAD_SIZE_LIMIT}-byte limit"
         Log.safe(logger, :error, "[HireFire] Dropped metrics payload: #{body.bytesize} bytes " \
           "#{source}. Resuming from the current second.")

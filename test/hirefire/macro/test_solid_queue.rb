@@ -40,29 +40,68 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     assert_equal 0.0, HireFire::Macro::SolidQueue.job_queue_latency(:default)
   end
 
-  def test_before_sample_job_queues_uses_connection_pool_and_clears_cache
-    pool = ActiveRecord::Base.connection_pool
-    calls = 0
-    original = pool.method(:with_connection)
-    pool.define_singleton_method(:with_connection) do |**kwargs, &block|
-      calls += 1
-      original.call(**kwargs, &block)
+  def test_the_paused_queues_are_read_once_in_a_round_and_on_every_call_outside_one
+    BasicJob.perform_later
+    BasicJob.set(queue: :mailer).perform_later
+    reads = 0
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      reads += 1 if payload[:sql].match?(/\ASELECT "solid_queue_pauses"."queue_name" FROM/)
     end
 
     HireFire::Macro::SolidQueue.before_sample_job_queues
-    assert_equal :pending, HireFire::Macro::SolidQueue.instance_variable_get(:@wave_registered_queues)
-
-    HireFire::Macro::SolidQueue.send(:registered_queues)
-    assert_operator calls, :>=, 1
-    refute_equal :pending, HireFire::Macro::SolidQueue.instance_variable_get(:@wave_registered_queues)
-    refute_nil HireFire::Macro::SolidQueue.instance_variable_get(:@wave_registered_queues)
-
+    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size
+    pause_queue("mailer")
+    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size(:mailer)
     HireFire::Macro::SolidQueue.after_sample_job_queues
-    assert_nil HireFire::Macro::SolidQueue.instance_variable_get(:@wave_registered_queues)
-    assert_nil HireFire::Macro::SolidQueue.instance_variable_get(:@wave_paused_queues)
+
+    assert_equal 1, reads
+    reads = 0
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size
+    assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size(:mailer)
+    assert_equal 2, reads
   ensure
-    HireFire::Macro::SolidQueue.after_sample_job_queues
-    pool.singleton_class.remove_method(:with_connection)
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+  end
+
+  def test_a_new_round_reads_the_paused_queues_again
+    BasicJob.perform_later
+    BasicJob.set(queue: :mailer).perform_later
+
+    HireFire::Macro::SolidQueue.before_sample_job_queues
+    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size
+    pause_queue("mailer")
+    HireFire::Macro::SolidQueue.before_sample_job_queues
+
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size
+  end
+
+  def test_the_queue_names_are_read_again_after_sixty_seconds_and_not_before
+    BasicJob.perform_later
+    HireFire::Clock.stubs(:monotonic).returns(1_000.0)
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size
+    BasicJob.set(queue: :mailer).perform_later
+
+    HireFire::Clock.stubs(:monotonic).returns(1_059.9)
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size
+    assert_equal 0, HireFire::Macro::SolidQueue.job_queue_size(:"mail*")
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size(:mailer)
+
+    HireFire::Clock.stubs(:monotonic).returns(1_060.0)
+    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size(:"mail*")
+    assert_equal 60.0, HireFire::Macro::SolidQueue::REGISTERED_QUEUE_TTL
+  end
+
+  def test_a_fork_reset_reads_the_queue_names_again
+    BasicJob.perform_later
+    HireFire::Clock.stubs(:monotonic).returns(1_000.0)
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size
+    BasicJob.set(queue: :mailer).perform_later
+
+    HireFire::Macro::SolidQueue.reinit_after_fork
+
+    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size
   end
 
   def test_a_sample_leaves_the_primary_pool_alone_when_the_jobs_have_their_own_pool
@@ -74,39 +113,6 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     end
 
     assert_equal 0, checkouts
-  end
-
-  def test_registered_queues_are_cached_across_waves_while_pauses_stay_live
-    BasicJob.perform_later
-    distinct_calls = 0
-    pause_calls = 0
-    original_all = ::SolidQueue::Queue.method(:all)
-    original_pause = ::SolidQueue::Pause.method(:pluck)
-    ::SolidQueue::Queue.define_singleton_method(:all) do |*args, **kwargs, &block|
-      distinct_calls += 1
-      original_all.call(*args, **kwargs, &block)
-    end
-    ::SolidQueue::Pause.define_singleton_method(:pluck) do |*args, **kwargs, &block|
-      pause_calls += 1
-      original_pause.call(*args, **kwargs, &block)
-    end
-
-    2.times do
-      HireFire::Macro::SolidQueue.before_sample_job_queues
-      HireFire::Macro::SolidQueue.job_queue_size
-      HireFire::Macro::SolidQueue.after_sample_job_queues
-    end
-
-    assert_equal 1, distinct_calls
-    assert_equal 2, pause_calls
-  ensure
-    HireFire::Macro::SolidQueue.reinit_after_fork
-    ::SolidQueue::Queue.define_singleton_method(:all) do |*args, **kwargs, &block|
-      original_all.call(*args, **kwargs, &block)
-    end
-    ::SolidQueue::Pause.define_singleton_method(:pluck) do |*args, **kwargs, &block|
-      original_pause.call(*args, **kwargs, &block)
-    end
   end
 
   def test_job_queue_latency_with_jobs

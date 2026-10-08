@@ -53,23 +53,19 @@ module HireFire
       end
 
       def before_sample_job_queues
-        return nil unless defined?(::SolidQueue)
-
-        @wave_registered_queues = :pending
-        @wave_paused_queues = :pending
-        true
+        @round = true
+        @round_paused_queues = nil
       end
 
       def after_sample_job_queues(_token = nil)
-        @wave_registered_queues = nil
-        @wave_paused_queues = nil
+        @round = false
+        @round_paused_queues = nil
       end
 
       def reinit_after_fork
-        @wave_registered_queues = nil
-        @wave_paused_queues = nil
-        @registered_queue_cache = nil
-        @registered_queue_cache_at = nil
+        after_sample_job_queues
+        @registered_queues = nil
+        @registered_queues_at = nil
       end
 
       private
@@ -77,61 +73,26 @@ module HireFire
       def determine_queues(queues)
         queues = normalize_queues(queues, allow_empty: true)
 
-        Set.new(
-          if queues.empty?
-            registered_queues
-          elsif queues.any? { |queue| queue.end_with?("*") }
-            expand_wildcards(queues)
-          else
-            queues
-          end
-        ) - paused_queues
-      end
-
-      def registered_queues
-        prefetch_wave_lists
-        @wave_registered_queues || cached_registered_queue_names
+        Set.new(queues.empty? ? registered_queues : expand_wildcards(queues)) - paused_queues
       end
 
       def paused_queues
-        prefetch_wave_lists
-        @wave_paused_queues || ::SolidQueue::Pause.pluck(:queue_name)
+        return ::SolidQueue::Pause.pluck(:queue_name) unless @round
+
+        @round_paused_queues ||= ::SolidQueue::Pause.pluck(:queue_name)
       end
 
-      def prefetch_wave_lists
-        return unless @wave_registered_queues == :pending
+      def registered_queues
+        now = Clock.monotonic
+        return @registered_queues if @registered_queues_at && (now - @registered_queues_at) < REGISTERED_QUEUE_TTL
 
-        with_connection(::SolidQueue::Record) do
-          @wave_registered_queues = cached_registered_queue_names
-          @wave_paused_queues = ::SolidQueue::Pause.pluck(:queue_name)
-        end
-      end
-
-      def cached_registered_queue_names
-        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        names = @registered_queue_cache
-        cached_at = @registered_queue_cache_at
-        if names && cached_at && (now - cached_at) < REGISTERED_QUEUE_TTL
-          return names
-        end
-
-        names = ::SolidQueue::Queue.all.map(&:name)
-        @registered_queue_cache = names
-        @registered_queue_cache_at = now
-        names
+        @registered_queues_at = now
+        @registered_queues = ::SolidQueue::Queue.all.map(&:name)
       end
 
       def expand_wildcards(queues)
-        cached_registered_queues = registered_queues
-
         queues.flat_map do |queue|
-          if queue.end_with?("*")
-            cached_registered_queues.select do |registered_queue|
-              registered_queue.start_with?(queue[0..-2])
-            end
-          else
-            queue
-          end
+          queue.end_with?("*") ? registered_queues.select { |name| name.start_with?(queue[0..-2]) } : queue
         end
       end
 

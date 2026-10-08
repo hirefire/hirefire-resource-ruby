@@ -7,7 +7,6 @@ module HireFire
   class Lease
     TTL_BOUNDS = 5..3600
     SAMPLE_FREQUENCY_BOUNDS = 1..3600
-    MAX_BODY_BYTES = 131_072
     MAX_JOB_QUEUES = 256
     MAX_NAME_BYTES = 128
 
@@ -86,9 +85,9 @@ module HireFire
 
       next_sample_frequency = @sample_frequency
       next_sample_at = @next_sample_at
-      if response.key?("HireFire-Sample-Frequency")
+      if (frequency = Client.header_integer(response, "HireFire-Sample-Frequency"))
         previous_frequency = @sample_frequency
-        next_sample_frequency = response["HireFire-Sample-Frequency"].to_i.clamp(SAMPLE_FREQUENCY_BOUNDS)
+        next_sample_frequency = frequency.clamp(SAMPLE_FREQUENCY_BOUNDS)
         if next_sample_frequency < previous_frequency
           sooner = Clock.monotonic + next_sample_frequency
           next_sample_at = sooner if next_sample_at > sooner
@@ -97,8 +96,8 @@ module HireFire
 
       next_ttl = @ttl
       next_expires_at = @expires_at
-      if response.key?("HireFire-Lease-TTL")
-        next_ttl = response["HireFire-Lease-TTL"].to_i.clamp(TTL_BOUNDS)
+      if (ttl = Client.header_integer(response, "HireFire-Lease-TTL"))
+        next_ttl = ttl.clamp(TTL_BOUNDS)
         next_expires_at = Clock.monotonic + next_ttl
       end
 
@@ -143,12 +142,6 @@ module HireFire
 
     def parse_grant_body(body)
       return empty_grant_body if body.nil? || body.empty?
-
-      if body.bytesize > MAX_BODY_BYTES
-        Log.safe(HireFire.configuration.logger, :error,
-          "[HireFire] Lease grant body exceeded #{MAX_BODY_BYTES} bytes. Plan ignored.")
-        return empty_grant_body
-      end
 
       payload = JSON.parse(body)
       unless payload.is_a?(Hash)

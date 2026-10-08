@@ -473,12 +473,8 @@ module HireFire
     end
 
     def apply_dispatch_frequency(response)
-      return unless response.respond_to?(:key?) && response.key?("HireFire-Dispatch-Frequency")
-
-      value = response["HireFire-Dispatch-Frequency"].to_i
-      return unless value.positive?
-
-      @dispatch_frequency = value.clamp(DEFAULT_DISPATCH_FREQUENCY, MAX_DISPATCH_FREQUENCY)
+      value = Client.header_integer(response, "HireFire-Dispatch-Frequency") if response
+      @dispatch_frequency = value.clamp(DEFAULT_DISPATCH_FREQUENCY, MAX_DISPATCH_FREQUENCY) if value
     end
 
     def drop_oversized_payload(body, watermark, server: false)

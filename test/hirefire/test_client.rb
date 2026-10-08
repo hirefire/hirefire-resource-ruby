@@ -251,6 +251,51 @@ class HireFire::ClientTest < Minitest::Test
     assert_requested request
   end
 
+  def test_a_response_whose_declared_length_is_over_the_limit_is_refused_before_its_body_is_read
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"Content-Length" => (HireFire::Client::MAX_BODY_BYTES + 1).to_s}, body: "short")
+
+    error = assert_raises(HireFire::Client::RequestError) { client.request_lease("abc123") }
+
+    assert_equal "Response body exceeded 131072 bytes (status 200).", error.message
+  end
+
+  def test_a_response_body_over_the_limit_is_refused_and_the_connection_is_dropped
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_return(status: 500, body: "x" * (HireFire::Client::MAX_BODY_BYTES + 1))
+      .then.to_return(status: 200)
+
+    error = assert_raises(HireFire::Client::RequestError) { client.submit_samples("[]") }
+
+    assert_equal "Response body exceeded 131072 bytes (status 500).", error.message
+    assert_nil client.instance_variable_get(:@http)
+    assert_kind_of Net::HTTPSuccess, client.submit_samples("[]")
+  end
+
+  def test_a_response_body_of_exactly_the_limit_is_read_in_full
+    body = "x" * HireFire::Client::MAX_BODY_BYTES
+    stub_request(:post, "https://data.hirefire.io/metrics/lease").to_return(status: 200, body: body)
+
+    assert_equal 131_072, HireFire::Client::MAX_BODY_BYTES
+    assert_equal body, client.request_lease("abc123").body
+  end
+
+  def test_a_response_without_a_body_reads_as_an_empty_string
+    stub_request(:post, "https://data.hirefire.io/metrics/lease").to_return(status: 200)
+
+    assert_equal "", client.request_lease("abc123").body
+  end
+
+  def test_header_integer_reads_positive_whole_numbers_only
+    response = {"plain" => "30", "padded" => " 7 ", "zero" => "0", "negative" => "-5", "words" => "soon", "mixed" => "3abc", "decimal" => "1.5", "grouped" => "1_000", "empty" => ""}
+
+    assert_equal 30, HireFire::Client.header_integer(response, "plain")
+    assert_equal 7, HireFire::Client.header_integer(response, "padded")
+    %w[zero negative words mixed decimal grouped empty missing].each do |name|
+      assert_nil HireFire::Client.header_integer(response, name), "#{name} was read as a number"
+    end
+  end
+
   def test_request_lease_raises_on_timeout
     stub_request(:post, "https://data.hirefire.io/metrics/lease").to_timeout
 

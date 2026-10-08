@@ -15,6 +15,10 @@ class HireFire::WireTest < Minitest::Test
   GRANT = {status: 200, headers: GRANT_HEADERS, body: WORKER_PLAN}.freeze
   NO_GRANT = {status: 200, headers: {"HireFire-Lease-Granted" => "false", "HireFire-Lease-TTL" => "5"}}.freeze
   APP = ->(_env) { [200, {}, ["served"]] }
+  CHUNKED_GRANT = {
+    raw: "HTTP/1.1 200 OK\r\nHireFire-Lease-Granted: true\r\nTransfer-Encoding: chunked\r\n\r\n" +
+      ("10000\r\n#{"x" * 65_536}\r\n" * 3) + "0\r\n\r\n"
+  }.freeze
 
   def setup
     super
@@ -212,12 +216,13 @@ class HireFire::WireTest < Minitest::Test
     "a_grant_that_is_not_an_object" => ["[1,2]", "Lease grant body was not a JSON object. Plan ignored."],
     "a_grant_without_a_list_of_entries" => [%({"job_queues":"worker"}), "Lease grant body job_queues was not an array. Plan ignored."],
     "a_grant_with_entries_of_the_wrong_shape" => [JSON.generate("job_queues" => [1, "two", nil, {"name" => 5}]), "Lease plan skipped 4 invalid job queue entries."],
-    "a_grant_over_the_size_limit" => [JSON.generate("job_queues" => Array.new(4000) { |index| {"name" => "queue-#{index}", "strategy" => "jqs", "queues" => ["q#{index}"]} }), "Lease grant body exceeded 131072 bytes. Plan ignored."]
+    "a_grant_over_the_size_limit" => [JSON.generate("job_queues" => Array.new(4000) { |index| {"name" => "queue-#{index}", "strategy" => "jqs", "queues" => ["q#{index}"]} }), "HireFire::Client::RequestError: Response body exceeded 131072 bytes (status 200)."],
+    "a_chunked_grant_over_the_size_limit" => [:chunked, "HireFire::Client::RequestError: Response body exceeded 131072 bytes (status 200)."]
   }.freeze
 
   LEASE_FAULTS.each do |name, (body, message)|
     define_method(:"test_#{name}_is_logged_and_samples_nothing") do
-      @lease = {status: 200, headers: GRANT_HEADERS, body: body}
+      @lease = (body == :chunked) ? CHUNKED_GRANT : {status: 200, headers: GRANT_HEADERS, body: body}
 
       Timecop.freeze(Time.at(EPOCH)) do
         HireFire.configure { |config| config.dyno(:worker) { 42 } }

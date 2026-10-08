@@ -16,6 +16,14 @@ module HireFire
       Net::ProtocolError
     ].freeze
 
+    MAX_BODY_BYTES = 131_072
+
+    def self.header_integer(response, name)
+      text = response[name].to_s.strip
+      value = text.to_i if text.match?(/\A\d+\z/)
+      value if value&.positive?
+    end
+
     def initialize(timeout: 5)
       @timeout = timeout
       @mutex = Mutex.new
@@ -67,7 +75,7 @@ module HireFire
       retried = false
       @mutex.synchronize do
         reused = reusable?(uri)
-        connection(uri).request(request)
+        connection(uri).request(request) { |response| read_body(response) }
       rescue Timeout::Error
         reset_connection
         raise RequestError, "Request timed out."
@@ -78,7 +86,22 @@ module HireFire
           retry
         end
         raise RequestError, "Network error (#{e.class}: #{e.message})."
+      rescue RequestError
+        reset_connection
+        raise
       end
+    end
+
+    def read_body(response)
+      oversized = -> { raise RequestError, "Response body exceeded #{MAX_BODY_BYTES} bytes (status #{response.code})." }
+      oversized.call if response.content_length.to_i > MAX_BODY_BYTES
+
+      body = "".b
+      response.read_body do |chunk|
+        body << chunk
+        oversized.call if body.bytesize > MAX_BODY_BYTES
+      end
+      response.body = body
     end
 
     def connection(uri)

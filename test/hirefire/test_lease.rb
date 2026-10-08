@@ -410,33 +410,32 @@ class HireFire::LeaseTest < Minitest::Test
     refute lease.trace?
   end
 
-  def test_ignores_oversized_grant_body
-    log = StringIO.new
-    HireFire.configuration.logger = Logger.new(log)
-    oversized = "x" * (HireFire::Lease::MAX_BODY_BYTES + 1)
+  def test_an_oversized_grant_body_fails_the_request_and_grants_nothing
+    oversized = "x" * (HireFire::Client::MAX_BODY_BYTES + 1)
 
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {
         "HireFire-Lease-Granted" => "true",
-        "HireFire-Sample-Frequency" => "15"
+        "HireFire-Sample-Frequency" => "30"
       }, body: oversized)
 
-    lease.request_if_due(hold: ->(_) { true })
+    error = assert_raises(HireFire::Client::RequestError) do
+      lease.request_if_due(hold: ->(_) { true })
+    end
 
-    assert lease.granted?
+    assert_equal "Response body exceeded 131072 bytes (status 200).", error.message
+    refute lease.granted?
     assert_empty lease.job_queues
-    assert_includes log.string, "exceeded"
+    assert_equal 15, lease.sample_frequency
   end
 
   def test_accepts_grant_body_of_exactly_max_body_bytes
-    assert_equal 131_072, HireFire::Lease::MAX_BODY_BYTES
-
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
     body = {version: 1, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => nil, "queues" => [], "options" => {}}
     ]}.to_json
-    body += " " * (HireFire::Lease::MAX_BODY_BYTES - body.bytesize)
+    body += " " * (HireFire::Client::MAX_BODY_BYTES - body.bytesize)
 
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {
@@ -715,16 +714,32 @@ class HireFire::LeaseTest < Minitest::Test
     refute lease.granted?
   end
 
-  def test_clamps_a_garbled_sample_frequency_to_a_sane_floor
+  def test_ignores_a_sample_frequency_that_is_not_a_positive_integer
+    ["0", "-5", "soon", "3abc", "1.5", "1_000", ""].each do |value|
+      stub_request(:post, "https://data.hirefire.io/metrics/lease")
+        .to_return(status: 200, headers: {
+          "HireFire-Lease-Granted" => "true",
+          "HireFire-Sample-Frequency" => value
+        })
+      lease = HireFire::Lease.new
+
+      lease.request_if_due(hold: ->(_) { true })
+
+      assert_equal 15, lease.sample_frequency, "a sample frequency of #{value.inspect} was applied"
+      assert lease.granted?
+    end
+  end
+
+  def test_accepts_a_sample_frequency_with_surrounding_whitespace
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {
         "HireFire-Lease-Granted" => "true",
-        "HireFire-Sample-Frequency" => "0"
+        "HireFire-Sample-Frequency" => " 30 "
       })
 
     lease.request_if_due(hold: ->(_) { true })
 
-    assert_equal HireFire::Lease::SAMPLE_FREQUENCY_BOUNDS.begin, lease.sample_frequency
+    assert_equal 30, lease.sample_frequency
   end
 
   def test_clamps_an_over_large_sample_frequency_to_the_ceiling
@@ -739,16 +754,36 @@ class HireFire::LeaseTest < Minitest::Test
     assert_equal HireFire::Lease::SAMPLE_FREQUENCY_BOUNDS.end, lease.sample_frequency
   end
 
-  def test_clamps_a_garbled_ttl_to_a_sane_floor
+  def test_ignores_a_ttl_that_is_not_a_positive_integer
+    ["0", "-5", "abc", "3abc", "1.5", ""].each do |value|
+      stub_request(:post, "https://data.hirefire.io/metrics/lease")
+        .to_return(status: 200, headers: {
+          "HireFire-Lease-Granted" => "true",
+          "HireFire-Lease-TTL" => value
+        })
+      lease = Timecop.freeze(Time.at(1000)) { HireFire::Lease.new }
+
+      Timecop.freeze(Time.at(1000)) { lease.request_if_due(hold: ->(_) { true }) }
+      Timecop.freeze(Time.at(1014)) { lease.request_if_due(hold: ->(_) { true }) }
+      assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 1)
+      Timecop.freeze(Time.at(1015)) { lease.request_if_due(hold: ->(_) { true }) }
+      assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 2)
+      WebMock.reset_executed_requests!
+    end
+  end
+
+  def test_clamps_a_ttl_below_the_floor_to_the_floor
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {
         "HireFire-Lease-Granted" => "true",
-        "HireFire-Lease-TTL" => "0"
+        "HireFire-Lease-TTL" => "1"
       })
 
-    lease.request_if_due(hold: ->(_) { true })
-
-    assert_equal HireFire::Lease::TTL_BOUNDS.begin, lease.instance_variable_get(:@ttl)
+    Timecop.freeze(Time.at(1000)) { lease.request_if_due(hold: ->(_) { true }) }
+    Timecop.freeze(Time.at(1004)) { lease.request_if_due(hold: ->(_) { true }) }
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 1)
+    Timecop.freeze(Time.at(1005)) { lease.request_if_due(hold: ->(_) { true }) }
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 2)
   end
 
   def test_clamps_an_over_large_ttl_to_the_ceiling

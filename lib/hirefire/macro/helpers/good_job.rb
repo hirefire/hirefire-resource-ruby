@@ -19,11 +19,7 @@ module HireFire
         end
 
         def good_job_class
-          if Gem::Version.new(::GoodJob::VERSION) >= Gem::Version.new("4.0.0")
-            ::GoodJob::Job
-          else
-            ::GoodJob::Execution
-          end
+          (::GoodJob::VERSION.to_i >= 4) ? ::GoodJob::Job : ::GoodJob::Execution
         end
 
         def error_event_supported?

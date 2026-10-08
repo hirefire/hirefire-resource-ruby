@@ -539,6 +539,27 @@ class HireFireTest < Minitest::Test
     end
   end
 
+  def test_the_wait_for_the_children_pauses_one_tick_between_two_looks
+    skip "Process.fork unavailable" unless Process.respond_to?(:fork)
+    boot_web_process
+
+    with_tick(0.01) do
+      HireFire.expects(:sleep).with(0.01).at_least_once
+      hold, release = IO.pipe
+      pid = Process.fork do
+        release.close
+        hold.read
+        exit!(0)
+      end
+      hold.close
+      sleep(0.05)
+
+      release.close
+      Process.wait(pid)
+      wait_until { HireFire.configuration.dispatcher.running? }
+    end
+  end
+
   def test_a_web_process_that_has_served_a_request_keeps_reporting_when_it_forks_and_its_child_reports_nothing
     skip "Process.fork unavailable" unless Process.respond_to?(:fork)
     boot_web_process

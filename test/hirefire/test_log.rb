@@ -28,6 +28,26 @@ class HireFire::LogTest < Minitest::Test
     assert_nil HireFire::Log.safe(nil, :error, "boom")
   end
 
+  def test_verbose_is_off_without_the_variable_and_for_the_words_that_mean_no
+    [nil, "", "0", "false", "no", "FALSE", "No"].each do |value|
+      ENV["HIREFIRE_VERBOSE"] = value
+
+      refute HireFire::Log.verbose?, value.inspect
+    end
+  end
+
+  def test_verbose_is_on_for_any_other_value
+    %w[1 true yes on].each do |value|
+      ENV["HIREFIRE_VERBOSE"] = value
+
+      assert HireFire::Log.verbose?, value
+    end
+  end
+
+  def test_format_error_names_the_class_and_the_message
+    assert_equal "ArgumentError: bad value", HireFire::Log.format_error(ArgumentError.new("bad value"))
+  end
+
   def test_format_error_strips_url_userinfo
     error = RuntimeError.new("redis://user:secret@127.0.0.1:6379/0 failed")
     text = HireFire::Log.format_error(error)

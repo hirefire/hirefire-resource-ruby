@@ -159,6 +159,30 @@ class HireFire::ProbeTest < Minitest::Test
     assert_operator second["wave_ms"], :>=, first_wave_ms
   end
 
+  def test_times_are_milliseconds_with_three_decimals
+    HireFire::Clock.stubs(:monotonic).returns(10.0, 10.5, 10.5123456, 11.0004567)
+    probe = HireFire::Probe.start
+
+    probe.measure({"adapter" => "sidekiq", "strategy" => "jql"}) { :sampled }
+
+    assert_equal({"wave_ms" => 1000.457, "ops" => [{"adapter" => "sidekiq", "strategy" => "jql", "queues" => [], "options" => {}, "ms" => 12.346}]}, probe.finish)
+  end
+
+  def test_log_lines_carry_the_round_time_the_number_of_operations_and_each_operation
+    io = StringIO.new
+    probe = HireFire::Probe.start
+    probe.record({"adapter" => "sidekiq", "strategy" => "jqs", "queues" => %w[default mailers]}, 4.25)
+    probe.record({"strategy" => "jql"}, 1)
+
+    probe.log_to(Logger.new(io))
+
+    lines = io.string.lines.map { |line| line[/\[HireFire\].*/] }
+    assert_match(/\A\[HireFire\] sample_job_queues wave_ms=\d+\.\d+ ops=2\z/, lines[0])
+    assert_equal '[HireFire] sample adapter="sidekiq" strategy=jqs queues=default,mailers ms=4.25', lines[1]
+    assert_equal "[HireFire] sample adapter=nil strategy=jql queues= ms=1.0", lines[2]
+    assert_equal 3, lines.size
+  end
+
   def test_log_writes_wave_and_per_op_lines
     logger = Logger.new(io = StringIO.new)
     probe = HireFire::Probe.start

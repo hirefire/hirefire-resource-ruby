@@ -64,6 +64,30 @@ class HireFire::SamplerTest < Minitest::Test
     assert_kind_of Float, data["decimal"]["jql"].values.first
   end
 
+  def test_whole_numbers_stay_whole_and_every_other_number_becomes_a_float
+    HireFire.configuration.dyno(:whole) { 5 }
+    HireFire.configuration.dyno(:fraction) { 2.5 }
+    HireFire.configuration.dyno(:rational) { Rational(3, 1) }
+
+    sample_plan(local("whole"), local("fraction"), local("rational"))
+
+    data = buffer.flush
+    assert_kind_of Integer, data["whole"]["jql"].values.first
+    assert_kind_of Float, data["fraction"]["jql"].values.first
+    assert_kind_of Float, data["rational"]["jql"].values.first
+    assert_equal [5, 2.5, 3.0], %w[whole fraction rational].map { |name| data[name]["jql"].values.first }
+  end
+
+  def test_a_long_rejected_value_is_cut_at_64_bytes_in_the_log
+    values = ["a" * 64, "x" + "b" * 64].each
+    HireFire.configuration.dyno(:worker) { values.next }
+
+    2.times { sample_plan(local("worker")) }
+
+    assert_includes @log.string, %(returned String("#{"a" * 64}"), expected)
+    assert_includes @log.string, %(returned String("x#{"b" * 63}…"), expected)
+  end
+
   def test_a_value_that_is_not_a_number_from_zero_up_is_dropped_and_named_in_the_log
     values = ["10", nil, -1, Float::INFINITY, Float::NAN, true].each
     HireFire.configuration.dyno(:worker) { values.next }

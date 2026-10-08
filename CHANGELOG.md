@@ -53,6 +53,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Official support for Ruby 2.7 and 3.0.
 - Official support for Sidekiq 6, Good Job 2, Que 0, and Solid Queue 0.
 - `HireFire::Macro::Bunny::ConnectionError`. Bunny connection failures raise `Bunny::Exception`.
+- Internal names that 1.x left public: the constants `HireFire::Macro::Resque::SIZE_METHODS`, `HireFire::Macro::SolidQueue::SIZE_METHODS`, `HireFire::Macro::SolidQueue::LATENCY_METHODS`, and `HireFire::Macro::Que::VERSION_1_0_0`, and the Good Job helper methods `good_job_class`, `error_event_supported?`, and `discarded_enum`, which are private.
 
 ### Fixed
 

@@ -1,0 +1,41 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "bundler"
+require "open3"
+
+ROOT = File.expand_path("../..", __dir__)
+
+PROOFS = [
+  ["que_pg_locks_test.rb", "F-01", "que_2", "macro/test_que.rb", "advisory_lock_in_another_database|two_key_advisory_lock"],
+  ["lease_truncation_message_test.rb", "F-02", "default", "test_lease.rb", "truncation_counts_only|at_the_limit_after_invalid"],
+  ["lease_stability.rb", "F-04", "default", "test_dispatcher.rb", "lease_is_renewed_while_a_sample_round|round_that_runs_past_its_limit|round_inside_its_limit"],
+  ["fork_without_middleware_test.rb", "F-06", "default", "test_hirefire.rb", "web_process_that|handover|parent_that_started_again"],
+  ["web_fork_child.rb", "F-06", "default", "test_hirefire.rb", "has_served_a_request_keeps_reporting"],
+  ["worker_loop_death.rb", "F-08", "default", "test_dispatcher.rb", "replaces_a_lease_loop_that_ended|replaces_a_sample_loop_that_ended|replaces_a_dispatch_loop_that_ended"],
+  ["good_job_interrupted_test.rb", "F-09", "good_job_4", "macro/test_good_job.rb", "worker_died|skip_locked|running_job_is_working|oldest_waiting_job_sets"],
+  ["delayed_job_expired_lock_test.rb", "F-10", "delayed_job_active_record_4", "macro/test_delayed_job.rb", "locked_longer_than_max_run_time|locked_within_max_run_time"],
+  ["queue_classic_dead_worker_test.rb", "F-10", "queue_classic_4", "macro/test_queue_classic.rb", "backend_that_no_longer_exists|names_no_backend"],
+  ["bunny_reused_connection_test.rb", "F-11", "bunny_3", "macro/test_bunny.rb", "connection_that_plan_samples_reuse_closes"],
+  ["sidekiq_test.rb (walk budget, 2 tests)", "F-12", "sidekiq_8", "macro/test_sidekiq.rb", "real_walk_budget_reports_a_number|over_its_budget_is_not_repeated"],
+  ["sidekiq_test.rb (server script, 2 tests)", "F-13", "sidekiq_8", "macro/test_sidekiq.rb", "does_not_hold_redis_for_long|missing_script_is_asked_twice"],
+  ["resque_delayed_budget_test.rb", "F-14", "resque_3", "macro/test_resque.rb", "delayed_size_without_queue_names"],
+  ["lease_header_garbage_test.rb (headers)", "F-16", "default", "test_lease.rb", "not_a_positive_integer|oversized_grant_body"],
+  ["lease_header_garbage_test.rb (body)", "F-16", "default", "test_client.rb", "declared_length_is_over|body_over_the_limit"],
+  ["process_daemon.rb", "F-18", "default", "test_wire.rb", "daemonizes_keeps_reporting"]
+].freeze
+
+failed = 0
+puts "proof in audit/evidence at 30e0b58         for   cell                         tests result"
+PROOFS.each do |proof, finding, cell, file, pattern|
+  env = {"BUNDLE_GEMFILE" => File.join(ROOT, "gemfiles/#{cell}.gemfile"), "COVERAGE" => "false"}
+  command = ["bundle", "exec", "ruby", "-Ilib:test", File.join("test/hirefire", file), "-n", "/#{pattern}/"]
+  output, _status = Bundler.with_unbundled_env { Open3.capture2e(env, *command, chdir: ROOT) }
+  counts = output[/^(\d+) runs, \d+ assertions, (\d+) failures, (\d+) errors, (\d+) skips/]
+  runs, failures, errors, skips = counts.to_s.scan(/\d+/).values_at(0, 2, 3, 4).map(&:to_i)
+  passed = counts && runs.positive? && failures.zero? && errors.zero? && skips.zero?
+  failed += 1 unless passed
+  puts format("%-42s %-5s %-28s %5s %s", proof, finding, cell, runs || "?", passed ? "pass" : "FAIL")
+end
+puts "#{PROOFS.size - failed} of #{PROOFS.size} pass"
+exit(failed.zero? ? 0 : 1)

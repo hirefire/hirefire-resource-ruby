@@ -84,8 +84,7 @@ module HireFire
                 pipeline.llen("delayed:#{timestamp}")
               end
             end
-            jobs_seen += lengths.sum
-            raise_if_walk_budget_exceeded!("delayed", jobs_seen, started)
+            raise_if_walk_budget_exceeded!("delayed", started)
             total_size += lengths.sum
           else
             timestamps.each do |timestamp|
@@ -101,7 +100,7 @@ module HireFire
                 break if encoded_jobs.empty?
 
                 jobs_seen += encoded_jobs.size
-                raise_if_walk_budget_exceeded!("delayed", jobs_seen, started)
+                raise_if_walk_budget_exceeded!("delayed", started, jobs_seen: jobs_seen)
 
                 total_size += encoded_jobs.count do |encoded_job|
                   queues.include?(encoded_queue(encoded_job))
@@ -135,7 +134,7 @@ module HireFire
           end.compact
 
           jobs_seen += encoded_jobs.size
-          raise_if_walk_budget_exceeded!("worker", jobs_seen, started)
+          raise_if_walk_budget_exceeded!("worker", started, jobs_seen: jobs_seen)
 
           total_size += if queues.empty?
             encoded_jobs.size
@@ -170,7 +169,7 @@ module HireFire
         false
       end
 
-      def raise_if_walk_budget_exceeded!(walk, jobs_seen, started)
+      def raise_if_walk_budget_exceeded!(walk, started, jobs_seen: 0)
         return if jobs_seen < WALK_JOB_BUDGET &&
           (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) < WALK_TIME_BUDGET
 

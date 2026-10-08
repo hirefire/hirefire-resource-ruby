@@ -56,7 +56,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Request queue time ignores samples older than 60 seconds.
-- Named Sidekiq and Resque scheduled-set samples that cannot finish within a time/job budget are dropped instead of hanging or returning a partial count.
+- Named Sidekiq and Resque scheduled-set samples that cannot finish within a time/job budget are dropped instead of hanging or returning a partial count. A Resque sample without queue names is dropped only when it takes longer than two seconds.
 - Bunny samples fail within five seconds when RabbitMQ does not complete the handshake.
 - Sidekiq job queue latency ignores malformed timestamps instead of treating them as the Unix epoch, and treats a future timestamp as zero.
 - Sidekiq `server: true` counts scheduled jobs that become due in the current second, and skips corrupt schedule or retry members instead of aborting the sample.

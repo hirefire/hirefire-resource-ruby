@@ -379,6 +379,29 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     end
   end
 
+  def test_delayed_size_without_queue_names_is_exact_past_the_job_budget
+    timestamp = Time.now.to_i - 10
+    Resque.redis.zadd("delayed_queue_schedule", timestamp, timestamp)
+    payload = Resque.encode("class" => "BasicJob", "args" => [], "queue" => "default")
+    Resque.redis.rpush("delayed:#{timestamp}", [payload] * 20)
+
+    stub_resque_const(:WALK_JOB_BUDGET, 5) do
+      assert_equal 20, HireFire::Macro::Resque.job_queue_size(skip_working: true)
+    end
+  end
+
+  def test_delayed_size_without_queue_names_raises_past_the_time_budget
+    timestamp = Time.now.to_i - 10
+    Resque.redis.zadd("delayed_queue_schedule", timestamp, timestamp)
+    Resque.redis.rpush("delayed:#{timestamp}", Resque.encode("class" => "BasicJob", "args" => [], "queue" => "default"))
+
+    stub_resque_const(:WALK_TIME_BUDGET, 0) do
+      assert_raises(HireFire::Errors::SampleIncomplete) do
+        HireFire::Macro::Resque.job_queue_size(skip_working: true)
+      end
+    end
+  end
+
   def stub_resque_const(name, value)
     mod = HireFire::Macro::Resque
     original = mod.const_get(name)

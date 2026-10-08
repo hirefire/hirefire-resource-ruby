@@ -25,7 +25,8 @@ result = SimpleCov::ResultMerger.merge_and_store(*resultsets, ignore_timeout: tr
 cells_by_line = Hash.new { |hash, file| hash[file] = Hash.new { |lines, line| lines[line] = [] } }
 relevant_lines = Hash.new { |hash, file| hash[file] = [] }
 resultsets.each do |path|
-  JSON.parse(File.read(path)).each do |cell, data|
+  JSON.parse(File.read(path)).each do |command, data|
+    cell = command.sub(/-child-\h+\z/, "")
     data.fetch("coverage").each do |file, coverage|
       relative = file.delete_prefix("#{root}/")
       next unless relative.start_with?("lib/")

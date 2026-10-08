@@ -11,16 +11,7 @@ if File.exist?(env_file)
   end
 end
 
-if ENV["COVERAGE"] == "true"
-  require "simplecov"
-  SimpleCov.start do
-    command_name ENV.fetch("COVERAGE_CELL", "tests")
-    enable_coverage :branch
-    merge_timeout 3600
-    track_files "lib/**/*.rb"
-    add_filter { |source| !source.filename.start_with?(File.join(SimpleCov.root, "lib/")) }
-  end
-end
+require_relative "support/coverage"
 
 ENV["RAILS_ENV"] = "test"
 

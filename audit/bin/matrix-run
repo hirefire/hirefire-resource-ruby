@@ -23,7 +23,6 @@ root = Audit::Matrix::ROOT
 run_dir = File.join(root, "audit/results/matrix", run_id)
 FileUtils.mkdir_p(run_dir)
 cells = options[:cells] || Audit::Matrix.cells.keys
-boot = File.join(root, "audit/lib/coverage_boot.rb")
 
 def parse_log(log)
   counts = log.scan(/^(\d+) runs, (\d+) assertions, (\d+) failures, (\d+) errors, (\d+) skips/).last
@@ -44,13 +43,11 @@ results = cells.map do |cell|
   log_path = File.join(run_dir, "#{cell}.log")
   env = {
     "BUNDLE_GEMFILE" => Audit::Matrix.gemfile(cell),
-    "COVERAGE" => "false",
-    "AUDIT_CELL" => cell,
-    "AUDIT_COVERAGE_DIR" => File.join("audit/results/coverage/cells", cell)
+    "COVERAGE" => options[:coverage].to_s,
+    "COVERAGE_CELL" => cell,
+    "COVERAGE_DIR" => File.join("audit/results/coverage/cells", cell)
   }
-  command = ["bundle", "exec", "ruby"]
-  command += ["-r", boot] if options[:coverage]
-  command += ["-Ilib:test", "-e", "ARGV.shift(#{paths.size}).each { |file| require file }", *paths]
+  command = ["bundle", "exec", "ruby", "-Ilib:test", "-e", "ARGV.shift(#{paths.size}).each { |file| require file }", *paths]
   command += ["--seed", options[:seed].to_s] if options[:seed]
 
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)

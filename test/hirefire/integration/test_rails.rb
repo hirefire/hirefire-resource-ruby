@@ -4,14 +4,13 @@ require "test_helper"
 require "rails"
 require "action_controller/railtie"
 require "rack/mock"
-require "tmpdir"
-require "open3"
-require "rbconfig"
-require "timeout"
+require "support/child_process"
 
 module HireFire
   module Integration
     class RailsTest < Minitest::Test
+      include ChildProcess
+
       class Application < Rails::Application
         config.load_defaults "#{Rails::VERSION::MAJOR}.#{Rails::VERSION::MINOR}"
         config.eager_load = false
@@ -110,60 +109,32 @@ module HireFire
       RUBY
 
       def railtie_boot(identity, before_load = "", before_initialize = "", result = BOOT_RESULT)
-        Dir.mktmpdir("hirefire-railtie-boot") do |dir|
-          marker = File.join(dir, "result")
-          script = File.join(dir, "boot_app.rb")
-          lib = File.expand_path("../../../lib", __dir__)
-          defaults = "#{Rails::VERSION::MAJOR}.#{Rails::VERSION::MINOR}"
+        defaults = "#{Rails::VERSION::MAJOR}.#{Rails::VERSION::MINOR}"
 
-          File.write(script, <<~RUBY)
-            # frozen_string_literal: true
-            require "bundler/setup"
-            require "rails"
-            require "action_controller/railtie"
-            #{before_load}
-            $LOAD_PATH.unshift #{lib.inspect}
-            require "hirefire-resource"
-            require "logger"
+        ruby_child(<<~RUBY, {"HIREFIRE_TOKEN" => "railtie-auto-boot-token"}.merge(identity))
+          require "rails"
+          require "action_controller/railtie"
+          #{before_load}
+          require "hirefire-resource"
+          require "logger"
 
-            started = false
-            HireFire::Dispatcher.class_eval do
-              define_method(:start) { started = true }
-            end
-
-            class RailtieBootApp < Rails::Application
-              config.load_defaults #{defaults.inspect}
-              config.eager_load = false
-              config.secret_key_base = "test_secret_key_base_for_railtie_boot"
-              config.logger = Logger.new(File::NULL)
-              config.hosts.clear
-            end
-
-            #{before_initialize}
-            RailtieBootApp.initialize!
-            File.write(#{marker.inspect}, (#{result}).to_s)
-          RUBY
-
-          env = {
-            "BUNDLE_GEMFILE" => ENV.fetch("BUNDLE_GEMFILE"),
-            "PATH" => ENV["PATH"],
-            "HOME" => ENV["HOME"],
-            "TMPDIR" => ENV["TMPDIR"],
-            "GEM_HOME" => ENV["GEM_HOME"],
-            "GEM_PATH" => ENV["GEM_PATH"],
-            "RUBYLIB" => ENV["RUBYLIB"],
-            "RBENV_VERSION" => ENV["RBENV_VERSION"],
-            "MISE_RUBY_VERSION" => ENV["MISE_RUBY_VERSION"],
-            "HIREFIRE_TOKEN" => "railtie-auto-boot-token"
-          }.merge(identity).compact
-
-          stdout, stderr, status = Timeout.timeout(30) do
-            Open3.capture3(env, RbConfig.ruby, script, unsetenv_others: true)
+          started = false
+          HireFire::Dispatcher.class_eval do
+            define_method(:start) { started = true }
           end
 
-          assert status.success?, "the Rails subprocess failed (#{status}):\n#{stdout}\n#{stderr}"
-          File.read(marker)
-        end
+          class RailtieBootApp < Rails::Application
+            config.load_defaults #{defaults.inspect}
+            config.eager_load = false
+            config.secret_key_base = "test_secret_key_base_for_railtie_boot"
+            config.logger = Logger.new(File::NULL)
+            config.hosts.clear
+          end
+
+          #{before_initialize}
+          RailtieBootApp.initialize!
+          (#{result}).to_s
+        RUBY
       end
 
       def test_zero_config_samples_via_dyno_identity

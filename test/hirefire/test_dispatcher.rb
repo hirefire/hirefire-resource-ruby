@@ -1570,7 +1570,7 @@ class HireFire::DispatcherTest < Minitest::Test
     Timecop.freeze Time.at(1000) do
       configure_web_and_workers
       HireFire.configuration.buffer.sample("web", "rqt", 12)
-      error = assert_raises(HireFire::Client::RequestError) { session.renew }
+      error = assert_raises(HireFire::Errors::RequestError) { session.renew }
       assert_includes error.message, "Network error"
       session.sample
       session.report
@@ -2090,7 +2090,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
     (1000..1059).each { |second| Timecop.freeze(Time.at(second)) { session.report } }
     assert_equal 1, log.string.scan("Dispatch error").size
-    assert_includes log.string, "Dispatch error: HireFire::Client::RequestError: Server responded with 500 status.\n"
+    assert_includes log.string, "Dispatch error: HireFire::Errors::RequestError: Server responded with 500 status.\n"
 
     (1060..1125).each { |second| Timecop.freeze(Time.at(second)) { session.report } }
     assert_equal ["(6 failed attempts in a row)", "(8 failed attempts in a row)"], log.string.scan(/\(\d+ failed attempts in a row\)/)

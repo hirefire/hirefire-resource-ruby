@@ -80,7 +80,7 @@ module HireFire
 
       unless response.is_a?(Net::HTTPSuccess)
         @mutex.synchronize { clear_grant if @epoch == epoch }
-        raise Client::RequestError, "Lease request failed with #{response.code} status."
+        raise Errors::RequestError, "Lease request failed with #{response.code} status."
       end
 
       next_sample_frequency = @sample_frequency

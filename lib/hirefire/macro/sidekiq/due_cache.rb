@@ -353,7 +353,7 @@ module HireFire
             ::Sidekiq::Workers.new.each do |_key, _tid, job|
               jobs << job
               if jobs.size >= WORKING_MEMBER_BUDGET || (monotonic_now - started) >= WALK_TIME_BUDGET
-                raise HireFire::Errors::SampleIncomplete,
+                raise HireFire::Errors::SampleIncompleteError,
                   "Sidekiq working map exceeded budget"
               end
             end

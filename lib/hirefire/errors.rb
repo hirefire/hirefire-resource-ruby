@@ -6,6 +6,12 @@ module HireFire
 
     class JobQueueLatencyUnsupportedError < StandardError; end
 
-    class SampleIncomplete < StandardError; end
+    class SampleIncompleteError < StandardError; end
+
+    class RequestError < StandardError; end
+
+    class MissingSamplerError < StandardError; end
+
+    class DuplicateDynoError < StandardError; end
   end
 end

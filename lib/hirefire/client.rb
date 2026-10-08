@@ -6,8 +6,6 @@ require "timeout"
 
 module HireFire
   class Client
-    class RequestError < StandardError; end
-
     STALE_CONNECTION_ERRORS = [
       EOFError,
       Errno::ECONNRESET,
@@ -53,9 +51,9 @@ module HireFire
       when Net::HTTPRequestEntityTooLarge
         :payload_too_large
       when Net::HTTPServerError
-        raise RequestError, "Server responded with #{response.code} status."
+        raise Errors::RequestError, "Server responded with #{response.code} status."
       else
-        raise RequestError, "Unexpected response code #{response.code}."
+        raise Errors::RequestError, "Unexpected response code #{response.code}."
       end
     end
 
@@ -80,8 +78,8 @@ module HireFire
         Timeout.timeout(@timeout) { perform(uri, request) }
       rescue Timeout::Error
         reset_connection
-        raise RequestError, "Request timed out."
-      rescue RequestError
+        raise Errors::RequestError, "Request timed out."
+      rescue Errors::RequestError
         reset_connection
         raise
       end
@@ -98,12 +96,12 @@ module HireFire
           retried = true
           retry
         end
-        raise RequestError, "Network error (#{e.class}: #{e.message})."
+        raise Errors::RequestError, "Network error (#{e.class}: #{e.message})."
       end
     end
 
     def read_body(response)
-      oversized = -> { raise RequestError, "Response body exceeded #{MAX_BODY_BYTES} bytes (status #{response.code})." }
+      oversized = -> { raise Errors::RequestError, "Response body exceeded #{MAX_BODY_BYTES} bytes (status #{response.code})." }
       oversized.call if response.content_length.to_i > MAX_BODY_BYTES
 
       body = "".b
@@ -162,7 +160,7 @@ module HireFire
         url = ENV["HIREFIRE_DATA_URL"].to_s.strip.sub(/\/+\z/, "")
         url = DEFAULT_URL if url.empty?
         uri = parse_http_url(url)
-        raise RequestError, "HIREFIRE_DATA_URL must be an http or https URL with a host." unless uri
+        raise Errors::RequestError, "HIREFIRE_DATA_URL must be an http or https URL with a host." unless uri
 
         if uri.scheme == "http" && !LOCAL_HOSTS.include?(uri.hostname)
           HireFire.configuration.warn_plain_http_data_url_once(uri.hostname)
@@ -185,7 +183,7 @@ module HireFire
     def require_token!
       return if token
 
-      raise RequestError, <<~MSG
+      raise Errors::RequestError, <<~MSG
         HireFire token is not set.
         Set HIREFIRE_TOKEN or config.token to enable metric dispatch.
       MSG

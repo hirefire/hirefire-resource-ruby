@@ -53,7 +53,7 @@ class HireFire::ClientTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .to_return(status: 500)
 
-    error = assert_raises(HireFire::Client::RequestError) do
+    error = assert_raises(HireFire::Errors::RequestError) do
       client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
     end
 
@@ -64,7 +64,7 @@ class HireFire::ClientTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .to_return(status: 422)
 
-    assert_raises(HireFire::Client::RequestError) do
+    assert_raises(HireFire::Errors::RequestError) do
       client.submit_samples('[{"name":"web","metrics":{"rqt":{"1000":[]}}}]')
     end
   end
@@ -98,7 +98,7 @@ class HireFire::ClientTest < Minitest::Test
   def test_submit_samples_raises_on_timeout
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_timeout
 
-    error = assert_raises(HireFire::Client::RequestError) do
+    error = assert_raises(HireFire::Errors::RequestError) do
       client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
     end
 
@@ -115,7 +115,7 @@ class HireFire::ClientTest < Minitest::Test
       stub_request(:post, "https://data.hirefire.io/metrics/ingest")
         .to_raise(transport_error)
 
-      error = assert_raises(HireFire::Client::RequestError) do
+      error = assert_raises(HireFire::Errors::RequestError) do
         client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
       end
 
@@ -155,7 +155,7 @@ class HireFire::ClientTest < Minitest::Test
       .to_raise(Errno::ECONNRESET).then
       .to_return(status: 200)
 
-    assert_raises(HireFire::Client::RequestError) { client.submit_samples("[]") }
+    assert_raises(HireFire::Errors::RequestError) { client.submit_samples("[]") }
   end
 
   def test_opens_a_fresh_connection_in_a_forked_child
@@ -187,7 +187,7 @@ class HireFire::ClientTest < Minitest::Test
       {status: 200}
     end
 
-    error = assert_raises(HireFire::Client::RequestError) do
+    error = assert_raises(HireFire::Errors::RequestError) do
       HireFire::Client.new(timeout: 0.1).submit_samples("[]")
     end
 
@@ -202,7 +202,7 @@ class HireFire::ClientTest < Minitest::Test
     end
     client = HireFire::Client.new(timeout: 0.1)
 
-    assert_raises(HireFire::Client::RequestError) { client.submit_samples("[]") }
+    assert_raises(HireFire::Errors::RequestError) { client.submit_samples("[]") }
     assert_nil client.instance_variable_get(:@http)
     slow = false
 
@@ -284,7 +284,7 @@ class HireFire::ClientTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {"Content-Length" => (HireFire::Client::MAX_BODY_BYTES + 1).to_s}, body: "short")
 
-    error = assert_raises(HireFire::Client::RequestError) { client.request_lease("abc123") }
+    error = assert_raises(HireFire::Errors::RequestError) { client.request_lease("abc123") }
 
     assert_equal "Response body exceeded 131072 bytes (status 200).", error.message
   end
@@ -294,7 +294,7 @@ class HireFire::ClientTest < Minitest::Test
       .to_return(status: 500, body: "x" * (HireFire::Client::MAX_BODY_BYTES + 1))
       .then.to_return(status: 200)
 
-    error = assert_raises(HireFire::Client::RequestError) { client.submit_samples("[]") }
+    error = assert_raises(HireFire::Errors::RequestError) { client.submit_samples("[]") }
 
     assert_equal "Response body exceeded 131072 bytes (status 500).", error.message
     assert_nil client.instance_variable_get(:@http)
@@ -328,7 +328,7 @@ class HireFire::ClientTest < Minitest::Test
   def test_request_lease_raises_on_timeout
     stub_request(:post, "https://data.hirefire.io/metrics/lease").to_timeout
 
-    assert_raises(HireFire::Client::RequestError) do
+    assert_raises(HireFire::Errors::RequestError) do
       client.request_lease("abc123")
     end
   end
@@ -336,7 +336,7 @@ class HireFire::ClientTest < Minitest::Test
   def test_raises_without_token
     ENV["HIREFIRE_TOKEN"] = nil
 
-    error = assert_raises(HireFire::Client::RequestError) do
+    error = assert_raises(HireFire::Errors::RequestError) do
       client.submit_samples("[]")
     end
 
@@ -347,7 +347,7 @@ class HireFire::ClientTest < Minitest::Test
   def test_raises_with_empty_token
     ENV["HIREFIRE_TOKEN"] = ""
 
-    error = assert_raises(HireFire::Client::RequestError) do
+    error = assert_raises(HireFire::Errors::RequestError) do
       client.submit_samples("[]")
     end
 
@@ -433,7 +433,7 @@ class HireFire::ClientTest < Minitest::Test
     ["collector.example.com", "ftp://collector.example.com", "https://", "ht tp://collector.example.com", "//collector.example.com"].each do |url|
       ENV["HIREFIRE_DATA_URL"] = url
 
-      error = assert_raises(HireFire::Client::RequestError, "#{url.inspect} was accepted") do
+      error = assert_raises(HireFire::Errors::RequestError, "#{url.inspect} was accepted") do
         HireFire::Client.new.submit_samples("[]")
       end
       assert_equal "HIREFIRE_DATA_URL must be an http or https URL with a host.", error.message
@@ -508,7 +508,7 @@ class HireFire::ClientTest < Minitest::Test
       .to_raise(Errno::ECONNRESET).then
       .to_raise(Errno::ECONNRESET)
 
-    assert_raises(HireFire::Client::RequestError) { client.submit_samples("[]") }
+    assert_raises(HireFire::Errors::RequestError) { client.submit_samples("[]") }
     assert_requested request, times: 2
   end
 

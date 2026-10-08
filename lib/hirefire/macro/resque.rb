@@ -173,7 +173,7 @@ module HireFire
         return if jobs_seen < WALK_JOB_BUDGET &&
           (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) < WALK_TIME_BUDGET
 
-        raise HireFire::Errors::SampleIncomplete, "Resque #{walk} walk exceeded budget"
+        raise HireFire::Errors::SampleIncompleteError, "Resque #{walk} walk exceeded budget"
       end
 
       def encoded_queue(encoded_job)

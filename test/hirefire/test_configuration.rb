@@ -68,7 +68,7 @@ class HireFire::ConfigurationTest < Minitest::Test
   end
 
   def test_dyno_without_block_raises_for_a_non_web_name
-    assert_raises(HireFire::Configuration::MissingSamplerError) do
+    assert_raises(HireFire::Errors::MissingSamplerError) do
       @configuration.dyno(:worker)
     end
   end
@@ -115,14 +115,14 @@ class HireFire::ConfigurationTest < Minitest::Test
 
   def test_duplicate_job_queue_raises
     @configuration.dyno(:worker) { 1 }
-    assert_raises(HireFire::Configuration::DuplicateDynoError) do
+    assert_raises(HireFire::Errors::DuplicateDynoError) do
       @configuration.dyno(:worker) { 2 }
     end
   end
 
   def test_duplicate_name_guard_is_case_insensitive
     @configuration.dyno(:worker) { 1 }
-    error = assert_raises(HireFire::Configuration::DuplicateDynoError) do
+    error = assert_raises(HireFire::Errors::DuplicateDynoError) do
       @configuration.dyno(:Worker) { 2 }
     end
     assert_includes error.message, "Worker"
@@ -417,7 +417,7 @@ class HireFire::ConfigurationTest < Minitest::Test
   end
 
   def test_missing_sampler_error_message_mentions_sampler
-    error = assert_raises(HireFire::Configuration::MissingSamplerError) do
+    error = assert_raises(HireFire::Errors::MissingSamplerError) do
       @configuration.dyno(:worker)
     end
     assert_includes error.message, "sampler"

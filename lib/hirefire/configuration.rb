@@ -4,10 +4,6 @@ require "logger"
 
 module HireFire
   class Configuration
-    class MissingSamplerError < StandardError; end
-
-    class DuplicateDynoError < StandardError; end
-
     attr_reader :job_queues, :log_queue_metrics, :logger
     attr_writer :token
 
@@ -62,7 +58,7 @@ module HireFire
         return
       end
 
-      raise MissingSamplerError,
+      raise Errors::MissingSamplerError,
         "config.dyno(#{name.inspect}) could not be resolved: it needs a sampler block " \
         "(job-queue metrics). Request queue time is always-on via platform web role or " \
         "middleware traffic. CPU is always-on when process identity resolves. " \
@@ -160,7 +156,7 @@ module HireFire
 
     def register(name, &sampler)
       if @job_queues.find_by_name(name)
-        raise DuplicateDynoError,
+        raise Errors::DuplicateDynoError,
           "Duplicate declaration for #{name.inspect}. Each dyno name takes one sampler."
       end
 

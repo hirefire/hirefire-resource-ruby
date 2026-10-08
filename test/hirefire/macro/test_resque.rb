@@ -228,12 +228,12 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     20.times { enqueue_to_working_with_queue :default, BasicJob }
 
     stub_resque_const(:WALK_JOB_BUDGET, 5) do
-      error = assert_raises(HireFire::Errors::SampleIncomplete) do
+      error = assert_raises(HireFire::Errors::SampleIncompleteError) do
         HireFire::Macro::Resque.job_queue_size(:default)
       end
       assert_includes error.message, "worker walk"
 
-      assert_raises(HireFire::Errors::SampleIncomplete) do
+      assert_raises(HireFire::Errors::SampleIncompleteError) do
         HireFire::Macro::Resque.job_queue_size
       end
       assert_equal 0, HireFire::Macro::Resque.job_queue_size(:default, skip_working: true)
@@ -373,7 +373,7 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     end
 
     stub_resque_const(:WALK_JOB_BUDGET, 5) do
-      assert_raises(HireFire::Errors::SampleIncomplete) do
+      assert_raises(HireFire::Errors::SampleIncompleteError) do
         HireFire::Macro::Resque.job_queue_size(:default)
       end
     end
@@ -396,7 +396,7 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     Resque.redis.rpush("delayed:#{timestamp}", Resque.encode("class" => "BasicJob", "args" => [], "queue" => "default"))
 
     stub_resque_const(:WALK_TIME_BUDGET, 0) do
-      assert_raises(HireFire::Errors::SampleIncomplete) do
+      assert_raises(HireFire::Errors::SampleIncompleteError) do
         HireFire::Macro::Resque.job_queue_size(skip_working: true)
       end
     end

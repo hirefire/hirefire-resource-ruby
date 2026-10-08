@@ -44,7 +44,7 @@ class SidekiqEvidence < HireFire::Macro::SidekiqTest
     failures = %w[one two three four five].count do |queue|
       HireFire::Macro::Sidekiq.job_queue_size(queue, skip_retries: true, skip_working: true)
       false
-    rescue HireFire::Errors::SampleIncomplete
+    rescue HireFire::Errors::SampleIncompleteError
       true
     end
     seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started

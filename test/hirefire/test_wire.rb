@@ -151,7 +151,7 @@ class HireFire::WireTest < Minitest::Test
     @ingest = {status: 500}
 
     HireFire.configure { |_| }
-    wait_for_log("Dispatch error: HireFire::Client::RequestError: Server responded with 500 status.")
+    wait_for_log("Dispatch error: HireFire::Errors::RequestError: Server responded with 500 status.")
     @ingest = {status: 200}
     failed = @server.requests.size
     errors = @log.string.scan("Dispatch error").size
@@ -163,12 +163,12 @@ class HireFire::WireTest < Minitest::Test
   end
 
   INGEST_FAULTS = {
-    "a_reset_connection" => [{then: :reset}, "Dispatch error: HireFire::Client::RequestError: Network error ("],
-    "a_closed_connection" => [{then: :close}, "Dispatch error: HireFire::Client::RequestError: Network error ("],
-    "a_reply_that_is_not_http" => [{raw: "\x00\xFFthis is not http\r\n\r\n".b, after: :close}, "Dispatch error: HireFire::Client::RequestError: Network error (Net::HTTPBadResponse"],
-    "a_redirect" => [{status: 302, headers: {"Location" => "/elsewhere"}}, "Dispatch error: HireFire::Client::RequestError: Unexpected response code 302."],
-    "a_rate_limit" => [{status: 429, headers: {"Retry-After" => "30"}}, "Dispatch error: HireFire::Client::RequestError: Unexpected response code 429."],
-    "an_unavailable_server" => [{status: 503}, "Dispatch error: HireFire::Client::RequestError: Server responded with 503 status."],
+    "a_reset_connection" => [{then: :reset}, "Dispatch error: HireFire::Errors::RequestError: Network error ("],
+    "a_closed_connection" => [{then: :close}, "Dispatch error: HireFire::Errors::RequestError: Network error ("],
+    "a_reply_that_is_not_http" => [{raw: "\x00\xFFthis is not http\r\n\r\n".b, after: :close}, "Dispatch error: HireFire::Errors::RequestError: Network error (Net::HTTPBadResponse"],
+    "a_redirect" => [{status: 302, headers: {"Location" => "/elsewhere"}}, "Dispatch error: HireFire::Errors::RequestError: Unexpected response code 302."],
+    "a_rate_limit" => [{status: 429, headers: {"Retry-After" => "30"}}, "Dispatch error: HireFire::Errors::RequestError: Unexpected response code 429."],
+    "an_unavailable_server" => [{status: 503}, "Dispatch error: HireFire::Errors::RequestError: Server responded with 503 status."],
     "a_rejected_payload" => [{status: 413}, "Dropped metrics payload: 52 bytes server rejected (413)."]
   }.freeze
 
@@ -207,7 +207,7 @@ class HireFire::WireTest < Minitest::Test
     closed.close
 
     HireFire.configure { |_| }
-    wait_for_log("Dispatch error: HireFire::Client::RequestError: Network error (Errno::ECONNREFUSED")
+    wait_for_log("Dispatch error: HireFire::Errors::RequestError: Network error (Errno::ECONNREFUSED")
 
     assert HireFire.configuration.dispatcher.running?
   end
@@ -218,8 +218,8 @@ class HireFire::WireTest < Minitest::Test
     "a_grant_that_is_not_an_object" => ["[1,2]", "Lease grant body was not a JSON object. Plan ignored."],
     "a_grant_without_a_list_of_entries" => [%({"job_queues":"worker"}), "Lease grant body job_queues was not an array. Plan ignored."],
     "a_grant_with_entries_of_the_wrong_shape" => [JSON.generate("job_queues" => [1, "two", nil, {"name" => 5}]), "Lease plan skipped 4 invalid job queue entries."],
-    "a_grant_over_the_size_limit" => [JSON.generate("job_queues" => Array.new(4000) { |index| {"name" => "queue-#{index}", "strategy" => "jqs", "queues" => ["q#{index}"]} }), "HireFire::Client::RequestError: Response body exceeded 131072 bytes (status 200)."],
-    "a_chunked_grant_over_the_size_limit" => [:chunked, "HireFire::Client::RequestError: Response body exceeded 131072 bytes (status 200)."]
+    "a_grant_over_the_size_limit" => [JSON.generate("job_queues" => Array.new(4000) { |index| {"name" => "queue-#{index}", "strategy" => "jqs", "queues" => ["q#{index}"]} }), "HireFire::Errors::RequestError: Response body exceeded 131072 bytes (status 200)."],
+    "a_chunked_grant_over_the_size_limit" => [:chunked, "HireFire::Errors::RequestError: Response body exceeded 131072 bytes (status 200)."]
   }.freeze
 
   LEASE_FAULTS.each do |name, (body, message)|
@@ -242,7 +242,7 @@ class HireFire::WireTest < Minitest::Test
 
     with_client_timeout(0.3) do
       HireFire.configure { |_| }
-      wait_for_log("Dispatch error: HireFire::Client::RequestError: Request timed out.")
+      wait_for_log("Dispatch error: HireFire::Errors::RequestError: Request timed out.")
 
       assert_operator seconds_to { HireFire.configuration.stop_dispatcher }, :<, 2
       assert_equal [200, {}, ["served"]], serve_request(queued_for: 0.025)
@@ -255,7 +255,7 @@ class HireFire::WireTest < Minitest::Test
 
     with_client_timeout(0.3) do
       HireFire.configure { |_| }
-      wait_for_log("Dispatch error: HireFire::Client::RequestError: Request timed out.", seconds: 2)
+      wait_for_log("Dispatch error: HireFire::Errors::RequestError: Request timed out.", seconds: 2)
 
       assert_operator seconds_to { HireFire.configuration.stop_dispatcher }, :<, 2
     end
@@ -267,7 +267,7 @@ class HireFire::WireTest < Minitest::Test
 
     with_client_timeout(0.3) do
       HireFire.configure { |_| }
-      wait_for_log("Dispatch error: HireFire::Client::RequestError: Request timed out.", seconds: 2)
+      wait_for_log("Dispatch error: HireFire::Errors::RequestError: Request timed out.", seconds: 2)
 
       assert HireFire.configuration.dispatcher.running?
       assert_operator seconds_to { HireFire.configuration.stop_dispatcher(flush: false) }, :<, 2
@@ -291,7 +291,7 @@ class HireFire::WireTest < Minitest::Test
     @lease = {status: 500}
 
     HireFire.configure { |config| config.dyno(:worker) { 42 } }
-    wait_for_log("HireFire::Client::RequestError: Lease request failed with 500 status.")
+    wait_for_log("HireFire::Errors::RequestError: Lease request failed with 500 status.")
 
     assert HireFire.configuration.dispatcher.running?
   end

@@ -113,7 +113,7 @@ class HireFire::LeaseTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_raise(Errno::ECONNREFUSED)
 
-    assert_raises(HireFire::Client::RequestError) { lease.request_if_due(hold: ->(_) { true }) }
+    assert_raises(HireFire::Errors::RequestError) { lease.request_if_due(hold: ->(_) { true }) }
     refute lease.granted?
 
     lease.request_if_due(hold: ->(_) { true })
@@ -134,7 +134,7 @@ class HireFire::LeaseTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/lease").to_timeout
 
     Timecop.travel(Time.now + 15) do
-      assert_raises(HireFire::Client::RequestError) { lease.request_if_due(hold: ->(_) { true }) }
+      assert_raises(HireFire::Errors::RequestError) { lease.request_if_due(hold: ->(_) { true }) }
       refute lease.granted?
     end
   end
@@ -157,7 +157,7 @@ class HireFire::LeaseTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 500)
 
-    error = assert_raises(HireFire::Client::RequestError) do
+    error = assert_raises(HireFire::Errors::RequestError) do
       lease.request_if_due(hold: ->(_) { true })
     end
 
@@ -419,7 +419,7 @@ class HireFire::LeaseTest < Minitest::Test
         "HireFire-Sample-Frequency" => "30"
       }, body: oversized)
 
-    error = assert_raises(HireFire::Client::RequestError) do
+    error = assert_raises(HireFire::Errors::RequestError) do
       lease.request_if_due(hold: ->(_) { true })
     end
 
@@ -919,7 +919,7 @@ class HireFire::LeaseTest < Minitest::Test
 
     stub_request(:post, "https://data.hirefire.io/metrics/lease").to_timeout
     Timecop.travel(Time.now + 15) do
-      assert_raises(HireFire::Client::RequestError) { lease.request_if_due(hold: ->(_) { true }) }
+      assert_raises(HireFire::Errors::RequestError) { lease.request_if_due(hold: ->(_) { true }) }
       refute lease.granted?
       assert_empty lease.job_queues
     end

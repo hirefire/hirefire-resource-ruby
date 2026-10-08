@@ -13,13 +13,17 @@ module HireFire
       end
 
       def failed(error)
+        record("#{@label} error: #{Log.format_error(error)}")
+      end
+
+      def record(message)
         @count += 1
         now = Clock.monotonic
         return if @logged_at && now - @logged_at < FAILURE_LOG_INTERVAL
 
         @logged_at = now
         attempts = " (#{@count} failed attempts in a row)" if @count > 1
-        log(:error, "#{@label} error: #{Log.format_error(error)}#{attempts}")
+        log(:error, "#{message}#{attempts}")
       end
 
       def recovered

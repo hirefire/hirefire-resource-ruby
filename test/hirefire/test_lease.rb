@@ -1108,4 +1108,27 @@ class HireFire::LeaseTest < Minitest::Test
     assert_equal 1, lease.job_queues.size
     assert_includes log.string, "skipped 1 invalid job queue entry"
   end
+
+  def test_a_plan_problem_at_every_response_is_logged_once_a_minute_and_once_when_a_plan_reads_again
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    bodies = Array.new(13, "{not json") + [JSON.generate("job_queues" => [1]), JSON.generate("job_queues" => [])]
+    stub_request(:post, "https://data.hirefire.io/metrics/lease").to_return do |_request|
+      {status: 200, headers: {"HireFire-Lease-Granted" => "true", "HireFire-Lease-TTL" => "5"}, body: bodies.shift}
+    end
+    Timecop.freeze(Time.at(1000)) { lease }
+
+    (0..55).step(5) { |seconds| request_at(seconds) }
+    assert_equal ["[HireFire] Lease grant body was not valid JSON. Plan ignored.\n"], log.string.lines.map { |line| line[/\[HireFire\].*/m] }
+
+    request_at(60)
+    assert_includes log.string, "Lease grant body was not valid JSON. Plan ignored. (13 failed attempts in a row)\n"
+
+    request_at(65)
+    refute_includes log.string, "Lease plan skipped"
+    refute_includes log.string, "recovered"
+
+    request_at(70)
+    assert_equal 1, log.string.scan("Lease plan recovered after 14 failed attempts.\n").size
+  end
 end

@@ -25,6 +25,7 @@ module HireFire
         @round_started_at = nil
         @dispatch_failures = FailureLog.new("Dispatch", configuration)
         @lease_failures = FailureLog.new("Lease request", configuration)
+        @payload_drops = FailureLog.new("Metrics payload", configuration)
         @sampler = Sampler.new(configuration)
         @once = Once.new(configuration)
       end
@@ -211,6 +212,7 @@ module HireFire
         else
           @last_rqt_second = watermark
           @pending_sample_trace = nil
+          @payload_drops.recovered
         end
         @dispatch_failures.recovered
       end
@@ -231,7 +233,7 @@ module HireFire
         @pending_sample_trace = nil
         @last_rqt_second = watermark
         source = server ? "server rejected (413)" : "exceeds the #{PAYLOAD_SIZE_LIMIT}-byte limit"
-        Log.safe(logger, :error, "[HireFire] Dropped metrics payload: #{body.bytesize} bytes " \
+        @payload_drops.record("Dropped metrics payload: #{body.bytesize} bytes " \
           "#{source}. Resuming from the current second.")
       end
 

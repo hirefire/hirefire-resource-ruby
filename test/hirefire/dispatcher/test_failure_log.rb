@@ -62,4 +62,13 @@ class HireFire::Dispatcher::FailureLogTest < Minitest::Test
 
     assert_equal ["[HireFire] Dispatch error: RuntimeError: down"] * 2, lines
   end
+
+  def test_a_recorded_message_is_logged_as_given_and_limited_like_a_failure
+    HireFire::Clock.stubs(:monotonic).returns(1_000.0)
+    2.times { @failure_log.record("Dropped a payload.") }
+    HireFire::Clock.stubs(:monotonic).returns(1_060.0)
+    @failure_log.record("Dropped a payload.")
+
+    assert_equal ["[HireFire] Dropped a payload.", "[HireFire] Dropped a payload. (3 failed attempts in a row)"], lines
+  end
 end

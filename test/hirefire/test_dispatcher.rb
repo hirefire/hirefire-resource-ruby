@@ -2350,6 +2350,24 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_equal 1, log.string.scan("Dispatch error").size
   end
 
+  def test_a_payload_that_the_server_rejects_every_second_is_logged_once_a_minute_and_once_on_recovery
+    stub_lease
+    calls = 0
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |_request|
+      calls += 1
+      {status: (calls <= 61) ? 413 : 200}
+    end
+    configure_web_only
+
+    (1000..1059).each { |second| Timecop.freeze(Time.at(second)) { session.report } }
+    assert_equal 1, log.string.scan("Dropped metrics payload").size
+
+    (1060..1062).each { |second| Timecop.freeze(Time.at(second)) { session.report } }
+    assert_equal 2, log.string.scan("Dropped metrics payload").size
+    assert_includes log.string, "server rejected (413). Resuming from the current second. (61 failed attempts in a row)\n"
+    assert_equal 1, log.string.scan("Metrics payload recovered after 61 failed attempts.\n").size
+  end
+
   def test_a_single_failed_dispatch_logs_no_recovery_line
     stub_lease
     calls = 0

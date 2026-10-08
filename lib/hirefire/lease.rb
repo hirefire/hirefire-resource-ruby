@@ -27,6 +27,7 @@ module HireFire
       @owner_pid = Process.pid
       @job_queues = []
       @epoch = 0
+      @plan_failures = Dispatcher::FailureLog.new("Lease plan", configuration)
     end
 
     def granted?
@@ -134,6 +135,11 @@ module HireFire
     end
 
     def parse_grant_body(body)
+      failures = @plan_failures.count
+      read_grant_body(body).tap { @plan_failures.recovered if @plan_failures.count == failures }
+    end
+
+    def read_grant_body(body)
       return empty_grant_body if body.empty?
 
       payload = JSON.parse(body)
@@ -149,7 +155,7 @@ module HireFire
     end
 
     def ignore_plan(reason, trace: false)
-      Log.safe(@configuration.logger, :error, "[HireFire] Lease grant body #{reason}. Plan ignored.")
+      @plan_failures.record("Lease grant body #{reason}. Plan ignored.")
       empty_grant_body(trace: trace)
     end
 
@@ -158,13 +164,11 @@ module HireFire
       invalid = entries.size - valid.size
 
       if valid.size > MAX_JOB_QUEUES
-        Log.safe(@configuration.logger, :error,
-          "[HireFire] Lease plan truncated to #{MAX_JOB_QUEUES} job queue entries" \
+        @plan_failures.record("Lease plan truncated to #{MAX_JOB_QUEUES} job queue entries" \
           "#{" (#{invalid} invalid also skipped)" if invalid.positive?}.")
       elsif invalid.positive?
         label = (invalid == 1) ? "entry" : "entries"
-        Log.safe(@configuration.logger, :error,
-          "[HireFire] Lease plan skipped #{invalid} invalid job queue #{label}.")
+        @plan_failures.record("Lease plan skipped #{invalid} invalid job queue #{label}.")
       end
 
       valid.first(MAX_JOB_QUEUES)

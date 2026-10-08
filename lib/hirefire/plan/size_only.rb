@@ -4,7 +4,7 @@ module HireFire
   module Plan
     module SizeOnly
       def supports_plan_strategy?(strategy)
-        strategy.to_s == "jqs"
+        strategy.to_s == Strategy::JQS
       end
     end
   end

@@ -216,7 +216,7 @@ class HireFire::ConfigurationTest < Minitest::Test
   end
 
   def test_soft_identity_over_max_bytes_disables_http_and_cpu_and_warns_once
-    ENV["HIREFIRE_SERVICE_NAME"] = "x" * (HireFire::Configuration::MAX_NAME_BYTES + 1)
+    ENV["HIREFIRE_SERVICE_NAME"] = "x" * (HireFire::Identity::MAX_NAME_BYTES + 1)
     log = StringIO.new
     @configuration.logger = Logger.new(log)
 

@@ -14,11 +14,11 @@ module HireFire
       extend self
 
       PLAN_OPTION_SCHEMA = {
-        "jql" => {
+        Strategy::JQL => {
           "skip_retries" => :boolean,
           "skip_scheduled" => :boolean
         }.freeze,
-        "jqs" => {
+        Strategy::JQS => {
           "skip_retries" => :boolean,
           "skip_scheduled" => :boolean,
           "skip_working" => :boolean,

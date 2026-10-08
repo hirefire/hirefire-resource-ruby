@@ -30,7 +30,7 @@ module HireFire
 
         report_name = (name.nil? || name.to_s.strip.empty?) ? job_queue.name : name.to_s.strip
         strategy = strategy.to_s
-        unless strategy == "jql" || strategy == "jqs"
+        unless Strategy.job_queue?(strategy)
           Log.safe(logger, :error, "[HireFire] Unknown job-queue strategy #{strategy.inspect} for " \
             "#{report_name.inspect}. Sample dropped.")
           return

@@ -18,7 +18,7 @@ module HireFire
         class MapperNotDetectedError < StandardError; end
 
         PLAN_OPTION_SCHEMA = {
-          "jqs" => {
+          Strategy::JQS => {
             "skip_working" => :boolean
           }.freeze
         }.freeze

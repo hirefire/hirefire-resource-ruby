@@ -7,8 +7,6 @@ module HireFire
     attr_reader :job_queues, :log_queue_metrics, :logger
     attr_writer :token
 
-    MAX_NAME_BYTES = 128
-
     def initialize
       @job_queues = Source::JobQueues.new(self)
       @buffer = nil
@@ -146,9 +144,9 @@ module HireFire
           "config.dyno requires a dyno name as its first argument (got #{name.inspect})."
       end
 
-      if name.bytesize > MAX_NAME_BYTES
+      if name.bytesize > Identity::MAX_NAME_BYTES
         raise ArgumentError,
-          "config.dyno name exceeds #{MAX_NAME_BYTES} bytes (got #{name.bytesize})."
+          "config.dyno name exceeds #{Identity::MAX_NAME_BYTES} bytes (got #{name.bytesize})."
       end
 
       name
@@ -167,7 +165,7 @@ module HireFire
       warn_heroku_conflict_once
       name = HireFire::Identity.resolve
       return if name.nil?
-      return name if name.bytesize <= MAX_NAME_BYTES
+      return name if name.bytesize <= Identity::MAX_NAME_BYTES
 
       warn_identity_name_too_long_once(name)
       nil
@@ -177,7 +175,7 @@ module HireFire
       return if defined?(@identity_name_too_long_warned)
 
       @identity_name_too_long_warned = true
-      Log.safe(logger, :error, "[HireFire] Process identity exceeds #{MAX_NAME_BYTES} bytes " \
+      Log.safe(logger, :error, "[HireFire] Process identity exceeds #{Identity::MAX_NAME_BYTES} bytes " \
         "(#{name.bytesize}). Metrics under this identity are disabled until the name is shortened.")
     end
 

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../strategy"
+
 module HireFire
   module Plan
     module Hooks

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "sample"
+require_relative "strategy"
 
 module HireFire
   module Plan
@@ -29,8 +30,8 @@ module HireFire
     }.freeze
 
     STRATEGIES = {
-      "jql" => :job_queue_latency,
-      "jqs" => :job_queue_size
+      Strategy::JQL => :job_queue_latency,
+      Strategy::JQS => :job_queue_size
     }.freeze
 
     MAX_QUEUES = 64
@@ -174,7 +175,7 @@ module HireFire
     def sample_working?(macro, strategy, options)
       return false unless macro.respond_to?(:job_queue_working)
 
-      strategy == "jql" || options[:skip_working] == true
+      strategy == Strategy::JQL || options[:skip_working] == true
     end
 
     def sample_job_strategy(macro, name, strategy, method_name, queues, options, live: nil)
@@ -203,7 +204,7 @@ module HireFire
         return
       end
 
-      record_sample(name, "wrk", Sample.coerce(wrk))
+      record_sample(name, Strategy::WRK, Sample.coerce(wrk))
     rescue StandardError, ScriptError => e
       Log.safe(logger, :error, "[HireFire] Plan working sampler for #{name.inspect} raised " +
         Log.format_error(e))

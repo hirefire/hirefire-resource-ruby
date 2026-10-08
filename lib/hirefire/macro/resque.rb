@@ -25,7 +25,7 @@ module HireFire
       WALK_TIME_BUDGET = 2.0
 
       PLAN_OPTION_SCHEMA = {
-        "jqs" => {
+        Strategy::JQS => {
           "skip_working" => :boolean
         }.freeze
       }.freeze

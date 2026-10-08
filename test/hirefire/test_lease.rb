@@ -532,7 +532,7 @@ class HireFire::LeaseTest < Minitest::Test
   def test_skips_invalid_plan_entries
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
-    long_name = "a" * (HireFire::Lease::MAX_NAME_BYTES + 1)
+    long_name = "a" * (HireFire::Identity::MAX_NAME_BYTES + 1)
 
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {

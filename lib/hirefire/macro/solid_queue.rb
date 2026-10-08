@@ -15,7 +15,7 @@ module HireFire
       REGISTERED_QUEUE_TTL = 60.0
 
       PLAN_OPTION_SCHEMA = {
-        "jqs" => {
+        Strategy::JQS => {
           "skip_working" => :boolean
         }.freeze
       }.freeze

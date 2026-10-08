@@ -36,7 +36,7 @@ module HireFire
         cores_used = usage_delta / elapsed_delta
         percentage = (cores_used / available * 100.0).clamp(0.0, 100.0)
 
-        HireFire.configuration.buffer.sample(@name, "cpu", percentage.round(2))
+        HireFire.configuration.buffer.sample(@name, Strategy::CPU, percentage.round(2))
       end
     end
   end

@@ -8,7 +8,6 @@ module HireFire
     TTL_BOUNDS = 5..3600
     SAMPLE_FREQUENCY_BOUNDS = 1..3600
     MAX_JOB_QUEUES = 256
-    MAX_NAME_BYTES = 128
 
     GrantBody = Struct.new(:job_queues, :trace, keyword_init: true)
 
@@ -183,7 +182,7 @@ module HireFire
 
       name = entry["name"].to_s.strip
       strategy = entry["strategy"].to_s.strip
-      return if name.empty? || strategy.empty? || name.bytesize > MAX_NAME_BYTES
+      return if name.empty? || strategy.empty? || name.bytesize > Identity::MAX_NAME_BYTES
 
       normalized = entry.merge("name" => name, "strategy" => strategy)
       normalized["adapter"] = entry["adapter"].to_s.strip if entry.key?("adapter")

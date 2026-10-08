@@ -1332,7 +1332,7 @@ class HireFire::DispatcherTest < Minitest::Test
     end
     HireFire.configuration.dispatcher
     buffer = HireFire.configuration.buffer
-    names = HireFire::Lease::MAX_JOB_QUEUES.times.map { |i| format("worker_%03d", i).ljust(HireFire::Lease::MAX_NAME_BYTES, "x") }
+    names = HireFire::Lease::MAX_JOB_QUEUES.times.map { |i| format("worker_%03d", i).ljust(HireFire::Identity::MAX_NAME_BYTES, "x") }
 
     [1000, 1005, 1010, 1015, 1020, 1025, 1030].each do |second|
       Timecop.freeze Time.at(second) do

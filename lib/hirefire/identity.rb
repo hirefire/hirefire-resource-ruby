@@ -4,6 +4,7 @@ module HireFire
   module Identity
     extend self
 
+    MAX_NAME_BYTES = 128
     ONE_OFF_DYNOS = %w[run release].freeze
 
     def resolve

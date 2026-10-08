@@ -13,6 +13,7 @@ module HireFire
             :private_class_method,
             :good_job_class,
             :error_event_supported?,
+            :lock_type_supported?,
             :discarded_enum
           )
         end
@@ -27,6 +28,10 @@ module HireFire
 
         def error_event_supported?
           good_job_class.column_names.include?("error_event")
+        end
+
+        def lock_type_supported?
+          good_job_class.column_names.include?("lock_type")
         end
 
         def discarded_enum

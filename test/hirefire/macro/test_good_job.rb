@@ -183,7 +183,7 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_working
   end
 
-  def test_interrupted_job_counts_as_running_and_never_as_waiting
+  def test_a_running_job_is_working_and_never_waiting
     job_id = Timecop.freeze(5.minutes.ago) { BasicJob.perform_later.job_id }
     mark_running(job_id, at: 4.minutes.ago)
 
@@ -191,6 +191,60 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 1, HireFire::Macro::GoodJob.job_queue_working
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
+  end
+
+  def test_a_job_whose_worker_died_counts_as_waiting
+    job_id = Timecop.freeze(5.minutes.ago) { BasicJob.perform_later(queue: "default").job_id }
+    mark_started(job_id, at: 4.minutes.ago)
+
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(:default, skip_working: true)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(:mailer, skip_working: true)
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_working
+    assert_in_delta 300, HireFire::Macro::GoodJob.job_queue_latency, LATENCY_DELTA
+    assert_in_delta 300, HireFire::Macro::GoodJob.job_queue_latency(:default), LATENCY_DELTA
+    assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency(:mailer)
+  end
+
+  if Gem::Version.new(::GoodJob::VERSION) >= Gem::Version.new("4.0.0")
+    def test_a_job_whose_worker_died_counts_as_waiting_while_it_still_names_that_worker
+      job_id = BasicJob.perform_later.job_id
+      mark_started(job_id, at: 1.minute.ago)
+      good_job_class.where(active_job_id: job_id).update_all(locked_by_id: SecureRandom.uuid, locked_at: 1.minute.ago, lock_type: 0)
+
+      assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
+      assert_equal 0, HireFire::Macro::GoodJob.job_queue_working
+    end
+
+    def test_a_job_claimed_with_the_skip_locked_strategy_is_working_without_an_advisory_lock
+      job_id = BasicJob.perform_later.job_id
+      mark_started(job_id, at: 1.minute.ago)
+      good_job_class.where(active_job_id: job_id).update_all(locked_by_id: SecureRandom.uuid, lock_type: 1)
+
+      assert_equal 1, HireFire::Macro::GoodJob.job_queue_working
+      assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
+      assert_equal 0, HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
+      assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
+    end
+
+    def test_a_skip_locked_claim_that_was_released_counts_as_waiting
+      job_id = BasicJob.perform_later.job_id
+      mark_started(job_id, at: 1.minute.ago)
+      good_job_class.where(active_job_id: job_id).update_all(locked_by_id: nil, lock_type: 1)
+
+      assert_equal 0, HireFire::Macro::GoodJob.job_queue_working
+      assert_equal 1, HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
+    end
+  end
+
+  def test_the_oldest_waiting_job_sets_the_latency_whether_it_started_before_or_not
+    interrupted = Timecop.freeze(2.minutes.ago) { BasicJob.perform_later.job_id }
+    Timecop.freeze(5.minutes.ago) { BasicJob.perform_later }
+    mark_started(interrupted, at: 1.minute.ago)
+
+    assert_in_delta 300, HireFire::Macro::GoodJob.job_queue_latency, LATENCY_DELTA
+    assert_equal 2, HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
   end
 
   def test_job_queue_size_excludes_finished_before_perform_without_discard_event
@@ -429,11 +483,16 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
 
   private
 
-  def mark_running(job_id, at:)
+  def mark_started(job_id, at:)
     good_job_class.where(active_job_id: job_id).update_all(
       performed_at: at,
       finished_at: nil
     )
+  end
+
+  def mark_running(job_id, at:)
+    mark_started(job_id, at: at)
+    good_job_class.find_by!(active_job_id: job_id).advisory_lock!
   end
 
   def mark_finished_before_perform(job_id, finished_at:, scheduled_at:)

@@ -22,51 +22,62 @@ module HireFire
         }.freeze
       }.freeze
 
+      SKIP_LOCKED_CLAIM = "lock_type = 1 AND locked_by_id IS NOT NULL"
+      NO_SKIP_LOCKED_CLAIM = "lock_type IS DISTINCT FROM 1 OR locked_by_id IS NULL"
+
       def plan_options(strategy, options)
         extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
       end
 
       def job_queue_latency(*queues)
         with_connection do
-          query = ready_jobs(*queues).order(Arel.sql("COALESCE(scheduled_at, created_at) ASC"))
-
-          if (job = query.first)
-            [Time.now - (job.scheduled_at || job.created_at), 0.0].max
-          else
-            0.0
-          end
+          due_at = Arel.sql("COALESCE(scheduled_at, created_at)")
+          oldest = [ready_jobs(queues), interrupted_jobs(queues)].filter_map { |jobs| jobs.minimum(due_at) }.min
+          oldest ? [Time.now - oldest, 0.0].max : 0.0
         end
       end
 
       def job_queue_size(*queues, skip_working: false)
         with_connection do
-          size = ready_jobs(*queues).count
-          skip_working ? size : size + working_jobs(*queues).count
+          started = skip_working ? interrupted_jobs(queues) : started_jobs(queues)
+          ready_jobs(queues).count + started.count
         end
       end
 
       def job_queue_working(*queues)
         with_connection do
-          working_jobs(*queues).count
+          working_jobs(queues).count
         end
       end
 
       private
 
-      def ready_jobs(*queues)
+      def unfinished_jobs(queues)
         queues = normalize_queues(queues, allow_empty: true)
-        query = good_job_class
-        query = query.where(queue_name: queues) if queues.any?
-        query = query.where(finished_at: nil, performed_at: nil)
+        query = good_job_class.where(finished_at: nil)
+        queues.any? ? query.where(queue_name: queues) : query
+      end
+
+      def ready_jobs(queues)
+        query = unfinished_jobs(queues).where(performed_at: nil)
         query = query.where.not(error_event: discarded_enum).or(query.where(error_event: nil)) if error_event_supported?
         query.where("scheduled_at <= ?", Time.now).or(query.where(scheduled_at: nil))
       end
 
-      def working_jobs(*queues)
-        queues = normalize_queues(queues, allow_empty: true)
-        query = good_job_class
-        query = query.where(queue_name: queues) if queues.any?
-        query.where(finished_at: nil).where.not(performed_at: nil)
+      def started_jobs(queues)
+        unfinished_jobs(queues).where.not(performed_at: nil)
+      end
+
+      def working_jobs(queues)
+        started = started_jobs(queues)
+        return started.advisory_locked unless lock_type_supported?
+
+        started.advisory_locked.or(started.advisory_unlocked.where(SKIP_LOCKED_CLAIM))
+      end
+
+      def interrupted_jobs(queues)
+        unlocked = started_jobs(queues).advisory_unlocked
+        lock_type_supported? ? unlocked.where(NO_SKIP_LOCKED_CLAIM) : unlocked
       end
     end
   end

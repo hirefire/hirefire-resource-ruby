@@ -66,6 +66,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Sidekiq `server: true` all-queues listing uses Sidekiq's queue set instead of scanning Redis with `KEYS`.
 - Resque named-queue size skips corrupt delayed payloads instead of aborting the sample.
 - Que latency uses the database clock so a lagging app clock cannot return a negative value.
+- Good Job size and latency include a job whose worker died mid-run, which Good Job runs again. 1.x left it out.
 
 ## [1.0.8] - 2025-08-04
 

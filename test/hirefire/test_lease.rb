@@ -14,6 +14,16 @@ class HireFire::LeaseTest < Minitest::Test
     HireFire.configuration.logger = Logger.new(StringIO.new)
   end
 
+  def request_at(seconds)
+    Timecop.freeze(Time.at(1000 + seconds)) { lease.request_if_due(hold: ->(_) { true }) }
+  end
+
+  def sampled_at?(seconds)
+    sampled = false
+    Timecop.freeze(Time.at(1000 + seconds)) { lease.sample_if_due { sampled = true } }
+    sampled
+  end
+
   def test_process_id_is_stable_hex
     assert_match(/\A[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/, lease.process_id)
     assert_equal lease.process_id, lease.process_id
@@ -59,16 +69,19 @@ class HireFire::LeaseTest < Minitest::Test
     assert_equal 30, lease.sample_frequency
   end
 
-  def test_updates_ttl_from_response
+  def test_the_ttl_of_a_response_sets_when_the_next_request_goes_out
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {
         "HireFire-Lease-Granted" => "false",
         "HireFire-Lease-TTL" => "30"
       })
 
-    lease.request_if_due(hold: ->(_) { true })
+    request_at(0)
+    request_at(29)
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 1)
 
-    assert_equal 30, lease.instance_variable_get(:@ttl)
+    request_at(30)
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 2)
   end
 
   def test_not_polled_before_interval_elapsed
@@ -139,18 +152,20 @@ class HireFire::LeaseTest < Minitest::Test
     end
   end
 
-  def test_ttl_update_applies_to_the_current_window
+  def test_the_ttl_of_a_response_stays_when_a_later_response_carries_none
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
-      .to_return(status: 200, headers: {
-        "HireFire-Lease-Granted" => "true",
-        "HireFire-Lease-TTL" => "30"
-      })
+      .to_return(
+        {status: 200, headers: {"HireFire-Lease-Granted" => "true", "HireFire-Lease-TTL" => "30"}},
+        {status: 200, headers: {"HireFire-Lease-Granted" => "true"}}
+      )
 
-    lease.request_if_due(hold: ->(_) { true })
+    request_at(0)
+    request_at(30)
+    request_at(59)
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 2)
 
-    expected = Time.now + 30
-    actual = lease.instance_variable_get(:@expires_at)
-    assert_in_delta expected.to_f, actual.to_f, 1
+    request_at(60)
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 3)
   end
 
   def test_raises_on_server_error
@@ -195,29 +210,18 @@ class HireFire::LeaseTest < Minitest::Test
 
   def test_sample_frequency_decrease_pulls_next_sample_forward
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
-      .to_return(status: 200, headers: {
-        "HireFire-Lease-Granted" => "true",
-        "HireFire-Sample-Frequency" => "15",
-        "HireFire-Lease-TTL" => "60"
-      }, body: {version: 1, job_queues: []}.to_json)
-      .then
-      .to_return(status: 200, headers: {
-        "HireFire-Lease-Granted" => "true",
-        "HireFire-Sample-Frequency" => "1",
-        "HireFire-Lease-TTL" => "60"
-      }, body: {version: 1, job_queues: []}.to_json)
+      .to_return(
+        {status: 200, headers: {"HireFire-Lease-Granted" => "true", "HireFire-Sample-Frequency" => "60", "HireFire-Lease-TTL" => "5"}},
+        {status: 200, headers: {"HireFire-Lease-Granted" => "true", "HireFire-Sample-Frequency" => "2", "HireFire-Lease-TTL" => "5"}}
+      )
 
-    lease.request_if_due(hold: ->(_) { true })
-    assert lease.granted?
-    lease.sample_if_due { :sampled }
-    far_deadline = lease.instance_variable_get(:@next_sample_at)
+    request_at(0)
+    assert sampled_at?(0)
+    request_at(5)
 
-    lease.instance_variable_set(:@expires_at, HireFire::Clock.monotonic - 1)
-    lease.request_if_due(hold: ->(_) { true })
-
-    assert_equal 1, lease.sample_frequency
-    sooner = lease.instance_variable_get(:@next_sample_at)
-    assert_operator sooner, :<, far_deadline
+    assert_equal 2, lease.sample_frequency
+    refute sampled_at?(6)
+    assert sampled_at?(7)
   end
 
   def test_demote_clears_grant_and_invalidates_inflight_epoch
@@ -237,16 +241,13 @@ class HireFire::LeaseTest < Minitest::Test
 
   def test_demote_during_inflight_request_discards_late_grant
     target = lease
-    client = target.instance_variable_get(:@client)
-    client.define_singleton_method(:request_lease) do |_process_id|
+    stub_request(:post, "https://data.hirefire.io/metrics/lease").to_return do |_request|
       target.demote!
-      body = {version: 1, job_queues: [{"name" => "worker", "strategy" => "jql"}]}.to_json
-      headers = {
-        "HireFire-Lease-Granted" => "true",
-        "HireFire-Sample-Frequency" => "30",
-        "HireFire-Lease-TTL" => "120"
+      {
+        status: 200,
+        headers: {"HireFire-Lease-Granted" => "true", "HireFire-Sample-Frequency" => "30", "HireFire-Lease-TTL" => "120"},
+        body: {version: 1, job_queues: [{"name" => "worker", "strategy" => "jql"}]}.to_json
       }
-      HireFire::Client::Response.new(200, headers, body)
     end
 
     target.request_if_due(hold: ->(_) { true })
@@ -257,42 +258,20 @@ class HireFire::LeaseTest < Minitest::Test
   end
 
   def test_regrant_rearms_next_sample_immediately
-    stub_request(:post, "https://data.hirefire.io/metrics/lease")
-      .to_return(status: 200, headers: {
-        "HireFire-Lease-Granted" => "true",
-        "HireFire-Sample-Frequency" => "60",
-        "HireFire-Lease-TTL" => "15"
-      }, body: {version: 1, job_queues: []}.to_json)
-      .then
-      .to_return(status: 200, headers: {
-        "HireFire-Lease-Granted" => "false",
-        "HireFire-Sample-Frequency" => "60",
-        "HireFire-Lease-TTL" => "15"
-      }, body: "")
-      .then
-      .to_return(status: 200, headers: {
-        "HireFire-Lease-Granted" => "true",
-        "HireFire-Sample-Frequency" => "60",
-        "HireFire-Lease-TTL" => "15"
-      }, body: {version: 1, job_queues: []}.to_json)
+    granted = {status: 200, headers: {"HireFire-Lease-Granted" => "true", "HireFire-Sample-Frequency" => "60", "HireFire-Lease-TTL" => "15"}}
+    denied = {status: 200, headers: {"HireFire-Lease-Granted" => "false", "HireFire-Sample-Frequency" => "60", "HireFire-Lease-TTL" => "15"}}
+    stub_request(:post, "https://data.hirefire.io/metrics/lease").to_return(granted, denied, granted)
 
-    lease.request_if_due(hold: ->(_) { true })
-    assert lease.granted?
-    lease.sample_if_due { :sampled }
-    far = lease.instance_variable_get(:@next_sample_at)
-    assert_operator far, :>, HireFire::Clock.monotonic + 30
+    request_at(0)
+    assert sampled_at?(0)
+    refute sampled_at?(14)
 
-    lease.instance_variable_set(:@expires_at, HireFire::Clock.monotonic - 1)
-    lease.request_if_due(hold: ->(_) { true })
+    request_at(15)
     refute lease.granted?
 
-    lease.instance_variable_set(:@expires_at, HireFire::Clock.monotonic - 1)
-    lease.request_if_due(hold: ->(_) { true })
+    request_at(30)
     assert lease.granted?
-
-    rearmed = lease.instance_variable_get(:@next_sample_at)
-    assert_operator rearmed, :<=, HireFire::Clock.monotonic + 1
-    assert_operator rearmed, :<, far
+    assert sampled_at?(30)
   end
 
   def test_parse_strips_entry_identity_fields
@@ -672,19 +651,18 @@ class HireFire::LeaseTest < Minitest::Test
     refute sampled
   end
 
-  def test_sample_if_due_advances_next_sample_at
+  def test_a_sample_is_due_again_one_sample_frequency_after_the_last
     stub_request(:post, "https://data.hirefire.io/metrics/lease")
       .to_return(status: 200, headers: {
         "HireFire-Lease-Granted" => "true",
         "HireFire-Sample-Frequency" => "10"
       })
 
-    lease.request_if_due(hold: ->(_) { true })
-    lease.sample_if_due {}
+    request_at(0)
 
-    expected = Time.now + 10
-    actual = lease.instance_variable_get(:@next_sample_at)
-    assert_in_delta expected.to_f, actual.to_f, 1
+    assert sampled_at?(0)
+    refute sampled_at?(9)
+    assert sampled_at?(10)
   end
 
   def test_retains_sample_frequency_when_the_header_is_absent
@@ -788,19 +766,18 @@ class HireFire::LeaseTest < Minitest::Test
         "HireFire-Lease-TTL" => "99999"
       })
 
-    lease.request_if_due(hold: ->(_) { true })
+    request_at(0)
+    request_at(HireFire::Lease::TTL_BOUNDS.end - 1)
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 1)
 
-    assert_equal HireFire::Lease::TTL_BOUNDS.end, lease.instance_variable_get(:@ttl)
+    request_at(HireFire::Lease::TTL_BOUNDS.end)
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 2)
   end
 
-  def test_closes_the_underlying_client
-    stub_request(:post, "https://data.hirefire.io/metrics/lease")
-      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"})
+  def test_close_closes_its_client
+    HireFire::Client.any_instance.expects(:close).once
 
-    lease.request_if_due(hold: ->(_) { true })
     lease.close
-
-    refute lease.instance_variable_get(:@client).instance_variable_get(:@http)
   end
 
   def test_unauthorized_ignores_frequency_and_ttl_headers
@@ -824,11 +801,15 @@ class HireFire::LeaseTest < Minitest::Test
       })
 
     HireFire::Clock.stubs(:monotonic).returns(5000.0)
-    lease.instance_variable_set(:@expires_at, 5000.0)
+    lease.request_if_due(hold: ->(_) { true })
 
-    Timecop.freeze(Time.at(1000)) { lease.request_if_due(hold: ->(_) { true }) }
+    HireFire::Clock.stubs(:monotonic).returns(5029.0)
+    Timecop.freeze(Time.now + 3600) { lease.request_if_due(hold: ->(_) { true }) }
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 1)
 
-    assert_equal 5030.0, lease.instance_variable_get(:@expires_at)
+    HireFire::Clock.stubs(:monotonic).returns(5030.0)
+    Timecop.freeze(Time.now - 3600) { lease.request_if_due(hold: ->(_) { true }) }
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 2)
   end
 
   def test_forked_child_reissues_identity_and_re_requests_the_lease
@@ -841,15 +822,15 @@ class HireFire::LeaseTest < Minitest::Test
     lease.request_if_due(hold: ->(_) { true })
     assert lease.granted?
     original_process_id = lease.process_id
+    child_pid = Process.pid + 1
+    Process.stubs(:pid).returns(child_pid)
 
-    lease.instance_variable_set(:@owner_pid, lease.instance_variable_get(:@owner_pid) - 1)
-
-    lease.request_if_due(hold: ->(_) { true })
+    2.times { lease.request_if_due(hold: ->(_) { true }) }
 
     refute_equal original_process_id, lease.process_id
-    assert_equal Process.pid, lease.instance_variable_get(:@owner_pid)
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 2)
     assert_requested(:post, "https://data.hirefire.io/metrics/lease",
-      headers: {"HireFire-Process-ID" => lease.process_id})
+      headers: {"HireFire-Process-ID" => lease.process_id}, times: 1)
   end
 
   def test_unauthorized_clears_prior_job_queues

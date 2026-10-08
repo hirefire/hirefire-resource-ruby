@@ -21,6 +21,8 @@ module HireFire
         @last_rqt_second = nil
         @pending_sample_trace = nil
         @round_started_at = nil
+        @failures = 0
+        @failure_logged_at = nil
         @unloaded_adapter_warned = {}
         @plan_override_warned = {}
         @unknown_adapter_warned = {}
@@ -302,7 +304,13 @@ module HireFire
         return if @next_dispatch_at && Clock.monotonic < @next_dispatch_at
 
         dispatch
-        @next_dispatch_at = Clock.monotonic + @dispatch_frequency
+        @next_dispatch_at = Clock.monotonic + dispatch_interval
+      end
+
+      def dispatch_interval
+        return @dispatch_frequency if @failures.zero?
+
+        [@dispatch_frequency * 2**[@failures, BACKOFF_DOUBLINGS].min, MAX_DISPATCH_FREQUENCY].min
       end
 
       def dispatch(final: false)
@@ -329,9 +337,28 @@ module HireFire
           @last_rqt_second = watermark if watermark
           @pending_sample_trace = nil
         end
+        dispatch_succeeded
       rescue => e
         repopulate_rqt(data) if data && (final || @live || @handoff)
-        Log.safe(logger, :error, "[HireFire] Dispatch error: #{Log.format_error(e)}")
+        dispatch_failed(e)
+      end
+
+      def dispatch_succeeded
+        if @failures > 1
+          Log.safe(logger, :info, "[HireFire] Dispatch recovered after #{@failures} failed attempts.")
+        end
+        @failures = 0
+        @failure_logged_at = nil
+      end
+
+      def dispatch_failed(error)
+        @failures += 1
+        now = Clock.monotonic
+        return if @failure_logged_at && now - @failure_logged_at < FAILURE_LOG_INTERVAL
+
+        @failure_logged_at = now
+        attempts = " (#{@failures} failed attempts in a row)" if @failures > 1
+        Log.safe(logger, :error, "[HireFire] Dispatch error: #{Log.format_error(error)}#{attempts}")
       end
 
       def repopulate_rqt(data)

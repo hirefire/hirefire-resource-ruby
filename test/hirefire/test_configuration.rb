@@ -199,20 +199,23 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_instance_of HireFire::Dispatcher, @configuration.dispatcher
   end
 
-  def test_rqt_liveness_when_enabled_and_identity_present
+  def test_a_web_identity_enables_request_queue_time_under_its_name
     ENV["DYNO"] = "web.1"
-    assert @configuration.rqt_liveness?
+    assert @configuration.rqt_enabled?
+    assert_equal "web", @configuration.http_name
   end
 
-  def test_rqt_liveness_denied_when_identity_unresolved
+  def test_traffic_without_an_identity_enables_request_queue_time_without_a_name
     @configuration.mark_http_active!
-    refute @configuration.rqt_liveness?
+    assert @configuration.rqt_enabled?
+    assert_nil @configuration.http_name
   end
 
-  def test_rqt_liveness_allowed_when_identity_is_worker
+  def test_traffic_on_a_worker_identity_enables_request_queue_time_under_its_name
     ENV["DYNO"] = "worker.1"
     @configuration.mark_http_active!
-    assert @configuration.rqt_liveness?
+    assert @configuration.rqt_enabled?
+    assert_equal "worker", @configuration.http_name
   end
 
   def test_soft_identity_over_max_bytes_disables_http_and_cpu_and_warns_once
@@ -319,23 +322,20 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_raises(ArgumentError) { @configuration.dyno(:web, :cpu) }
   end
 
-  def test_rqt_liveness_false_for_non_http_identity_without_explicit_web
+  def test_rqt_not_enabled_for_non_http_identity_without_explicit_web
     ENV["HIREFIRE_SERVICE_NAME"] = "clock"
-    refute @configuration.rqt_liveness?
     refute @configuration.rqt_enabled?
   end
 
   def test_rqt_enabled_for_heroku_web_process_without_explicit_web
     ENV["DYNO"] = "web.1"
     assert @configuration.rqt_enabled?
-    assert @configuration.rqt_liveness?
   end
 
   def test_rqt_enabled_for_render_web_service_type
     ENV["RENDER_SERVICE_NAME"] = "api"
     ENV["RENDER_SERVICE_TYPE"] = "web"
     assert @configuration.rqt_enabled?
-    assert @configuration.rqt_liveness?
     assert_equal "api", @configuration.http_name
   end
 
@@ -350,14 +350,7 @@ class HireFire::ConfigurationTest < Minitest::Test
     refute @configuration.rqt_enabled?
     @configuration.mark_http_active!
     assert @configuration.rqt_enabled?
-    assert @configuration.rqt_liveness?
-  end
-
-  def test_rqt_liveness_false_when_armed_but_identity_unresolved
-    @configuration.mark_http_active!
-    assert @configuration.rqt_enabled?
-    refute @configuration.rqt_liveness?
-    assert_nil @configuration.http_source
+    assert_equal "api", @configuration.http_name
   end
 
   def test_rqt_not_enabled_by_explicit_service_name_web_on_worker_dyno
@@ -373,7 +366,7 @@ class HireFire::ConfigurationTest < Minitest::Test
     @configuration.logger = Logger.new(log)
 
     @configuration.active_cpu_sources
-    @configuration.rqt_liveness?
+    @configuration.http_name
 
     assert_equal 1, log.string.scan("app-wide").size
   end

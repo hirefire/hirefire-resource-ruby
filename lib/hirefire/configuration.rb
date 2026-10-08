@@ -118,10 +118,6 @@ module HireFire
       @request_source = dispatcher.start ? nil : source
     end
 
-    def rqt_liveness?
-      rqt_enabled? && !soft_identity.nil?
-    end
-
     def active_cpu_sources
       identity = soft_identity
       if identity.nil?

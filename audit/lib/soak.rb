@@ -110,6 +110,8 @@ module Audit
       stop_started = now
       guard("stop") { HireFire.configuration.stop_dispatcher }
       stop_seconds = now - stop_started
+      sleep(0.01) while now - stop_started < 5 && Thread.list.any? { |thread| thread.name.to_s.start_with?("hirefire-") }
+      @threads_gone_seconds = now - stop_started
       pids.each { |pid| Process.wait(pid) }
       final = sample(server, started, 0)
       requests = server.request_counts
@@ -260,6 +262,7 @@ module Audit
         log_levels: lines.map { |line| line[0] }.tally,
         top_messages: messages.tally.sort_by { |_, count| -count }.first(12).map { |message, count| "#{count}x #{message}" },
         stop_seconds: stop_seconds.round(2),
+        client_threads_gone_seconds: @threads_gone_seconds.round(2),
         after_stop: {threads: final[:threads], fds: final[:fds], server_open_sockets: final[:server_open_sockets], thread_names: Thread.list.map { |thread| thread.name || ((thread == Thread.main) ? "main" : "unnamed") }}
       }
     end

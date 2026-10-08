@@ -71,7 +71,6 @@ class HireFireTest < Minitest::Test
 
     config = HireFire.boot
     assert_equal config, HireFire.configuration
-    assert_nil config.http
     assert config.job_queues.none?
   end
 

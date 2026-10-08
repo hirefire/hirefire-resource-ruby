@@ -20,24 +20,18 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_equal custom_logger, @configuration.logger
   end
 
-  def test_http_reader_is_always_nil
-    assert_nil @configuration.http
-  end
-
   def test_job_queues_default_to_empty
     assert @configuration.job_queues.none?
   end
 
   def test_dyno_bare_web_is_noop
     @configuration.dyno(:web)
-    assert_nil @configuration.http
     refute @configuration.rqt_enabled?
     assert @configuration.job_queues.none?
   end
 
   def test_dyno_bare_web_is_case_insensitive_noop
     @configuration.dyno("Web")
-    assert_nil @configuration.http
     refute @configuration.rqt_enabled?
   end
 
@@ -138,7 +132,6 @@ class HireFire::ConfigurationTest < Minitest::Test
     @configuration.dyno(:web)
     @configuration.dyno(:web) { 1 }
 
-    assert_nil @configuration.http
     assert_equal ["web"], @configuration.job_queues.map(&:name)
   end
 

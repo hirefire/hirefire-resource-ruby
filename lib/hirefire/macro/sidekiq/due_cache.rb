@@ -369,21 +369,10 @@ module HireFire
           end
 
           def parse_queue(member)
-            payload = case member
-            when String
-              JSON.parse(member)
-            when Hash
-              member
-            else
-              return nil
-            end
-            return nil unless payload.is_a?(Hash)
-
-            queue = payload["queue"]
-            return nil if queue.nil? || queue == ""
-
-            queue.to_s
-          rescue JSON::ParserError, TypeError
+            payload = JSON.parse(member)
+            queue = payload["queue"] if payload.is_a?(Hash)
+            queue.to_s unless queue.nil? || queue == ""
+          rescue JSON::ParserError
             nil
           end
         end

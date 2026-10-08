@@ -179,20 +179,18 @@ module HireFire
 
     def sample_job_strategy(macro, name, strategy, method_name, queues, options, live: nil)
       value = macro.public_send(method_name, *queues, **options)
-      return false if live && !live.call
+      return if live && !live.call
 
       unless Sample.valid?(value)
         Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} returned " \
           "#{Sample.format(value)}, expected a non-negative number. Sample dropped.")
-        return false
+        return
       end
 
       record_sample(name, strategy, Sample.coerce(value))
-      true
     rescue StandardError, ScriptError => e
       Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " +
         Log.format_error(e))
-      false
     end
 
     def sample_working(macro, name, queues, live: nil)

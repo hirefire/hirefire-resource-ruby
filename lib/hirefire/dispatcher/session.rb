@@ -363,10 +363,8 @@ module HireFire
 
       def repopulate_rqt(data)
         data.each do |name, strategies|
-          series = strategies[Strategy::RQT]
-          next unless series&.any?
-
-          buffer.repopulate(name, Strategy::RQT, series)
+          buckets = strategies[Strategy::RQT]
+          buffer.repopulate(name, Strategy::RQT, buckets) if buckets&.any?
         end
       end
 
@@ -384,144 +382,69 @@ module HireFire
       end
 
       def payload_has_sample_trace?(payload)
-        payload.first.is_a?(Hash) && payload.first.key?("sample_trace")
+        payload.first.key?("sample_trace")
       end
 
       def strip_sample_trace(payload)
         @pending_sample_trace = nil
-        payload.map do |entry|
-          next entry unless entry.is_a?(Hash) && entry.key?("sample_trace")
-
-          entry.dup.tap { |copy| copy.delete("sample_trace") }
-        end
+        [payload.first.except("sample_trace"), *payload.drop(1)]
       end
 
       def build_payload(data)
-        entries_by_name = {}
         http_name = configuration.http_name
-        watermark = append_http_rqt!(entries_by_name, data, http_name)
+        series = {}
+        watermark = nil
+
+        if http_name && configuration.rqt_enabled?
+          claimed = backfill_rqt_seconds(data.dig(http_name, Strategy::RQT) || {})
+          series[http_name] = {Strategy::RQT => claimed}
+          watermark = claimed.keys.max
+        end
 
         data.each do |name, strategies|
-          strategies.each do |strategy, series|
-            strategy = strategy.to_s
-            next if series.nil? || series.empty?
-            next if Strategy.rqt?(strategy) && name == http_name
-
-            merge_metrics(entries_by_name, name, strategy, series)
+          strategies.each do |strategy, buckets|
+            (series[name] ||= {})[strategy] ||= buckets
           end
         end
 
-        entries = []
-        entries_by_name.each do |name, metrics|
-          encoded = {}
-          metrics.each do |strategy, series|
-            strategy_key = strategy.to_s
-            leaf_series = {}
-            series.each do |second, bucket|
-              leaf = encode_leaf(strategy_key, bucket)
-              next if leaf == :omit
-
-              leaf_series[second.to_s] = leaf
-            end
-            encoded[strategy_key] = leaf_series unless leaf_series.empty?
+        entries = series.filter_map do |name, strategies|
+          metrics = strategies.filter_map do |strategy, buckets|
+            leaves = encode_series(strategy, buckets)
+            [strategy, leaves] unless leaves.empty?
           end
-          next if encoded.empty?
-
-          entries << {"name" => name, "metrics" => encoded}
+          {"name" => name, "metrics" => metrics.to_h} unless metrics.empty?
         end
 
-        attach_sample_trace!(entries)
+        entries.first["sample_trace"] = @pending_sample_trace if entries.any? && @pending_sample_trace && @lease.trace?
         [entries, watermark]
-      end
-
-      def attach_sample_trace!(entries)
-        return if @pending_sample_trace.nil? || entries.empty? || !@lease.trace?
-
-        entries.first["sample_trace"] = @pending_sample_trace
-      end
-
-      def append_http_rqt!(entries_by_name, data, http_name)
-        return nil unless http_name
-
-        rqt_buckets = data.dig(http_name, Strategy::RQT) || {}
-
-        if configuration.rqt_enabled? && configuration.rqt_liveness?
-          payload_rqt = backfill_rqt_seconds(rqt_buckets)
-          merge_metrics(entries_by_name, http_name, Strategy::RQT, payload_rqt)
-          payload_rqt.keys.max
-        elsif rqt_buckets.any?
-          merge_metrics(entries_by_name, http_name, Strategy::RQT, rqt_buckets)
-          nil
-        end
-      end
-
-      def merge_metrics(entries_by_name, name, strategy, series_buckets)
-        strategy = strategy.to_s
-        entries_by_name[name] ||= {}
-        entries_by_name[name][strategy] ||= {}
-        dest = entries_by_name[name][strategy]
-
-        series_buckets.each do |second, bucket|
-          if Strategy.rqt?(strategy)
-            if dest[second].nil?
-              dest[second] = copy_rqt_bucket(bucket)
-            else
-              sum, count = Buffer.rqt_parts(bucket)
-              dest[second] = {
-                sum: dest[second][:sum] + sum,
-                count: dest[second][:count] + count
-              }
-            end
-          else
-            dest[second] = bucket
-          end
-        end
-      end
-
-      def copy_rqt_bucket(bucket)
-        sum, count = Buffer.rqt_parts(bucket)
-        {sum: sum, count: count}
-      end
-
-      def encode_leaf(strategy, bucket)
-        if Strategy.rqt?(strategy)
-          sum, count = Buffer.rqt_parts(bucket)
-          return [] if count == 0
-
-          mean = sum / count
-          unless mean.finite? && mean.between?(0, METRIC_VALUE_LIMIT)
-            Log.safe(logger, :error, "[HireFire] Omitting rqt second: non-finite or out-of-range mean.")
-            return :omit
-          end
-
-          n = count
-          n = SAMPLE_COUNT_LIMIT if n > SAMPLE_COUNT_LIMIT
-          [mean, n]
-        else
-          return :omit unless bucket.is_a?(Numeric)
-          unless bucket.finite? && bucket.between?(0, METRIC_VALUE_LIMIT)
-            Log.safe(logger, :error, "[HireFire] Omitting #{strategy} second: non-finite or out-of-range value.")
-            return :omit
-          end
-
-          bucket
-        end
       end
 
       def backfill_rqt_seconds(buckets)
         now = Time.now.to_i
-        from = @last_rqt_second ? @last_rqt_second + 1 : now
-        from = now - RQT_BACKFILL_LIMIT if from < now - RQT_BACKFILL_LIMIT
-        from = now if from > now
+        from = (@last_rqt_second ? @last_rqt_second + 1 : now).clamp(now - RQT_BACKFILL_LIMIT, now)
+        (from..now).each_with_object(buckets.dup) { |second, claimed| claimed[second] ||= Buffer::EMPTY_BUCKET }
+      end
 
-        payload = {}
-        buckets.each do |second, bucket|
-          payload[second] = copy_rqt_bucket(bucket)
+      def encode_series(strategy, buckets)
+        buckets.each_with_object({}) do |(second, bucket), leaves|
+          leaf = Strategy.rqt?(strategy) ? rqt_leaf(bucket) : value_leaf(bucket)
+          if leaf
+            leaves[second.to_s] = leaf
+          else
+            Log.safe(logger, :error, "[HireFire] Omitting #{strategy} second: out-of-range value.")
+          end
         end
-        (from..now).each do |second|
-          payload[second] ||= {sum: 0.0, count: 0}
-        end
-        payload
+      end
+
+      def rqt_leaf(bucket)
+        return [] if bucket[:count].zero?
+
+        mean = value_leaf(bucket[:sum] / bucket[:count])
+        [mean, bucket[:count]] if mean
+      end
+
+      def value_leaf(value)
+        value if value.between?(0, METRIC_VALUE_LIMIT)
       end
 
       def buffer

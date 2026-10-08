@@ -7,7 +7,7 @@ module HireFire
     class JobQueues
       include Enumerable
 
-      def initialize(configuration = nil)
+      def initialize(configuration)
         @configuration = configuration
         @job_queues = []
       end
@@ -54,15 +54,11 @@ module HireFire
       private
 
       def buffer
-        configuration.buffer
+        @configuration.buffer
       end
 
       def logger
-        configuration.logger
-      end
-
-      def configuration
-        @configuration || HireFire.configuration
+        @configuration.logger
       end
     end
   end

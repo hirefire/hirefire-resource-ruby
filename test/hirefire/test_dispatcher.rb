@@ -1292,34 +1292,6 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_equal [20.0, 3], bodies[0][0].dig("metrics", "rqt", "1000")
   end
 
-  def test_encode_rqt_accepts_mixed_bucket_keys_and_empty_leaf_for_non_hash
-    stub_lease
-    bodies = capture_ingest_bodies
-    configure_web_only
-
-    Timecop.freeze Time.at(1000) do
-      buffer = HireFire.configuration.buffer
-      buffer.instance_variable_get(:@mutex).synchronize do
-        metrics = buffer.instance_variable_get(:@metrics)
-        metrics["web"] = {
-          "rqt" => {
-            1000 => {"sum" => 8.0, "count" => 2},
-            999 => {sum: 6.0, count: 2},
-            998 => 12,
-            997 => nil
-          }
-        }
-      end
-      session.report
-    end
-
-    rqt = bodies[0][0].dig("metrics", "rqt")
-    assert_equal [4.0, 2], rqt["1000"]
-    assert_equal [3.0, 2], rqt["999"]
-    assert_equal [], rqt["998"]
-    assert_equal [], rqt["997"]
-  end
-
   def test_payload_size_limit_is_131072_with_strict_greater_drop
     limit = HireFire::Dispatcher::PAYLOAD_SIZE_LIMIT
     assert_equal 131_072, limit
@@ -1379,102 +1351,38 @@ class HireFire::DispatcherTest < Minitest::Test
     refute_includes log.string, "Dropped metrics payload"
   end
 
-  def test_encode_omits_non_finite_rqt_mean
+  def test_a_request_queue_time_mean_over_the_limit_is_left_out_and_logged
     stub_lease
     bodies = capture_ingest_bodies
     configure_web_only
 
-    Timecop.freeze Time.at(1000) do
-      buffer = HireFire.configuration.buffer
-      buffer.instance_variable_get(:@mutex).synchronize do
-        metrics = buffer.instance_variable_get(:@metrics)
-        metrics["web"] = {
-          "rqt" => {
-            1000 => {sum: Float::INFINITY, count: 1},
-            999 => {sum: 10.0, count: 1}
-          }
-        }
-      end
+    Timecop.freeze(Time.at(1000)) { session.report }
+    Timecop.freeze(Time.at(1001)) { HireFire.configuration.buffer.sample("web", "rqt", HireFire::Dispatcher::METRIC_VALUE_LIMIT * 4) }
+    Timecop.freeze Time.at(1002) do
+      HireFire.configuration.buffer.sample("web", "rqt", 8)
       session.report
     end
 
-    assert_operator bodies.size, :>=, 1
-    rqt = bodies[0][0].dig("metrics", "rqt")
-    refute rqt.key?("1000")
-    assert_equal [10.0, 1], rqt["999"]
-    assert_includes log.string, "Omitting rqt second"
+    assert_equal({"1002" => [8.0, 1]}, bodies[1][0].dig("metrics", "rqt"))
+    assert_equal 1, log.string.scan("Omitting rqt second: out-of-range value.").size
   end
 
-  def test_encode_omits_invalid_non_rqt_values
-    stub_lease(granted: true)
+  def test_a_value_over_the_limit_is_left_out_and_logged_and_the_limit_itself_is_sent
+    stub_lease
     bodies = capture_ingest_bodies
     limit = HireFire::Dispatcher::METRIC_VALUE_LIMIT
+    assert_equal 1e15, limit
 
+    Timecop.freeze(Time.at(999)) { HireFire.configuration.buffer.sample("worker", "jqs", limit * 2) }
     Timecop.freeze Time.at(1000) do
-      ENV["DYNO"] = "web.1"
-      HireFire.configuration.dyno(:web)
-      HireFire.configuration.dyno(:worker) { 1 }
-      HireFire.configuration.dispatcher
-
-      buffer = HireFire.configuration.buffer
-      buffer.instance_variable_get(:@mutex).synchronize do
-        metrics = buffer.instance_variable_get(:@metrics)
-        metrics["worker"] = {
-          "jql" => {
-            1000 => Float::NAN,
-            999 => Float::INFINITY,
-            998 => -1.0,
-            997 => limit + 1,
-            996 => "nope",
-            995 => 4.5
-          },
-          "cpu" => {
-            1000 => -0.1,
-            999 => 12.0
-          }
-        }
-        metrics["web"] = {
-          "rqt" => {1000 => {sum: 1.0, count: 1}}
-        }
-      end
+      HireFire.configuration.buffer.sample("worker", "jqs", limit)
+      HireFire.configuration.buffer.sample("worker", "jql", 0)
+      HireFire.configuration.buffer.sample("mailer", "jqs", limit * 2)
       session.report
     end
 
-    assert_operator bodies.size, :>=, 1
-    worker = bodies[0].find { |e| e["name"] == "worker" }
-    refute_nil worker
-    jql = worker.dig("metrics", "jql") || {}
-    cpu = worker.dig("metrics", "cpu") || {}
-    refute jql.key?("1000")
-    refute jql.key?("999")
-    refute jql.key?("998")
-    refute jql.key?("997")
-    refute jql.key?("996")
-    assert_equal 4.5, jql["995"]
-    refute cpu.key?("1000")
-    assert_equal 12.0, cpu["999"]
-  end
-
-  def test_encode_clamps_rqt_sample_count_to_limit
-    stub_lease
-    bodies = capture_ingest_bodies
-    configure_web_only
-    limit = HireFire::Dispatcher::SAMPLE_COUNT_LIMIT
-
-    Timecop.freeze Time.at(1000) do
-      buffer = HireFire.configuration.buffer
-      buffer.instance_variable_get(:@mutex).synchronize do
-        metrics = buffer.instance_variable_get(:@metrics)
-        metrics["web"] = {
-          "rqt" => {
-            1000 => {sum: 20.0 * (limit + 50), count: limit + 50}
-          }
-        }
-      end
-      session.report
-    end
-
-    assert_equal [20.0, limit], bodies[0][0].dig("metrics", "rqt", "1000")
+    assert_equal [{"name" => "worker", "metrics" => {"jqs" => {"1000" => limit}, "jql" => {"1000" => 0}}}], bodies[0]
+    assert_equal 2, log.string.scan("Omitting jqs second: out-of-range value.").size
   end
 
   def test_partial_plan_unsupported_jql_and_supported_jqs_holds_and_samples_size

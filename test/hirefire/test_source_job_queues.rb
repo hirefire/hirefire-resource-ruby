@@ -184,7 +184,7 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
   end
 
   def test_enumerable
-    job_queues = HireFire::Source::JobQueues.new
+    job_queues = HireFire::Source::JobQueues.new(HireFire.configuration)
     job_queues << HireFire::Source::JobQueue.new(:worker) { 1 }
     job_queues << HireFire::Source::JobQueue.new(:mailer) { 2 }
 
@@ -192,7 +192,7 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
   end
 
   def test_any_and_count
-    job_queues = HireFire::Source::JobQueues.new
+    job_queues = HireFire::Source::JobQueues.new(HireFire.configuration)
     refute job_queues.any?
     assert_equal 0, job_queues.count
 

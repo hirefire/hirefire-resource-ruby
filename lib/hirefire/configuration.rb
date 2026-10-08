@@ -8,15 +8,13 @@ module HireFire
 
     class DuplicateDynoError < StandardError; end
 
-    attr_reader :http, :job_queues, :log_queue_metrics, :logger
+    attr_reader :job_queues, :log_queue_metrics, :logger
     attr_writer :token
 
     MAX_NAME_BYTES = 128
 
     def initialize
-      @http = nil
       @job_queues = Source::JobQueues.new(self)
-      @sources_by_name = {}
       @buffer = nil
       @dispatcher = nil
       @logger = Logger.new($stdout)
@@ -55,7 +53,7 @@ module HireFire
       name = coerce_name!(name)
 
       if sampler
-        register(name, :job_queue, &sampler)
+        register(name, &sampler)
         return
       end
 
@@ -160,21 +158,13 @@ module HireFire
       name
     end
 
-    def register(name, source, &sampler)
-      key = name.downcase
-      kinds = @sources_by_name[key] || []
-
-      if kinds.include?(source)
+    def register(name, &sampler)
+      if @job_queues.find_by_name(name)
         raise DuplicateDynoError,
-          "Duplicate declaration for #{name.inspect}. " \
-          "Each dyno name maps to at most one source of each kind."
+          "Duplicate declaration for #{name.inspect}. Each dyno name takes one sampler."
       end
 
-      if source == :job_queue
-        @job_queues << Source::JobQueue.new(name, &sampler)
-      end
-
-      @sources_by_name[key] = kinds + [source]
+      @job_queues << Source::JobQueue.new(name, &sampler)
     end
 
     def soft_identity

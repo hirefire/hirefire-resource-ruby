@@ -3,6 +3,7 @@
 module HireFire
   class Buffer
     SAMPLE_COUNT_LIMIT = 1_000_000
+    EMPTY_BUCKET = {sum: 0.0, count: 0}.freeze
 
     def initialize(ttl: 60)
       @metrics = {}
@@ -57,31 +58,12 @@ module HireFire
         data.each do |timestamp, bucket|
           next if timestamp < now - @ttl
 
-          sum, count = self.class.rqt_parts(bucket)
-          next if count <= 0
+          next if bucket[:count].zero?
 
-          existing = series[timestamp]
-          series[timestamp] = if existing.is_a?(Hash)
-            clamp_rqt_bucket(
-              existing[:sum] + sum,
-              existing[:count] + count
-            )
-          else
-            clamp_rqt_bucket(sum, count)
-          end
+          existing = series[timestamp] || EMPTY_BUCKET
+          series[timestamp] = clamp_rqt_bucket(existing[:sum] + bucket[:sum], existing[:count] + bucket[:count])
         end
         prune(series, now)
-      end
-    end
-
-    def self.rqt_parts(bucket)
-      case bucket
-      when Hash
-        sum = bucket[:sum] || bucket["sum"]
-        count = bucket[:count] || bucket["count"]
-        [sum.to_f, count.to_i]
-      else
-        [0.0, 0]
       end
     end
 

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "payload"
 
 module HireFire
   class Dispatcher
@@ -24,6 +25,7 @@ module HireFire
         @failures = 0
         @failure_logged_at = nil
         @sampler = Sampler.new(configuration)
+        @once = Once.new(configuration)
       end
 
       def start
@@ -187,9 +189,9 @@ module HireFire
         return if payload.empty?
 
         body = JSON.generate(payload)
-        if body.bytesize > PAYLOAD_SIZE_LIMIT && payload_has_sample_trace?(payload)
-          payload = strip_sample_trace(payload)
-          body = JSON.generate(payload)
+        if body.bytesize > PAYLOAD_SIZE_LIMIT && Payload.traced?(payload)
+          @pending_sample_trace = nil
+          body = JSON.generate(Payload.without_trace(payload))
         end
         return drop_oversized_payload(body, watermark) if body.bytesize > PAYLOAD_SIZE_LIMIT
 
@@ -247,70 +249,15 @@ module HireFire
           "#{source}. Resuming from the current second.")
       end
 
-      def payload_has_sample_trace?(payload)
-        payload.first.key?("sample_trace")
-      end
-
-      def strip_sample_trace(payload)
-        @pending_sample_trace = nil
-        [payload.first.except("sample_trace"), *payload.drop(1)]
-      end
-
       def build_payload(data)
-        http_name = configuration.http_name
-        series = {}
-        watermark = nil
+        liveness = configuration.http_name if configuration.rqt_enabled?
+        trace = @pending_sample_trace if @lease.trace?
 
-        if http_name && configuration.rqt_enabled?
-          claimed = backfill_rqt_seconds(data.dig(http_name, Strategy::RQT) || {})
-          series[http_name] = {Strategy::RQT => claimed}
-          watermark = claimed.keys.max
-        end
-
-        data.each do |name, strategies|
-          strategies.each do |strategy, buckets|
-            (series[name] ||= {})[strategy] ||= buckets
+        Payload.build(data, liveness: liveness, since: @last_rqt_second, trace: trace) do |name, strategy|
+          @once.log(:error, :out_of_range, [name, strategy]) do
+            "[HireFire] Omitting #{strategy} seconds of #{name.inspect}: a value is out of range."
           end
         end
-
-        entries = series.filter_map do |name, strategies|
-          metrics = strategies.filter_map do |strategy, buckets|
-            leaves = encode_series(strategy, buckets)
-            [strategy, leaves] unless leaves.empty?
-          end
-          {"name" => name, "metrics" => metrics.to_h} unless metrics.empty?
-        end
-
-        entries.first["sample_trace"] = @pending_sample_trace if entries.any? && @pending_sample_trace && @lease.trace?
-        [entries, watermark]
-      end
-
-      def backfill_rqt_seconds(buckets)
-        now = Time.now.to_i
-        from = (@last_rqt_second ? @last_rqt_second + 1 : now).clamp(now - RQT_BACKFILL_LIMIT, now)
-        (from..now).each_with_object(buckets.dup) { |second, claimed| claimed[second] ||= Buffer::EMPTY_BUCKET }
-      end
-
-      def encode_series(strategy, buckets)
-        buckets.each_with_object({}) do |(second, bucket), leaves|
-          leaf = Strategy.rqt?(strategy) ? rqt_leaf(bucket) : value_leaf(bucket)
-          if leaf
-            leaves[second.to_s] = leaf
-          else
-            Log.safe(logger, :error, "[HireFire] Omitting #{strategy} second: out-of-range value.")
-          end
-        end
-      end
-
-      def rqt_leaf(bucket)
-        return [] if bucket[:count].zero?
-
-        mean = value_leaf(bucket[:sum] / bucket[:count])
-        [mean, bucket[:count]] if mean
-      end
-
-      def value_leaf(value)
-        value if value.between?(0, METRIC_VALUE_LIMIT)
       end
 
       def buffer

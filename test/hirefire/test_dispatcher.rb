@@ -1340,7 +1340,7 @@ class HireFire::DispatcherTest < Minitest::Test
     end
 
     assert_equal({"1002" => [8.0, 1]}, bodies[1][0].dig("metrics", "rqt"))
-    assert_equal 1, log.string.scan("Omitting rqt second: out-of-range value.").size
+    assert_equal 1, log.string.scan('Omitting rqt seconds of "web": a value is out of range.').size
   end
 
   def test_a_value_over_the_limit_is_left_out_and_logged_and_the_limit_itself_is_sent
@@ -1358,7 +1358,7 @@ class HireFire::DispatcherTest < Minitest::Test
     end
 
     assert_equal [{"name" => "worker", "metrics" => {"jqs" => {"1000" => limit}, "jql" => {"1000" => 0}}}], bodies[0]
-    assert_equal 2, log.string.scan("Omitting jqs second: out-of-range value.").size
+    assert_equal 2, log.string.scan("Omitting jqs seconds of ").size
   end
 
   def test_partial_plan_unsupported_jql_and_supported_jqs_holds_and_samples_size

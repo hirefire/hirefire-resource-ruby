@@ -181,6 +181,16 @@ class HireFire::ClientTest < Minitest::Test
     assert_equal Process.pid, client.instance_variable_get(:@owner_pid)
   end
 
+  def test_close_in_a_forked_child_does_not_finish_the_connection_of_its_parent
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]")
+    child = Process.pid + 1
+    Process.stubs(:pid).returns(child)
+    Net::HTTP.any_instance.expects(:finish).never
+
+    client.close
+  end
+
   def test_keep_alive_timeout_outlasts_the_max_dispatch_interval
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
     client.submit_samples("[]")

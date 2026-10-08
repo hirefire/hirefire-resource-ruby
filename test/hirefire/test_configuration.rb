@@ -100,6 +100,63 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_includes error.message, "128"
   end
 
+  def test_dyno_name_errors_say_what_was_given
+    error = assert_raises(ArgumentError) { @configuration.dyno("  ") }
+    assert_equal 'config.dyno requires a dyno name as its first argument (got "").', error.message
+
+    error = assert_raises(ArgumentError) { @configuration.dyno("w" * 129) { 1 } }
+    assert_equal "config.dyno name exceeds 128 bytes (got 129).", error.message
+  end
+
+  def test_an_identity_of_exactly_the_limit_is_used_and_one_byte_more_is_not
+    log = StringIO.new
+    @configuration.logger = Logger.new(log)
+
+    ENV["HIREFIRE_SERVICE_NAME"] = "x" * 128
+    assert_equal "x" * 128, @configuration.http_name
+    assert_empty log.string
+
+    ENV["HIREFIRE_SERVICE_NAME"] = "x" * 129
+    assert_nil @configuration.http_name
+    assert_includes log.string, "[HireFire] Process identity exceeds 128 bytes (129). Metrics under this identity are disabled until the name is shortened."
+  end
+
+  def test_requests_without_an_identity_warn_once_that_their_samples_are_dropped
+    ENV["HIREFIRE_TOKEN"] = "token"
+    log = StringIO.new
+    @configuration.logger = Logger.new(log)
+    @configuration.dispatcher.stubs(:start).returns(false)
+
+    2.times { @configuration.sample_request_queue_time(5) }
+
+    assert_equal 1, log.string.scan("[HireFire] Request queue time samples dropped: process identity is unresolved. Set HIREFIRE_SERVICE_NAME or DYNO.").size
+  end
+
+  def test_the_cpu_source_is_kept_while_the_identity_stays_and_rebuilt_when_it_changes
+    ENV["DYNO"] = "api.1"
+    first = @configuration.active_cpu_sources.first
+    assert_same first, @configuration.active_cpu_sources.first
+
+    ENV["DYNO"] = "worker.1"
+    second = @configuration.active_cpu_sources.first
+
+    refute_same first, second
+    assert_equal "worker", second.name
+  end
+
+  def test_the_identity_warnings_say_what_was_found_and_what_to_set
+    log = StringIO.new
+    @configuration.logger = Logger.new(log)
+
+    @configuration.active_cpu_sources
+    assert_includes log.string, "[HireFire] CPU metrics disabled: process identity is unresolved. Set HIREFIRE_SERVICE_NAME or DYNO."
+
+    ENV["DYNO"] = "worker.1"
+    ENV["HIREFIRE_SERVICE_NAME"] = "web"
+    @configuration.active_cpu_sources
+    assert_includes log.string, "[HireFire] HIREFIRE_SERVICE_NAME (web) does not match the Heroku DYNO prefix (worker)."
+  end
+
   def test_dyno_name_limit_counts_utf8_bytes
     accepted = "é" * 64
     too_long = "é" * 65

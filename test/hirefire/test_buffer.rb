@@ -250,6 +250,14 @@ class HireFire::BufferTest < Minitest::Test
     assert_equal({40 => {sum: 5.0, count: 1}}, buffer.flush["web"]["rqt"])
   end
 
+  def test_repopulate_drops_a_second_older_than_the_default_of_60_seconds
+    Timecop.freeze Time.at(100) do
+      buffer.repopulate("web", "rqt", {39 => {sum: 5.0, count: 1}, 40 => {sum: 6.0, count: 1}})
+    end
+
+    assert_equal [40], buffer.flush["web"]["rqt"].keys
+  end
+
   def test_custom_ttl_is_honored_by_repopulate
     custom = HireFire::Buffer.new(ttl: 10)
     Timecop.freeze Time.at(100) do

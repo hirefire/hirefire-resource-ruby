@@ -1201,6 +1201,40 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_empty HireFire.configuration.buffer.flush
   end
 
+  def test_a_start_while_a_stop_is_in_progress_does_nothing
+    stub_lease
+    dispatcher = configure_web_only
+    stopper = Thread.current
+    during_stop = []
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |_request|
+      during_stop << dispatcher.start if Thread.current == stopper
+      {status: 200}
+    end
+    assert dispatcher.start
+    sleep(0.1)
+    HireFire.configuration.buffer.sample("web", "rqt", 5)
+
+    dispatcher.stop
+
+    assert_equal [false], during_stop
+    refute dispatcher.running?
+    assert_empty loop_threads("hirefire-dispatch")
+  end
+
+  def test_a_start_after_a_stop_in_the_same_process_keeps_what_was_buffered_in_between
+    stub_lease
+    bodies = capture_ingest_bodies
+    dispatcher = configure_web_only
+    assert dispatcher.start
+    dispatcher.stop
+    bodies.clear
+    HireFire.configuration.buffer.sample("web", "rqt", 7)
+
+    assert dispatcher.start
+
+    wait_until { bodies.any? { |body| body.first["metrics"]["rqt"].value?([7.0, 1]) } }
+  end
+
   def test_start_after_parent_stop_reinitializes_inherited_state
     stub_lease
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)

@@ -42,10 +42,7 @@ module HireFire
     end
 
     def token
-      value = @token.nil? ? ENV["HIREFIRE_TOKEN"] : @token
-      return nil if value.nil?
-
-      value = value.to_s.strip
+      value = (@token.nil? ? ENV["HIREFIRE_TOKEN"] : @token).to_s.strip
       value unless value.empty?
     end
 

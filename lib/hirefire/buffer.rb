@@ -63,7 +63,6 @@ module HireFire
           existing = series[timestamp] || EMPTY_BUCKET
           series[timestamp] = clamp_rqt_bucket(existing[:sum] + bucket[:sum], existing[:count] + bucket[:count])
         end
-        prune(series, now)
       end
     end
 

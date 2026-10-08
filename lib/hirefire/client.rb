@@ -96,18 +96,12 @@ module HireFire
     end
 
     def perform(uri, request)
-      retried = false
-      begin
-        reused = reusable?(uri)
-        connection(uri).request(request) { |response| read_body(response) }
-      rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError, Net::HTTPBadResponse, Net::ProtocolError => e
-        reset_connection
-        if reused && !retried && stale_connection?(e)
-          retried = true
-          retry
-        end
-        raise Errors::RequestError, "Network error (#{e.class}: #{e.message})."
-      end
+      reused = reusable?
+      connection(uri).request(request) { |response| read_body(response) }
+    rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError, Net::HTTPBadResponse, Net::ProtocolError => e
+      reset_connection
+      retry if reused && stale_connection?(e)
+      raise Errors::RequestError, "Network error (#{e.class}: #{e.message})."
     end
 
     def read_body(response)
@@ -123,9 +117,8 @@ module HireFire
     end
 
     def connection(uri)
-      return @http if reusable?(uri)
+      return @http if reusable?
 
-      reset_connection
       http = Net::HTTP.new(uri.host, uri.port, nil)
       http.use_ssl = uri.scheme == "https"
       http.open_timeout = @timeout
@@ -137,20 +130,16 @@ module HireFire
       @http = http
     end
 
-    def reusable?(uri)
-      @http&.started? && @owner_pid == Process.pid &&
-        @http.address == uri.host && @http.port == uri.port
+    def reusable?
+      @http&.started? && @owner_pid == Process.pid
     end
 
     def reset_connection
-      if @http && @owner_pid == Process.pid
-        @http.finish if @http.started?
-      end
+      @http&.finish if @owner_pid == Process.pid
     rescue IOError, SystemCallError
       nil
     ensure
       @http = nil
-      @owner_pid = nil
     end
 
     def stale_connection?(error)

@@ -84,7 +84,7 @@ namespace :test do
       coverage = (ENV["COVERAGE"] == "false") ? "false" : "true"
       puts "\n\n# Running #{task_name} tests\n\n"
       paths = test_files_for(task_name).map { |file| File.expand_path("test/hirefire/#{file}") }
-      command = "COVERAGE=#{coverage} appraisal #{task_name} ruby -Ilib:test -e '%w[#{paths.join(" ")}].each { |file| require file }'"
+      command = "COVERAGE=#{coverage} COVERAGE_CELL=#{task_name} appraisal #{task_name} ruby -Ilib:test -e '%w[#{paths.join(" ")}].each { |file| require file }'"
       exit(1) unless system(command)
     end
   end
@@ -96,6 +96,24 @@ task :test do
   appraisal_names.each do |task_name|
     Rake::Task["test:#{task_name}"].invoke
   end
+end
+
+COVERAGE_FLOOR = {"line" => 98.0, "branch" => 88.0}.freeze
+
+desc "Run tests for all libraries and versions with line and branch coverage, merged over all of them"
+task :coverage do
+  require "json"
+
+  rm_rf "coverage"
+  ENV["COVERAGE"] = "true"
+  appraisal_names.each do |task_name|
+    Rake::Task["test:#{task_name}"].invoke
+  end
+
+  result = JSON.parse(File.read("coverage/.last_run.json")).fetch("result")
+  puts "\nCoverage of lib over all appraisals: #{result["line"]}% of lines, #{result["branch"]}% of branches (coverage/index.html)"
+  below = COVERAGE_FLOOR.select { |kind, floor| result.fetch(kind) < floor }
+  abort "Coverage is below the floor: #{below.map { |kind, floor| "#{kind} #{result[kind]}% < #{floor}%" }.join(", ")}" if below.any?
 end
 
 desc "Run checks: standard"

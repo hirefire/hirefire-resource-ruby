@@ -39,6 +39,7 @@ Requires [Docker](https://www.docker.com/) and [mise](https://mise.jdx.dev/). Po
 - Run `bin/setup` to prepare the environment.
 - Run `bin/services up` / `bin/services down` to start / stop PostgreSQL, MongoDB, Redis, and RabbitMQ.
 - See `rake -T` for common tasks (`rake check`, `rake format`, `rake test`).
+- Run `rake coverage` to run every appraisal with line and branch coverage. It prints the merged totals and fails below the floor in the `Rakefile`.
 
 ## Release
 

@@ -839,26 +839,81 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     end
   end
 
-  def test_count_with_redis_client_loads_script_and_retries_on_noscript
-    skip "RedisClient not loaded" unless defined?(::RedisClient::CommandError)
-
-    sha = HireFire::Macro::Sidekiq::JobQueueSize::SERVER_SIDE_SCRIPT_SHA
-    script = HireFire::Macro::Sidekiq::JobQueueSize::SERVER_SIDE_SCRIPT
-    argv = [1_700_000_000, -1, 0, 0, 0, "default"]
-    evalsha_args = ["evalsha", sha, 0, *argv]
-
-    connection = mock("redis_client")
-    seq = sequence("noscript-redis-client")
+  def test_a_server_that_keeps_reporting_a_missing_script_is_asked_twice_and_no_more
     noscript = ::RedisClient::CommandError.new("NOSCRIPT No matching script. Please use EVAL.")
-    connection.expects(:call).with(*evalsha_args).in_sequence(seq).raises(noscript)
-    connection.expects(:call)
-      .with("script", "load", script)
-      .in_sequence(seq)
-      .returns("loaded-sha")
-    connection.expects(:call).with(*evalsha_args).in_sequence(seq).returns(11)
+    connection = mock("connection")
+    connection.stubs(:is_a?).returns(false)
+    connection.stubs(:is_a?).with(::Sidekiq::RedisClientAdapter::CompatClient).returns(true)
+    connection.expects(:call).with("evalsha", any_parameters).once.raises(noscript)
+    connection.expects(:call).with("eval", any_parameters).once.raises(noscript)
+    ::Sidekiq.stubs(:redis).yields(connection)
 
-    result = HireFire::Macro::Sidekiq::JobQueueSize.send(:count_with_redis_client, connection, *argv)
-    assert_equal 11, result
+    assert_raises(::RedisClient::CommandError) do
+      HireFire::Macro::Sidekiq.job_queue_size(:default, server: true)
+    end
+  end
+
+  def test_a_script_error_other_than_a_missing_script_is_raised_at_once
+    failure = ::RedisClient::CommandError.new("ERR Error running script")
+    connection = mock("connection")
+    connection.stubs(:is_a?).returns(false)
+    connection.stubs(:is_a?).with(::Sidekiq::RedisClientAdapter::CompatClient).returns(true)
+    connection.expects(:call).with("evalsha", any_parameters).once.raises(failure)
+    ::Sidekiq.stubs(:redis).yields(connection)
+
+    assert_raises(::RedisClient::CommandError) do
+      HireFire::Macro::Sidekiq.job_queue_size(:default, server: true)
+    end
+  end
+
+  def test_the_server_script_is_exact_up_to_its_member_budget
+    seed_due_scheduled(10_000)
+    options = {server: true, skip_retries: true, skip_working: true}
+
+    assert_equal 10_000, HireFire::Macro::Sidekiq.job_queue_size(:default, **options)
+    assert_equal 0, HireFire::Macro::Sidekiq.job_queue_size(:mailer, **options)
+  end
+
+  def test_the_server_script_over_its_member_budget_counts_every_member_it_did_not_read
+    seed_due_scheduled(12_000)
+    seed_due_scheduled(11_000, set: "retry")
+    scheduled = {server: true, skip_retries: true, skip_working: true}
+    retries = {server: true, skip_scheduled: true, skip_working: true}
+
+    before = zrange_calls
+    assert_equal 12_000, HireFire::Macro::Sidekiq.job_queue_size(:default, **scheduled)
+    assert_equal 11, zrange_calls - before
+    assert_equal 2_000, HireFire::Macro::Sidekiq.job_queue_size(:mailer, **scheduled)
+    assert_equal 12_000, HireFire::Macro::Sidekiq.job_queue_size(**scheduled)
+    assert_equal 500, HireFire::Macro::Sidekiq.job_queue_size(:mailer, max_scheduled: 500, **scheduled)
+    assert_equal 2_000, HireFire::Macro::Sidekiq.job_queue_size(:mailer, max_scheduled: 2_000, **scheduled)
+    assert_equal 1_000, HireFire::Macro::Sidekiq.job_queue_size(:mailer, **retries)
+    assert_equal 11_000, HireFire::Macro::Sidekiq.job_queue_size(:default, **retries)
+  end
+
+  def test_the_server_script_does_not_hold_redis_for_long_on_a_large_due_set
+    seed_due_scheduled(500_000)
+    pinger = RedisClient.new(url: ENV.fetch("REDIS_URL"))
+    slowest = 0.0
+    running = true
+    thread = Thread.new do
+      while running
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        pinger.call("PING")
+        elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+        slowest = elapsed if elapsed > slowest
+        sleep(0.005)
+      end
+    end
+    sleep(0.2)
+    size = HireFire::Macro::Sidekiq.job_queue_size(:default, server: true, skip_retries: true, skip_working: true)
+    running = false
+    thread.join
+
+    assert_equal 500_000, size
+    assert_operator slowest, :<, 0.1
+  ensure
+    pinger&.close
   end
 
   def test_server_lookup_recovers_from_flushed_scripts_end_to_end
@@ -1115,13 +1170,13 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     Sidekiq.redis { |connection| connection.call("info", "commandstats") }[/cmdstat_zrange:calls=(\d+)/, 1].to_i
   end
 
-  def seed_due_scheduled(count, queue: "default")
+  def seed_due_scheduled(count, queue: "default", set: "schedule")
     script = <<~LUA
       for i = 1, tonumber(ARGV[1]) do
-        redis.call("zadd", "schedule", ARGV[2], '{"class":"SampleWorker","args":[],"queue":"' .. ARGV[3] .. '","jid":"' .. i .. '"}')
+        redis.call("zadd", ARGV[4], ARGV[2], '{"class":"SampleWorker","args":[],"queue":"' .. ARGV[3] .. '","jid":"' .. i .. '"}')
       end
     LUA
-    Sidekiq.redis { |connection| connection.call("eval", script, 0, count, Time.now.to_f - 60, queue) }
+    Sidekiq.redis { |connection| connection.call("eval", script, 0, count, Time.now.to_f - 60, queue, set) }
   end
 
   def stub_due_cache_const(name, value)

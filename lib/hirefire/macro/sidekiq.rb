@@ -192,8 +192,9 @@ module HireFire
              return size
           end
 
-          local function set_size(queues, set, now, max)
+          local function set_size(queues, set, now, max, budget)
              local size = 0
+             local walked = 0
              local limit = 1000
              local cursor = 0
              local jobs
@@ -210,6 +211,18 @@ module HireFire
                    if tonumber(jobs[i + 1]) > now then
                       return size
                    end
+
+                   if walked >= budget then
+                      size = size + redis.call("zcount", set, "-inf", ARGV[1]) - walked
+
+                      if max >= 0 and size > max then
+                         return max
+                      end
+
+                      return size
+                   end
+
+                   walked = walked + 1
 
                    local ok, job = pcall(cjson_decode, jobs[i])
 
@@ -253,20 +266,21 @@ module HireFire
           local skip_scheduled = tonumber(ARGV[3]) == 1
           local skip_retries   = tonumber(ARGV[4]) == 1
           local skip_working   = tonumber(ARGV[5]) == 1
+          local budget         = tonumber(ARGV[6])
 
           local queues = {}
-          for i = 6, #ARGV do
+          for i = 7, #ARGV do
              queues[ARGV[i]] = true
           end
 
           local size = enqueued_size(queues)
 
           if not skip_scheduled then
-             size = size + set_size(queues, "schedule", now, max_scheduled)
+             size = size + set_size(queues, "schedule", now, max_scheduled, budget)
           end
 
           if not skip_retries then
-             size = size + set_size(queues, "retry", now, -1)
+             size = size + set_size(queues, "retry", now, -1, budget)
           end
 
           if not skip_working then
@@ -277,6 +291,7 @@ module HireFire
         LUA
 
         SERVER_SIDE_SCRIPT_SHA = Digest::SHA1.hexdigest(SERVER_SIDE_SCRIPT).freeze
+        SERVER_WALK_MEMBER_BUDGET = 10_000
 
         def call(*queues, server: false, **options)
           require "sidekiq/api"
@@ -327,9 +342,9 @@ module HireFire
             skip_working = skip_working ? 1 : 0
 
             if defined?(::Sidekiq::RedisClientAdapter::CompatClient) && connection.is_a?(::Sidekiq::RedisClientAdapter::CompatClient)
-              count_with_redis_client(connection, now, max_scheduled, skip_scheduled, skip_retries, skip_working, *queues)
+              count_with_redis_client(connection, now, max_scheduled, skip_scheduled, skip_retries, skip_working, SERVER_WALK_MEMBER_BUDGET, *queues)
             elsif defined?(::Redis) && connection.is_a?(::Redis)
-              count_with_redis(connection, now, max_scheduled, skip_scheduled, skip_retries, skip_working, *queues)
+              count_with_redis(connection, now, max_scheduled, skip_scheduled, skip_retries, skip_working, SERVER_WALK_MEMBER_BUDGET, *queues)
             else
               raise "Unsupported Redis connection type: #{connection.class}"
             end
@@ -350,12 +365,9 @@ module HireFire
         def count_with_redis_client(connection, *args)
           connection.call("evalsha", SERVER_SIDE_SCRIPT_SHA, 0, *args)
         rescue RedisClient::CommandError => e
-          if e.message.include?("NOSCRIPT")
-            connection.call("script", "load", SERVER_SIDE_SCRIPT)
-            retry
-          else
-            raise
-          end
+          raise unless e.message.include?("NOSCRIPT")
+
+          connection.call("eval", SERVER_SIDE_SCRIPT, 0, *args)
         end
       end
     end

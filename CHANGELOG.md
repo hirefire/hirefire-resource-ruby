@@ -60,6 +60,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Bunny samples fail within five seconds when RabbitMQ does not complete the handshake.
 - Sidekiq job queue latency ignores malformed timestamps instead of treating them as the Unix epoch, and treats a future timestamp as zero.
 - Sidekiq `server: true` counts scheduled jobs that become due in the current second, and skips corrupt schedule or retry members instead of aborting the sample.
+- Sidekiq `server: true` reads at most 10,000 scheduled and 10,000 retry jobs per sample and counts the due jobs beyond that as waiting. 1.x read both sets to the end while Redis served no other client.
 - Good Job latency orders by the earlier of scheduled and created time so immediate jobs are not sorted last.
 - Good Job 3.0 to 3.15 no longer queries a discard column that those versions do not have.
 - Resque all-queues size uses Resque's queue list instead of scanning Redis with `KEYS`.

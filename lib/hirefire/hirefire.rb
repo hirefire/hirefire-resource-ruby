@@ -20,6 +20,7 @@ module HireFire
   def reset
     @configuration&.stop_dispatcher
     Plan.release_macros
+    HANDOFF_LOCK.synchronize { @handoffs = nil }
     @configuration = nil
   end
 
@@ -32,6 +33,7 @@ module HireFire
   end
 
   def after_fork_in_child
+    @handoffs = @handoff_watch = nil
     if configuration.prefork_web_handoff?
       return unless configuration.token
 
@@ -43,10 +45,14 @@ module HireFire
     Log.safe(configuration.logger, :error, "[HireFire] After-fork restart failed: #{e.message}")
   end
 
-  def after_fork_in_parent
+  def after_fork_in_parent(child)
     return unless configuration.prefork_web_handoff?
 
-    configuration.stop_dispatcher(flush: false)
+    HANDOFF_LOCK.synchronize do
+      configuration.stop_dispatcher(flush: false)
+      (@handoffs ||= []) << child
+      @handoff_watch ||= watch_handoffs
+    end
   rescue => e
     Log.safe(configuration.logger, :error, "[HireFire] After-fork parent stop failed: #{e.message}")
   end
@@ -57,14 +63,49 @@ module HireFire
       if pid == 0
         HireFire.after_fork_in_child
       else
-        HireFire.after_fork_in_parent
+        HireFire.after_fork_in_parent(pid)
       end
       pid
     end
   end
   private_constant :ForkHook
 
+  HANDOFF_LOCK = Mutex.new
+  private_constant :HANDOFF_LOCK
+
   private
+
+  def watch_handoffs
+    thread = Thread.new do
+      sleep(Dispatcher::TICK) until handoffs_settled?
+    rescue => e
+      HANDOFF_LOCK.synchronize { @handoffs = @handoff_watch = nil }
+      Log.safe(configuration.logger, :error, "[HireFire] After-fork resume failed: #{e.message}")
+    end
+    thread.name = "hirefire-handoff"
+    thread
+  end
+
+  def handoffs_settled?
+    HANDOFF_LOCK.synchronize do
+      if @handoffs && !configuration.dispatcher.running?
+        return false if @handoffs.keep_if { |child| process_alive?(child) }.any?
+
+        start_if_token
+      end
+      @handoffs = @handoff_watch = nil
+      true
+    end
+  end
+
+  def process_alive?(pid)
+    Process.kill(0, pid)
+    true
+  rescue Errno::ESRCH
+    false
+  rescue Errno::EPERM
+    true
+  end
 
   def start_if_token
     return unless configuration.token

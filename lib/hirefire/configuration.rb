@@ -131,7 +131,7 @@ module HireFire
     end
 
     def prefork_web_handoff?
-      rqt_enabled?
+      !@http_active && HireFire::Identity.platform_http_role?
     end
 
     def warn_plain_http_data_url_once(host)

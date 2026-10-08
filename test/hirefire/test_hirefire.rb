@@ -213,7 +213,7 @@ class HireFireTest < Minitest::Test
       flush_args << flush
     end
 
-    HireFire.after_fork_in_parent
+    HireFire.after_fork_in_parent(Process.pid)
 
     assert_equal [false], flush_args
   ensure
@@ -233,7 +233,7 @@ class HireFireTest < Minitest::Test
       called = true
     end
 
-    HireFire.after_fork_in_parent
+    HireFire.after_fork_in_parent(Process.pid)
     refute called, "job-only parent must not stop_dispatcher on fork"
   ensure
     HireFire.reset
@@ -248,7 +248,7 @@ class HireFireTest < Minitest::Test
       raise "stop failed"
     end
 
-    HireFire.after_fork_in_parent
+    HireFire.after_fork_in_parent(Process.pid)
 
     assert_includes log.string, "After-fork parent stop failed"
     assert_includes log.string, "stop failed"
@@ -377,5 +377,145 @@ class HireFireTest < Minitest::Test
     assert_equal "stopped_from_running", status
   ensure
     HireFire.reset
+  end
+
+  def test_a_web_process_that_forks_a_helper_reports_again_once_the_helper_is_gone
+    skip "Process.fork unavailable" unless Process.respond_to?(:fork)
+    boot_web_process
+
+    with_tick(0.01) do
+      pid = Process.fork { exit!(0) }
+      Process.wait(pid)
+
+      wait_until { HireFire.configuration.dispatcher.running? }
+      wait_until { Thread.list.none? { |thread| thread.name == "hirefire-handoff" } }
+    end
+  end
+
+  def test_a_web_process_that_handed_over_stays_stopped_while_its_child_lives
+    skip "Process.fork unavailable" unless Process.respond_to?(:fork)
+    boot_web_process
+
+    with_tick(0.01) do
+      hold, release = IO.pipe
+      pids = Array.new(2) do
+        Process.fork do
+          release.close
+          hold.read
+          exit!(0)
+        end
+      end
+      hold.close
+      sleep(0.1)
+      refute HireFire.configuration.dispatcher.running?
+
+      release.close
+      pids.each { |pid| Process.wait(pid) }
+      wait_until { HireFire.configuration.dispatcher.running? }
+    end
+  end
+
+  def test_a_web_process_that_has_served_a_request_keeps_reporting_when_it_forks_and_its_child_reports_nothing
+    skip "Process.fork unavailable" unless Process.respond_to?(:fork)
+    boot_web_process
+    HireFire::Middleware.new(->(_env) { [200, {}, []] }).call("HTTP_X_REQUEST_START" => "t=#{Time.now.to_f}")
+
+    read_io, write_io = IO.pipe
+    pid = Process.fork do
+      read_io.close
+      write_io.write(HireFire.configuration.dispatcher.running? ? "running" : "stopped")
+      write_io.close
+      exit!(0)
+    end
+    write_io.close
+    child = read_io.read
+    Process.wait(pid)
+
+    assert_equal "stopped", child
+    assert HireFire.configuration.dispatcher.running?
+    assert_empty Thread.list.select { |thread| thread.name == "hirefire-handoff" }
+  end
+
+  def test_a_reset_after_a_handover_is_not_undone_when_the_child_is_gone
+    skip "Process.fork unavailable" unless Process.respond_to?(:fork)
+    boot_web_process
+
+    with_tick(0.01) do
+      pid = Process.fork { exit!(0) }
+      HireFire.reset
+      Process.wait(pid)
+
+      wait_until { Thread.list.none? { |thread| thread.name == "hirefire-handoff" } }
+      refute HireFire.configuration.dispatcher.running?
+    end
+  end
+
+  def test_a_parent_that_started_again_on_its_own_is_left_alone
+    skip "Process.fork unavailable" unless Process.respond_to?(:fork)
+    boot_web_process
+
+    with_tick(0.01) do
+      hold, release = IO.pipe
+      pid = Process.fork do
+        release.close
+        hold.read
+        exit!(0)
+      end
+      hold.close
+      refute HireFire.configuration.dispatcher.running?
+      HireFire::Dispatcher.any_instance.expects(:start).once.returns(true)
+      HireFire::Dispatcher.any_instance.stubs(:running?).returns(true)
+
+      HireFire.configuration.dispatcher.start
+      wait_until { Thread.list.none? { |thread| thread.name == "hirefire-handoff" } }
+    ensure
+      release&.close
+      Process.wait(pid) if pid
+    end
+  end
+
+  def test_a_handover_applies_only_to_a_platform_web_process_that_has_not_served_a_request
+    ENV["DYNO"] = "worker.1"
+    refute HireFire.configuration.prefork_web_handoff?
+
+    ENV["DYNO"] = "web.1"
+    assert HireFire.configuration.prefork_web_handoff?
+
+    HireFire.configuration.mark_http_active!
+    refute HireFire.configuration.prefork_web_handoff?
+
+    ENV["DYNO"] = nil
+    refute HireFire.configuration.prefork_web_handoff?
+  end
+
+  private
+
+  def boot_web_process
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["DYNO"] = "web.1"
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "false"})
+    HireFire.boot
+    assert HireFire.configuration.dispatcher.running?
+  end
+
+  def with_tick(seconds)
+    original = HireFire::Dispatcher::TICK
+    HireFire::Dispatcher.send(:remove_const, :TICK)
+    HireFire::Dispatcher.const_set(:TICK, seconds)
+    yield
+  ensure
+    HireFire::Dispatcher.send(:remove_const, :TICK)
+    HireFire::Dispatcher.const_set(:TICK, original)
+  end
+
+  def wait_until(seconds = 3)
+    (seconds / 0.005).to_i.times do
+      return if yield
+
+      sleep(0.005)
+    end
+    flunk "the condition was not met within #{seconds} seconds"
   end
 end

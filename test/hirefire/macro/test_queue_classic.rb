@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "support/child_process"
 
 require_relative "../../env/rails_queue_classic_4/config/environment"
 
 class HireFire::Macro::QCTest < Minitest::Test
+  include ChildProcess
+
   LATENCY_DELTA = 2
 
   def setup
@@ -32,6 +35,31 @@ class HireFire::Macro::QCTest < Minitest::Test
     assert_in_delta 120, latency, LATENCY_DELTA
     assert_in_delta 60, HireFire::Macro::QC.job_queue_latency(:default), LATENCY_DELTA
     assert_in_delta 120, HireFire::Macro::QC.job_queue_latency(:default, :mailer), LATENCY_DELTA
+  end
+
+  def test_without_active_record_the_macro_reads_through_the_queue_classic_connection
+    QC::Queue.new("default").enqueue_at(1.minute.ago.to_i, "BasicJob.perform")
+    QC::Queue.new("mailer").enqueue_at(2.minutes.ago.to_i, "BasicJob.perform")
+    QC::Queue.new("mailer").enqueue_at(3.minutes.ago.to_i, "BasicJob.perform")
+    QC::Queue.new("mailer").enqueue_at(1.minute.from_now.to_i, "BasicJob.perform")
+    ActiveRecord::Base.connection.execute(
+      "UPDATE #{::QC.table_name} SET locked_at = now(), locked_by = pg_backend_pid() WHERE scheduled_at < now() - interval '150 seconds'"
+    )
+
+    active_record, sizes, working, latencies = without_active_record(<<~RUBY)
+      macro = HireFire::Macro::QC
+      [
+        defined?(ActiveRecord).inspect,
+        [macro.job_queue_size, macro.job_queue_size(:default), macro.job_queue_size(:default, :mailer), macro.job_queue_size(skip_working: true), macro.job_queue_size(:mailer, skip_working: true)],
+        [macro.job_queue_working, macro.job_queue_working(:default), macro.job_queue_working(:default, :mailer)],
+        [macro.job_queue_latency, macro.job_queue_latency(:default), macro.job_queue_latency(:default, :mailer), macro.job_queue_latency(:none)]
+      ]
+    RUBY
+
+    assert_equal "nil", active_record
+    assert_equal [3, 1, 3, 2, 1], sizes
+    assert_equal [1, 0, 1], working
+    [120, 60, 120, 0].zip(latencies) { |expected, latency| assert_in_delta expected, latency, LATENCY_DELTA }
   end
 
   def test_job_queue_latency_with_scheduled_job
@@ -352,6 +380,17 @@ class HireFire::Macro::QCTest < Minitest::Test
   end
 
   private
+
+  def without_active_record(code)
+    database = Rails.configuration.database_configuration[Rails.env]
+    url = "postgres://#{database["username"]}:#{database["password"]}@#{database["host"]}:#{database["port"]}/#{database["database"]}"
+
+    ruby_child(<<~RUBY, "DATABASE_URL" => url)
+      require "queue_classic"
+      require "hirefire-resource"
+      #{code}
+    RUBY
+  end
 
   def prepare_database
     db_config = Rails.configuration.database_configuration[Rails.env]

@@ -14,9 +14,8 @@ class HireFire::Macro::ResqueTest < Minitest::Test
   end
 
   def test_library_loaded_is_true_when_resque_gem_is_loaded
-    assert HireFire::Plan.library_loaded?("resque")
-    assert HireFire::Plan.executable?("resque")
-    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
+    assert HireFire::Macro::Resque.library_loaded?
+    assert HireFire::Plan.any_library_loaded?
   end
 
   def test_job_queue_latency_unsupported
@@ -247,7 +246,7 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     Resque.enqueue_to(:default, BasicJob)
     enqueue_to_working_with_queue :default, BasicJob
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "resque",
       "strategy" => "jqs",
@@ -268,7 +267,7 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     Resque.enqueue_to(:default, BasicJob)
     enqueue_to_working_with_queue :default, BasicJob
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "resque",
       "strategy" => "jqs",

@@ -1510,27 +1510,17 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     ])
 
     saw_active = false
-    owner = HireFire::Plan.singleton_class
-    original = owner.instance_method(:execute)
-    owner.define_method(:execute) do |_entry, _live = nil|
+    HireFire::Macro::Sidekiq.stubs(:job_queue_size).with do |*_queues, **_options|
       saw_active = Cache.sample_active?
-      HireFire::Macro::Sidekiq.job_queue_size(
-        :default,
-        skip_retries: true,
-        skip_working: true
-      )
-      raise "sampler boom"
-    end
+      Cache.size("schedule", ["default"])
+      true
+    end.raises(Exception, "sampler boom")
 
-    error = assert_raises(RuntimeError) { session.sample }
+    error = assert_raises(Exception) { session.sample }
     assert_match(/sampler boom/, error.message)
-    assert saw_active, "dispatcher must open a sample wave before plan execute"
-    refute Cache.sample_active?, "ensure must end_sample! after raising sampler"
-    assert_nil Cache.peek("schedule"), "ensure must clear registry after raise"
-  ensure
-    if defined?(original) && original
-      HireFire::Plan.singleton_class.define_method(:execute, original)
-    end
+    assert saw_active, "the sample wave must be open while a plan entry is sampled"
+    refute Cache.sample_active?, "the wave must end after an entry raised"
+    assert_nil Cache.peek("schedule"), "the registry must be cleared after an entry raised"
   end
 
   def test_dispatcher_sample_job_queues_amortizes_across_plan_entries

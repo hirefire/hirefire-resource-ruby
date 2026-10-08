@@ -7,35 +7,6 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
     HireFire.configuration.buffer
   end
 
-  def test_sample_job_queue
-    HireFire.configure do |config|
-      config.dyno(:worker) { 42 }
-      config.dyno(:mailer) { 18 }
-    end
-
-    job_queues = HireFire.configuration.job_queues
-    job_queues.sample_job_queue(job_queues.find_by_name("worker"), "jql")
-    job_queues.sample_job_queue(job_queues.find_by_name("mailer"), "jqs")
-
-    data = buffer.flush
-    assert_equal 42, data["worker"]["jql"].values.first
-    assert_equal 18, data["mailer"]["jqs"].values.first
-  end
-
-  def test_sample_job_queue_rejects_unknown_strategy
-    log = StringIO.new
-    HireFire.configure do |config|
-      config.dyno(:worker) { 42 }
-    end
-    HireFire.configuration.logger = Logger.new(log)
-    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
-
-    HireFire.configuration.job_queues.sample_job_queue(job_queue, "rpm")
-
-    assert_empty buffer.flush
-    assert_includes log.string, "Unknown job-queue strategy"
-  end
-
   def test_find_by_name_returns_nil_for_missing
     HireFire.configure { |config| config.dyno(:worker) { 1 } }
     assert_nil HireFire.configuration.job_queues.find_by_name("missing")
@@ -49,142 +20,8 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
     assert_same found, HireFire.configuration.job_queues.find_by_name("WORKER")
   end
 
-  def test_latest_sample_wins_across_multiple_samples
-    values = [5, 9].each
-    HireFire.configure do |config|
-      config.dyno(:worker) { values.next }
-    end
-
-    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
-    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql")
-    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql")
-
-    data = buffer.flush
-    assert_equal 9, data["worker"]["jql"].values.first
-  end
-
-  def test_raising_sampler_is_isolated_and_logged
-    log = StringIO.new
-    HireFire.configure do |config|
-      config.dyno(:worker) { raise "Redis down" }
-      config.dyno(:mailer) { 18 }
-    end
-    HireFire.configuration.logger = Logger.new(log)
-
-    job_queues = HireFire.configuration.job_queues
-    job_queues.sample_job_queue(job_queues.find_by_name("worker"), "jql")
-    job_queues.sample_job_queue(job_queues.find_by_name("mailer"), "jql")
-
-    data = buffer.flush
-    assert_equal 18, data["mailer"]["jql"].values.first
-    refute data.key?("worker")
-    assert_includes log.string, "Redis down"
-  end
-
-  def test_raising_sampler_redacts_url_userinfo
-    log = StringIO.new
-    HireFire.configure do |config|
-      config.dyno(:worker) { raise "redis://user:secret@localhost:6379/0 down" }
-    end
-    HireFire.configuration.logger = Logger.new(log)
-    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
-    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql")
-
-    refute_includes log.string, "secret"
-    assert_includes log.string, "://***@"
-  end
-
-  def test_raising_sampler_logs_plan_name_override
-    log = StringIO.new
-    HireFire.configure do |config|
-      config.dyno(:worker) { raise "Redis down" }
-    end
-    HireFire.configuration.logger = Logger.new(log)
-    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
-
-    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql", name: "mail")
-
-    assert_includes log.string, '"mail"'
-    refute_includes log.string, '"worker"'
-    assert_includes log.string, "Redis down"
-  end
-
-  def test_invalid_sample_values_are_dropped_and_logged
-    log = StringIO.new
-    values = ["10", nil, -1, Float::INFINITY, Float::NAN, true, false, 7, 1.5].each
-    HireFire.configure do |config|
-      config.dyno(:worker) { values.next }
-    end
-    HireFire.configuration.logger = Logger.new(log)
-    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
-
-    7.times { HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql") }
-    assert_empty buffer.flush
-    assert_includes log.string, "expected a non-negative number"
-    assert_includes log.string, 'String("10")'
-    assert_includes log.string, 'Integer("-1")'
-
-    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql")
-    assert_equal 7, buffer.flush["worker"]["jql"].values.first
-
-    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql")
-    assert_in_delta 1.5, buffer.flush["worker"]["jql"].values.first
-  end
-
-  def test_a_raising_logger_does_not_escape_sampling
-    HireFire.configure do |config|
-      config.dyno(:worker) { raise "Redis down" }
-    end
-    raising_logger = Object.new
-    raising_logger.define_singleton_method(:error) { |*| raise IOError, "closed stream" }
-    HireFire.configuration.logger = raising_logger
-
-    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
-    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql")
-  end
-
-  def test_samples_write_to_the_owning_configuration_not_the_global
-    ENV["HIREFIRE_TOKEN"] = "old-token"
-    old = HireFire::Configuration.new
-    old.dyno(:worker) { 7 }
-    job_queue = old.job_queues.find_by_name("worker")
-
-    HireFire.reset
-    ENV["HIREFIRE_TOKEN"] = "new-token"
-    HireFire.configuration.dyno(:web)
-
-    old.job_queues.sample_job_queue(job_queue, "jql")
-
-    refute HireFire.configuration.buffer.flush.key?("worker")
-    assert_equal 7, old.buffer.flush.dig("worker", "jql").values.first
-  end
-
-  def test_sample_job_queue_reports_under_explicit_name
-    HireFire.configure do |config|
-      config.dyno(:Worker) { 4 }
-    end
-    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
-
-    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jqs", name: "worker")
-
-    data = HireFire.configuration.buffer.flush
-    assert_equal 4, data.dig("worker", "jqs")&.values&.first
-    refute data.key?("Worker")
-  end
-
-  def test_live_gate_drops_a_sample_that_returns_after_stop
-    HireFire.configure do |config|
-      config.dyno(:worker) { 9 }
-    end
-    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
-
-    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql", live: -> { false })
-
-    assert_empty HireFire.configuration.buffer.flush
-  end
-
   def test_enumerable
-    job_queues = HireFire::Source::JobQueues.new(HireFire.configuration)
+    job_queues = HireFire::Source::JobQueues.new
     job_queues << HireFire::Source::JobQueue.new(:worker) { 1 }
     job_queues << HireFire::Source::JobQueue.new(:mailer) { 2 }
 
@@ -192,41 +29,12 @@ class HireFire::Source::JobQueuesTest < Minitest::Test
   end
 
   def test_any_and_count
-    job_queues = HireFire::Source::JobQueues.new(HireFire.configuration)
+    job_queues = HireFire::Source::JobQueues.new
     refute job_queues.any?
     assert_equal 0, job_queues.count
 
     job_queues << HireFire::Source::JobQueue.new(:worker) { 1 }
     assert job_queues.any?
     assert_equal 1, job_queues.count
-  end
-
-  def test_bigdecimal_and_rational_samples_are_coerced_to_json_numbers
-    require "bigdecimal"
-    HireFire.configure do |config|
-      config.dyno(:worker) { BigDecimal("1.5") }
-      config.dyno(:mailer) { Rational(1, 4) }
-    end
-
-    job_queues = HireFire.configuration.job_queues
-    job_queues.sample_job_queue(job_queues.find_by_name("worker"), "jql")
-    job_queues.sample_job_queue(job_queues.find_by_name("mailer"), "jql")
-
-    data = buffer.flush
-    assert_equal 1.5, data["worker"]["jql"].values.first
-    assert_equal 0.25, data["mailer"]["jql"].values.first
-    payload = [{"name" => "worker", "metrics" => {"jql" => data["worker"]["jql"].transform_keys(&:to_s)}}]
-    assert_includes JSON.generate(payload), "1.5"
-  end
-
-  def test_zero_sample_is_accepted
-    HireFire.configure do |config|
-      config.dyno(:worker) { 0 }
-    end
-
-    job_queue = HireFire.configuration.job_queues.find_by_name("worker")
-    HireFire.configuration.job_queues.sample_job_queue(job_queue, "jql")
-
-    assert_equal 0, buffer.flush["worker"]["jql"].values.first
   end
 end

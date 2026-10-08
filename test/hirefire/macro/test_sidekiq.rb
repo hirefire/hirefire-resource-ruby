@@ -24,9 +24,8 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   end
 
   def test_library_loaded_is_true_when_sidekiq_gem_is_loaded
-    assert HireFire::Plan.library_loaded?("sidekiq")
-    assert HireFire::Plan.executable?("sidekiq")
-    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
+    assert HireFire::Macro::Sidekiq.library_loaded?
+    assert HireFire::Plan.any_library_loaded?
   end
 
   def flush_sidekiq_redis
@@ -501,7 +500,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue_working(queue: "default", run_at: Time.now.to_i - 45)
     enqueue
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jqs",
@@ -530,7 +529,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     plant_queue_job("default", enqueued_at: "not-a-time")
     enqueue_working(queue: "default", run_at: Time.now.to_i - 20)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jql",
@@ -550,7 +549,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
     enqueue_working(queue: "default", run_at: Time.now.to_i - 20)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jql",
@@ -571,7 +570,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue_working(queue: "default", run_at: Time.now.to_i - 30)
     enqueue_working(queue: "mailer", run_at: Time.now.to_i - 40)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jqs",
@@ -666,7 +665,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue
     enqueue_working(queue: "default", run_at: Time.now.to_i - 30)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jqs",
@@ -686,7 +685,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     enqueue
     enqueue_working(queue: "default", run_at: Time.now.to_i - 30)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jqs",
@@ -1063,7 +1062,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
     stub_due_cache_const(:WALK_MEMBER_BUDGET, 5) do
-      HireFire::Plan.execute(
+      sample_plan(
         "name" => "worker",
         "adapter" => "sidekiq",
         "strategy" => "jqs",

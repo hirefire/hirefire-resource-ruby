@@ -25,9 +25,8 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
   end
 
   def test_library_loaded_is_true_when_good_job_gem_is_loaded
-    assert HireFire::Plan.library_loaded?("good_job")
-    assert HireFire::Plan.executable?("good_job")
-    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
+    assert HireFire::Macro::GoodJob.library_loaded?
+    assert HireFire::Plan.any_library_loaded?
   end
 
   def test_job_queue_latency_without_jobs
@@ -408,7 +407,7 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     mark_running(running_id, at: Time.now)
     BasicJob.perform_later
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "good_job",
       "strategy" => "jqs",
@@ -438,7 +437,7 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     mark_running(running_id, at: Time.now)
     BasicJob.perform_later
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "good_job",
       "strategy" => "jqs",
@@ -459,7 +458,7 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     running_id = BasicJob.perform_later.job_id
     mark_running(running_id, at: Time.now)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "good_job",
       "strategy" => "jql",
@@ -482,7 +481,7 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     mark_running(default_id, at: Time.now)
     mark_running(mailer_id, at: Time.now)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "good_job",
       "strategy" => "jqs",

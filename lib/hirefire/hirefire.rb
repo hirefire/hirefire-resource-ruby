@@ -19,7 +19,7 @@ module HireFire
 
   def reset
     @configuration&.stop_dispatcher
-    Plan.release_macros
+    Plan.release_macros(configuration.logger)
     HANDOFF_LOCK.synchronize { @handoffs = nil }
     @configuration = nil
   end

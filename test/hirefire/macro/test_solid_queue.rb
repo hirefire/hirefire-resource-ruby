@@ -24,9 +24,8 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
   end
 
   def test_library_loaded_is_true_when_solid_queue_gem_is_loaded
-    assert HireFire::Plan.library_loaded?("solid_queue")
-    assert HireFire::Plan.executable?("solid_queue")
-    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
+    assert HireFire::Macro::SolidQueue.library_loaded?
+    assert HireFire::Plan.any_library_loaded?
   end
 
   def test_job_queue_latency_without_jobs
@@ -379,7 +378,7 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     insert_claimed_job(BasicJob)
     BasicJob.perform_later
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "solid_queue",
       "strategy" => "jqs",
@@ -408,7 +407,7 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     insert_claimed_job(BasicJob)
     BasicJob.perform_later
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "solid_queue",
       "strategy" => "jqs",
@@ -428,7 +427,7 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
 
     insert_claimed_job(BasicJob)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "solid_queue",
       "strategy" => "jql",
@@ -449,7 +448,7 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     insert_claimed_job(BasicJob)
     insert_claimed_job(BasicJob, queue: :mailer)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "solid_queue",
       "strategy" => "jqs",

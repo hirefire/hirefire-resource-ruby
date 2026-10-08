@@ -846,14 +846,12 @@ class HireFire::DispatcherTest < Minitest::Test
   def test_plan_adapter_overrides_local_sampler
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
+    mod.define_singleton_method(:library_loaded?) { true }
     mod.define_singleton_method(:job_queue_latency) { |*_queues, **_options| 9.9 }
 
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "sidekiq", "queues" => ["default"], "options" => {}}
@@ -870,8 +868,6 @@ class HireFire::DispatcherTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_strategy_only_plan_uses_local_sampler
@@ -922,9 +918,6 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def test_known_unloaded_adapter_skips_without_local_fallback
-    HireFire::Plan.stubs(:executable?).with("sidekiq").returns(false)
-    HireFire::Plan.stubs(:known_adapter?).with("sidekiq").returns(true)
-
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "sidekiq", "queues" => [], "options" => {}}
     ])
@@ -944,6 +937,7 @@ class HireFire::DispatcherTest < Minitest::Test
     calls = 0
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
+    mod.define_singleton_method(:library_loaded?) { true }
     mod.extend(HireFire::Plan::SizeOnly)
     mod.define_singleton_method(:job_queue_size) { |*_queues, **_options| 1 }
     mod.define_singleton_method(:job_queue_latency) do |*_queues, **_options|
@@ -952,11 +946,8 @@ class HireFire::DispatcherTest < Minitest::Test
     end
 
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("bunny" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("bunny" => -> { true }))
 
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "bunny", "queues" => ["default"], "options" => {}}
@@ -975,8 +966,6 @@ class HireFire::DispatcherTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_concurrent_start_during_stop_is_rejected_then_retryable_even_if_a_starter_wins_after_stopping_clears
@@ -1017,14 +1006,12 @@ class HireFire::DispatcherTest < Minitest::Test
   def test_plan_override_warns_once
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
+    mod.define_singleton_method(:library_loaded?) { true }
     mod.define_singleton_method(:job_queue_latency) { |*_queues, **_options| 1.0 }
 
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "sidekiq", "queues" => [], "options" => {}}
@@ -1041,8 +1028,6 @@ class HireFire::DispatcherTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_strategy_only_unknown_strategy_skips_and_logs
@@ -1102,18 +1087,13 @@ class HireFire::DispatcherTest < Minitest::Test
   def test_partial_plan_holds_and_samples_only_executable_entries
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
+    mod.define_singleton_method(:library_loaded?) { true }
     mod.define_singleton_method(:job_queue_latency) { |*_queues, **_options| 2.5 }
 
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge(
-      "sidekiq" => -> { true },
-      "resque" => -> { false }
-    ))
-    HireFire::Plan.stubs(:any_allowlisted_job_queue_library_loaded?).returns(true)
+    HireFire::Plan.stubs(:any_library_loaded?).returns(true)
 
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "sidekiq", "queues" => [], "options" => {}},
@@ -1132,14 +1112,10 @@ class HireFire::DispatcherTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_hold_demotion_logs_and_web_dispatch_continues
-    HireFire::Plan.stubs(:any_allowlisted_job_queue_library_loaded?).returns(true)
-    HireFire::Plan.stubs(:executable?).returns(false)
-    HireFire::Plan.stubs(:known_adapter?).returns(true)
+    HireFire::Plan.stubs(:any_library_loaded?).returns(true)
 
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "sidekiq", "queues" => [], "options" => {}}
@@ -1390,6 +1366,7 @@ class HireFire::DispatcherTest < Minitest::Test
     latency_calls = 0
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
+    mod.define_singleton_method(:library_loaded?) { true }
     mod.extend(HireFire::Plan::SizeOnly)
     mod.define_singleton_method(:job_queue_size) { |*_queues, **_options|
       size_calls += 1
@@ -1401,12 +1378,9 @@ class HireFire::DispatcherTest < Minitest::Test
     end
 
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("bunny" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("bunny" => -> { true }))
-    HireFire::Plan.stubs(:any_allowlisted_job_queue_library_loaded?).returns(true)
+    HireFire::Plan.stubs(:any_library_loaded?).returns(true)
 
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "bunny", "queues" => ["default"], "options" => {}},
@@ -1428,25 +1402,18 @@ class HireFire::DispatcherTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_unsupported_strategy_once_log_is_isolated_per_name_adapter_strategy
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
+    mod.define_singleton_method(:library_loaded?) { true }
     mod.extend(HireFire::Plan::SizeOnly)
     mod.define_singleton_method(:job_queue_size) { |*_queues, **_options| 1 }
 
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("bunny" => mod, "resque" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge(
-      "bunny" => -> { true },
-      "resque" => -> { true }
-    ))
 
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "bunny", "queues" => [], "options" => {}},
@@ -1463,8 +1430,6 @@ class HireFire::DispatcherTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_413_advances_watermark_without_repopulate
@@ -1580,8 +1545,7 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def test_a_plan_this_process_can_sample_keeps_the_grant_without_a_local_sampler
-    HireFire::Plan.stubs(:executable?).with("sidekiq").returns(true)
-    HireFire::Plan.stubs(:supports_strategy?).with("sidekiq", "jql").returns(true)
+    HireFire::Macro::Sidekiq.stubs(:library_loaded?).returns(true)
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "sidekiq", "queues" => ["default"], "options" => {}}
     ])
@@ -1592,8 +1556,7 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def test_an_adapter_that_lists_its_own_queues_keeps_the_grant_with_an_empty_queue_list
-    HireFire::Plan.stubs(:executable?).with("sidekiq").returns(true)
-    HireFire::Plan.stubs(:supports_strategy?).with("sidekiq", "jqs").returns(true)
+    HireFire::Macro::Sidekiq.stubs(:library_loaded?).returns(true)
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jqs", "adapter" => "sidekiq", "queues" => []}
     ])
@@ -1604,8 +1567,7 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def test_a_grant_is_dropped_when_its_only_entry_needs_queue_names_and_has_none
-    HireFire::Plan.stubs(:executable?).with("bunny").returns(true)
-    HireFire::Plan.stubs(:supports_strategy?).with("bunny", "jqs").returns(true)
+    HireFire::Macro::Bunny.stubs(:library_loaded?).returns(true)
     lease = stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jqs", "adapter" => "bunny", "queues" => [], "options" => {}}
     ])
@@ -1618,8 +1580,7 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def test_a_grant_is_dropped_when_its_only_entry_names_a_strategy_the_adapter_lacks
-    HireFire::Plan.stubs(:executable?).with("bunny").returns(true)
-    HireFire::Plan.stubs(:supports_strategy?).with("bunny", "jql").returns(false)
+    HireFire::Macro::Bunny.stubs(:library_loaded?).returns(true)
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "bunny", "queues" => ["default"], "options" => {}}
     ])
@@ -1630,8 +1591,6 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def test_a_grant_is_dropped_when_no_sampler_exists_and_the_adapter_is_not_loaded
-    HireFire::Plan.stubs(:executable?).returns(false)
-    HireFire::Plan.stubs(:known_adapter?).returns(true)
     stub_lease(granted: true, job_queues: [
       {"name" => "worker", "strategy" => "jql", "adapter" => "sidekiq", "queues" => [], "options" => {}}
     ])
@@ -1694,7 +1653,7 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def test_a_full_plan_of_unknown_adapters_warns_once_per_entry
-    assert_equal HireFire::Lease::MAX_JOB_QUEUES, HireFire::Dispatcher::WARN_MAP_LIMIT
+    assert_equal HireFire::Lease::MAX_JOB_QUEUES, HireFire::Once::LIMIT
     stub_lease(granted: true, job_queues: HireFire::Lease::MAX_JOB_QUEUES.times.map { |i|
       {"name" => "worker_#{i}", "strategy" => "jql", "adapter" => "nope", "queues" => [], "options" => {}}
     })
@@ -1814,7 +1773,7 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def test_a_process_with_no_sampler_and_no_job_library_runs_no_lease_loop
-    HireFire::Plan.stubs(:any_allowlisted_job_queue_library_loaded?).returns(false)
+    HireFire::Plan.stubs(:any_library_loaded?).returns(false)
     bodies = capture_ingest_bodies
     dispatcher = configure_web_only
 
@@ -1829,7 +1788,7 @@ class HireFire::DispatcherTest < Minitest::Test
   end
 
   def test_the_lease_loop_starts_once_a_sampler_is_registered_after_the_start
-    HireFire::Plan.stubs(:any_allowlisted_job_queue_library_loaded?).returns(false)
+    HireFire::Plan.stubs(:any_library_loaded?).returns(false)
     lease = stub_lease
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
     dispatcher = configure_web_only
@@ -2209,30 +2168,6 @@ class HireFire::DispatcherTest < Minitest::Test
 
   def with_tick(seconds, &block)
     with_dispatcher_const(:TICK, seconds, &block)
-  end
-
-  def plan_adapter(samples)
-    Module.new.tap do |adapter|
-      adapter.extend(HireFire::Plan::Hooks)
-      samples.each do |method_name, value|
-        adapter.define_singleton_method(method_name) { |*_queues, **_options| value.respond_to?(:call) ? value.call : value }
-      end
-    end
-  end
-
-  def with_plan_adapters(adapters)
-    original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
-    HireFire::Plan.send(:remove_const, :ADAPTERS)
-    HireFire::Plan.const_set(:ADAPTERS, original.merge(adapters))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge(adapters.transform_values { -> { true } }))
-    yield
-  ensure
-    HireFire::Plan.send(:remove_const, :ADAPTERS)
-    HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def inject_oversized_series(name, strategy)

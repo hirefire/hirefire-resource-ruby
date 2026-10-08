@@ -28,9 +28,8 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
   end
 
   def test_library_loaded_is_true_when_delayed_job_gem_is_loaded
-    assert HireFire::Plan.library_loaded?("delayed_job")
-    assert HireFire::Plan.executable?("delayed_job")
-    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
+    assert HireFire::Macro::Delayed::Job.library_loaded?
+    assert HireFire::Plan.any_library_loaded?
   end
 
   def test_job_queue_latency_without_jobs
@@ -357,7 +356,7 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     BasicJob.delay(queue: :default).perform.update(locked_at: Time.now, locked_by: "worker-1")
     BasicJob.delay(queue: :default).perform
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "delayed_job",
       "strategy" => "jqs",
@@ -386,7 +385,7 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     BasicJob.delay(queue: :default).perform.update(locked_at: Time.now, locked_by: "worker-1")
     BasicJob.delay(queue: :default).perform
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "delayed_job",
       "strategy" => "jqs",
@@ -406,7 +405,7 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
 
     BasicJob.delay(queue: :default).perform.update(locked_at: Time.now, locked_by: "worker-1")
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "delayed_job",
       "strategy" => "jql",
@@ -427,7 +426,7 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     BasicJob.delay(queue: :default).perform.update(locked_at: Time.now, locked_by: "worker-1")
     BasicJob.delay(queue: :mailer).perform.update(locked_at: Time.now, locked_by: "worker-2")
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "delayed_job",
       "strategy" => "jqs",

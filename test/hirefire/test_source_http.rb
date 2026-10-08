@@ -4,12 +4,12 @@ require "test_helper"
 
 class HireFire::Source::HTTPTest < Minitest::Test
   def test_name
-    collector = HireFire::Source::HTTP.new(:api)
+    collector = HireFire::Source::HTTP.new(:api, HireFire.configuration.buffer)
     assert_equal "api", collector.name
   end
 
   def test_sample_buffers_request_queue_time
-    collector = HireFire::Source::HTTP.new(:web)
+    collector = HireFire::Source::HTTP.new(:web, HireFire.configuration.buffer)
 
     Timecop.freeze Time.at(100) do
       collector.sample(25)

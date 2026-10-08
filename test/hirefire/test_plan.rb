@@ -8,12 +8,6 @@ class HireFire::PlanTest < Minitest::Test
     HireFire.configuration.logger = Logger.new(File::NULL)
   end
 
-  def test_known_adapters
-    assert HireFire::Plan.known_adapter?("sidekiq")
-    assert HireFire::Plan.known_adapter?("solid_queue")
-    refute HireFire::Plan.known_adapter?("unknown")
-  end
-
   def test_every_planned_adapter_takes_the_strategies_and_options_the_server_sends
     size_only = %w[resque bunny]
     waiting_only = %w[bunny]
@@ -36,22 +30,10 @@ class HireFire::PlanTest < Minitest::Test
     end
   end
 
-  def test_executable_requires_loaded_library
-    refute HireFire::Plan.executable?("not_a_real_adapter")
-  end
-
-  def test_known_strategy
-    assert HireFire::Plan.known_strategy?("jql")
-    assert HireFire::Plan.known_strategy?("jqs")
-    refute HireFire::Plan.known_strategy?("rpm")
-    refute HireFire::Plan.known_strategy?("wrk")
-  end
-
   def test_execute_skips_wrk_when_macro_lacks_job_queue_working
     buffer = HireFire.configuration.buffer
     buffer.flush
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| 7 }
     end
@@ -59,10 +41,8 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jqs",
@@ -76,15 +56,12 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_keeps_jqs_when_job_queue_working_raises
     buffer = HireFire.configuration.buffer
     buffer.flush
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| 9 }
       m.define_singleton_method(:job_queue_working) { |*_a| raise "wrk boom" }
@@ -92,13 +69,11 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jqs",
@@ -113,15 +88,12 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_still_samples_wrk_when_job_strategy_sample_invalid
     buffer = HireFire.configuration.buffer
     buffer.flush
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     working_called = false
     mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| -1 }
@@ -133,10 +105,8 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jqs",
@@ -151,15 +121,12 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_still_samples_wrk_when_job_strategy_raises
     buffer = HireFire.configuration.buffer
     buffer.flush
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     working_called = false
     mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| raise "jqs boom" }
@@ -171,13 +138,11 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jqs",
@@ -195,15 +160,12 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_drops_invalid_wrk_without_clearing_jqs
     buffer = HireFire.configuration.buffer
     buffer.flush
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| 4 }
       m.define_singleton_method(:job_queue_working) { |*_a| -2 }
@@ -211,10 +173,8 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jqs",
@@ -228,15 +188,12 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_samples_no_wrk_for_jqs_without_skip_working
     buffer = HireFire.configuration.buffer
     buffer.flush
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     working_calls = 0
     mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| 6 }
@@ -248,11 +205,9 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
     [nil, {}, {"skip_working" => false}, {"skip_working" => "true"}].each do |options|
-      HireFire::Plan.execute(
+      sample_plan(
         "name" => "worker",
         "adapter" => "sidekiq",
         "strategy" => "jqs",
@@ -268,15 +223,12 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_samples_wrk_for_jqs_with_skip_working
     buffer = HireFire.configuration.buffer
     buffer.flush
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| 6 }
       m.define_singleton_method(:job_queue_working) { |*_a| 2 }
@@ -284,10 +236,8 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jqs",
@@ -301,15 +251,12 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_samples_wrk_for_every_jql_entry
     buffer = HireFire.configuration.buffer
     buffer.flush
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_latency) { |*_a, **_o| 1.5 }
       m.define_singleton_method(:job_queue_working) { |*_a| 2 }
@@ -317,11 +264,9 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
     [nil, {}, {"skip_working" => false}].each do |options|
-      HireFire::Plan.execute(
+      sample_plan(
         "name" => "worker",
         "adapter" => "sidekiq",
         "strategy" => "jql",
@@ -336,31 +281,12 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
-  end
-
-  def test_supports_strategy_rejects_latency_on_size_only_adapters
-    refute HireFire::Plan.supports_strategy?("bunny", "jql")
-    refute HireFire::Plan.supports_strategy?("resque", "jql")
-    assert HireFire::Plan.supports_strategy?("bunny", "jqs")
-    assert HireFire::Plan.supports_strategy?("resque", "jqs")
-    assert HireFire::Plan.supports_strategy?("sidekiq", "jql")
-    assert HireFire::Plan.supports_strategy?("sidekiq", "jqs")
-    refute HireFire::Plan.supports_strategy?("unknown", "jql")
-  end
-
-  def test_supports_strategy_rejects_unknown_strategy_with_known_adapter
-    refute HireFire::Plan.supports_strategy?("sidekiq", "rpm")
-    refute HireFire::Plan.supports_strategy?("sidekiq", "unknown")
-    refute HireFire::Plan.supports_strategy?("bunny", "jql")
   end
 
   def test_execute_skips_unsupported_strategy_without_calling_macro
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     called = false
     mod = stub_macro do |m|
       m.extend(HireFire::Plan::SizeOnly)
@@ -372,10 +298,8 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("bunny" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("bunny" => -> { true }))
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "bunny",
       "strategy" => "jql",
@@ -390,43 +314,13 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
-  end
-
-  def test_library_loaded_and_executable_with_stubbed_check
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
-
-    assert HireFire::Plan.library_loaded?("sidekiq")
-    assert HireFire::Plan.executable?("sidekiq")
-    refute HireFire::Plan.library_loaded?("not_a_real_adapter")
-  ensure
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
-  end
-
-  def test_any_allowlisted_job_queue_library_loaded
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, {"sidekiq" => -> { false }, "resque" => -> { true }})
-
-    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
-
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, {"sidekiq" => -> { false }})
-    refute HireFire::Plan.any_allowlisted_job_queue_library_loaded?
-  ensure
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_unknown_adapter_logs_and_skips
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "nope",
       "strategy" => "jql",
@@ -438,35 +332,16 @@ class HireFire::PlanTest < Minitest::Test
     assert_includes log.string, "Unknown plan adapter"
   end
 
-  def test_execute_unknown_strategy_logs_and_skips
-    log = StringIO.new
-    HireFire.configuration.logger = Logger.new(log)
-
-    HireFire::Plan.execute(
-      "name" => "worker",
-      "adapter" => "sidekiq",
-      "strategy" => "rpm",
-      "queues" => [],
-      "options" => {}
-    )
-
-    assert_empty HireFire.configuration.buffer.flush
-    assert_includes log.string, "Unknown plan strategy"
-  end
-
   def test_execute_calls_macro_and_buffers_nested_metric
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     mod = stub_macro do |m|
       m.define_singleton_method(:job_queue_latency) { |*_queues, **_options| 1.5 }
     end
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jql",
@@ -479,14 +354,11 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_merges_adapter_plan_options
     captured = nil
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     mod = stub_macro do |m|
       m.define_singleton_method(:plan_options) do |strategy, options|
         HireFire::Macro::Sidekiq.plan_options(strategy, options)
@@ -499,10 +371,8 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jqs",
@@ -518,14 +388,11 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_merges_adapter_plan_connection_options
     captured = nil
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     mod = stub_macro do |m|
       m.define_singleton_method(:plan_connection_options) do
         HireFire::Macro::Bunny.plan_connection_options
@@ -538,11 +405,9 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("bunny" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("bunny" => -> { true }))
     ENV["HIREFIRE_BUNNY_URL"] = "amqp://override.example/vhost"
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "bunny",
       "strategy" => "jqs",
@@ -555,8 +420,6 @@ class HireFire::PlanTest < Minitest::Test
     ENV.delete("HIREFIRE_BUNNY_URL")
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_macros_expose_plan_hooks_with_empty_defaults
@@ -587,7 +450,6 @@ class HireFire::PlanTest < Minitest::Test
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
 
     [-1, Float::NAN, Float::INFINITY, nil, "nope", true, false].each do |bad|
       mod = stub_macro do |m|
@@ -595,10 +457,8 @@ class HireFire::PlanTest < Minitest::Test
       end
       HireFire::Plan.send(:remove_const, :ADAPTERS)
       HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-      HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-      HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
-      HireFire::Plan.execute(
+      sample_plan(
         "name" => "worker",
         "adapter" => "sidekiq",
         "strategy" => "jql",
@@ -619,10 +479,8 @@ class HireFire::PlanTest < Minitest::Test
       end
       HireFire::Plan.send(:remove_const, :ADAPTERS)
       HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-      HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-      HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
-      HireFire::Plan.execute(
+      sample_plan(
         "name" => "worker",
         "adapter" => "sidekiq",
         "strategy" => "jql",
@@ -637,25 +495,20 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_rescues_macro_errors_and_logs
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     mod = stub_macro do |m|
       m.define_singleton_method(:job_queue_latency) { |*_queues, **_options| raise "redis down" }
     end
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jql",
@@ -669,23 +522,18 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_execute_coerces_non_float_numeric_samples
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     mod = stub_macro do |m|
       m.define_singleton_method(:job_queue_latency) { |*_queues, **_options| Rational(3, 2) }
     end
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "sidekiq",
       "strategy" => "jql",
@@ -699,42 +547,6 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
-  end
-
-  def test_normalize_queues_truncates_and_strips
-    log = StringIO.new
-    HireFire.configuration.logger = Logger.new(log)
-    queues = (HireFire::Plan::MAX_QUEUES + 2).times.map { |i| " q#{i} " }
-    queues << ""
-    queues << ("x" * (HireFire::Plan::MAX_QUEUE_NAME_BYTES + 1))
-
-    normalized = HireFire::Plan.send(:normalize_queues, queues, name: "worker")
-
-    assert_equal HireFire::Plan::MAX_QUEUES, normalized.size
-    assert_equal "q0", normalized.first
-    assert_includes log.string, "truncated"
-  end
-
-  def test_normalize_queues_skips_when_all_names_invalid
-    log = StringIO.new
-    HireFire.configuration.logger = Logger.new(log)
-
-    assert_nil HireFire::Plan.send(:normalize_queues, ["", "  "], name: "worker")
-    assert_includes log.string, "no valid names"
-  end
-
-  def test_normalize_queues_skips_non_array
-    log = StringIO.new
-    HireFire.configuration.logger = Logger.new(log)
-
-    assert_nil HireFire::Plan.send(:normalize_queues, "default", name: "worker")
-    assert_includes log.string, "must be an array"
-  end
-
-  def test_normalize_queues_nil_means_all_queues
-    assert_equal [], HireFire::Plan.send(:normalize_queues, nil, name: "worker")
   end
 
   def test_around_job_queue_sample_calls_before_and_after_on_every_adapter
@@ -762,7 +574,7 @@ class HireFire::PlanTest < Minitest::Test
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, {"a" => a, "b" => b})
 
-    result = HireFire::Plan.around_job_queue_sample {
+    result = HireFire::Plan.around_job_queue_sample(HireFire.configuration.logger) {
       events << :body
       :ok
     }
@@ -794,7 +606,7 @@ class HireFire::PlanTest < Minitest::Test
     HireFire::Plan.const_set(:ADAPTERS, {"x" => mod})
 
     assert_raises(RuntimeError) {
-      HireFire::Plan.around_job_queue_sample { raise "boom" }
+      HireFire::Plan.around_job_queue_sample(HireFire.configuration.logger) { raise "boom" }
     }
     assert_equal [:wave], after_tokens
   ensure
@@ -806,7 +618,6 @@ class HireFire::PlanTest < Minitest::Test
     buffer = HireFire.configuration.buffer
     buffer.flush
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     calls = 0
     mod = stub_macro do |m|
       m.define_singleton_method(:queues_required?) { true }
@@ -822,13 +633,11 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("bunny" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("bunny" => -> { true }))
 
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "mail",
       "adapter" => "bunny",
       "strategy" => "jqs",
@@ -842,13 +651,12 @@ class HireFire::PlanTest < Minitest::Test
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_hooks_default_sample_wave_methods_are_noops
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
+    mod.define_singleton_method(:library_loaded?) { true }
     assert_nil mod.before_sample_job_queues
     assert_nil mod.after_sample_job_queues(:anything)
     assert_nil mod.reinit_after_fork
@@ -858,7 +666,6 @@ class HireFire::PlanTest < Minitest::Test
     buffer = HireFire.configuration.buffer
     buffer.flush
     original = HireFire::Plan::ADAPTERS
-    original_checks = HireFire::Plan::LIBRARY_CHECKS
     mod = stub_macro_taking_skip_working do |m|
       m.define_singleton_method(:job_queue_size) { |*_a, **_o| 11 }
       m.define_singleton_method(:job_queue_working) { |*_a| 3 }
@@ -866,26 +673,21 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original.merge("sidekiq" => mod))
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks.merge("sidekiq" => -> { true }))
 
-    HireFire::Plan.execute(
+    sample_plan(
       {
         "name" => "worker",
         "adapter" => "sidekiq",
         "strategy" => "jqs",
         "queues" => ["default"],
         "options" => {"skip_working" => true}
-      },
-      -> { false }
-    )
+      }
+    ) { false }
 
     assert_empty buffer.flush
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
-    HireFire::Plan.send(:remove_const, :LIBRARY_CHECKS)
-    HireFire::Plan.const_set(:LIBRARY_CHECKS, original_checks)
   end
 
   def test_around_job_queue_sample_rescues_raising_before_hook_and_still_runs_body_and_after
@@ -908,7 +710,7 @@ class HireFire::PlanTest < Minitest::Test
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
 
-    result = HireFire::Plan.around_job_queue_sample {
+    result = HireFire::Plan.around_job_queue_sample(HireFire.configuration.logger) {
       events << :body
       :ok
     }
@@ -939,7 +741,7 @@ class HireFire::PlanTest < Minitest::Test
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
 
-    assert_equal :ok, HireFire::Plan.around_job_queue_sample { :ok }
+    assert_equal :ok, HireFire::Plan.around_job_queue_sample(HireFire.configuration.logger) { :ok }
     assert_equal [:good], events
     assert_includes log.string, "after_sample_job_queues"
   ensure
@@ -962,7 +764,7 @@ class HireFire::PlanTest < Minitest::Test
     log = StringIO.new
     HireFire.configuration.logger = Logger.new(log)
 
-    HireFire::Plan.reinit_macros_after_fork
+    HireFire::Plan.reinit_macros_after_fork(HireFire.configuration.logger)
     assert_equal [:good], called
     assert_includes log.string, "reinit_after_fork"
   ensure
@@ -983,7 +785,7 @@ class HireFire::PlanTest < Minitest::Test
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, {"a" => a, "b" => b})
 
-    HireFire::Plan.reinit_macros_after_fork
+    HireFire::Plan.reinit_macros_after_fork(HireFire.configuration.logger)
     assert_equal [:a, :b], called
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
@@ -1012,6 +814,7 @@ class HireFire::PlanTest < Minitest::Test
   def stub_macro
     mod = Module.new
     mod.extend(HireFire::Plan::Hooks)
+    mod.define_singleton_method(:library_loaded?) { true }
     yield mod
     mod
   end

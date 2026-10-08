@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-require_relative "sample"
-require_relative "strategy"
-
 module HireFire
   module Plan
     extend self
@@ -18,235 +15,42 @@ module HireFire
       "bunny" => HireFire::Macro::Bunny
     }.freeze
 
-    LIBRARY_CHECKS = {
-      "sidekiq" => -> { defined?(::Sidekiq) },
-      "solid_queue" => -> { defined?(::SolidQueue) },
-      "good_job" => -> { defined?(::GoodJob) },
-      "que" => -> { defined?(::Que) },
-      "queue_classic" => -> { defined?(::QC) },
-      "delayed_job" => -> { defined?(::Delayed::Job) },
-      "resque" => -> { defined?(::Resque) },
-      "bunny" => -> { defined?(::Bunny) }
-    }.freeze
-
-    STRATEGIES = {
-      Strategy::JQL => :job_queue_latency,
-      Strategy::JQS => :job_queue_size
-    }.freeze
-
     MAX_QUEUES = 64
     MAX_QUEUE_NAME_BYTES = 128
 
-    def any_allowlisted_job_queue_library_loaded?
-      LIBRARY_CHECKS.each_value.any?(&:call)
+    def any_library_loaded?
+      ADAPTERS.each_value.any?(&:library_loaded?)
     end
 
-    def known_adapter?(adapter)
-      ADAPTERS.key?(adapter.to_s)
-    end
-
-    def library_loaded?(adapter)
-      !!LIBRARY_CHECKS[adapter.to_s]&.call
-    end
-
-    def executable?(adapter)
-      known_adapter?(adapter) && library_loaded?(adapter)
-    end
-
-    def known_strategy?(strategy)
-      STRATEGIES.key?(strategy.to_s)
-    end
-
-    def supports_strategy?(adapter, strategy)
-      macro = ADAPTERS[adapter.to_s]
-      return false unless macro
-      return false unless known_strategy?(strategy)
-
-      macro.supports_plan_strategy?(strategy)
-    end
-
-    def queues_required?(adapter)
-      macro = ADAPTERS[adapter.to_s]
-      return false unless macro
-
-      macro.queues_required?
-    end
-
-    def sampleable_entry?(entry)
-      adapter = entry["adapter"]
-      strategy = entry["strategy"]
-      return false unless executable?(adapter) && supports_strategy?(adapter, strategy)
-      return true unless queues_required?(adapter)
-
-      named_plan_queues?(entry["queues"])
-    end
-
-    def named_plan_queues?(queues)
-      return false unless queues.is_a?(Array)
-
-      queues.any? do |queue|
-        name = queue.to_s.strip
-        !name.empty? && name.bytesize <= MAX_QUEUE_NAME_BYTES
-      end
-    end
-
-    def around_job_queue_sample
+    def around_job_queue_sample(logger)
       tokens = {}
-      ADAPTERS.each do |name, macro|
+      each_macro(logger, "before_sample_job_queues") do |name, macro|
         tokens[name] = macro.before_sample_job_queues
-      rescue => e
-        Log.safe(logger, :error,
-          "[HireFire] before_sample_job_queues for #{name.inspect} raised " +
-          Log.format_error(e))
       end
 
       yield
     ensure
-      tokens.each do |name, token|
-        ADAPTERS[name].after_sample_job_queues(token)
-      rescue => e
-        Log.safe(logger, :error,
-          "[HireFire] after_sample_job_queues for #{name.inspect} raised " +
-          Log.format_error(e))
+      each_macro(logger, "after_sample_job_queues") do |name, macro|
+        macro.after_sample_job_queues(tokens[name]) if tokens.key?(name)
       end
     end
 
-    def reinit_macros_after_fork
-      each_macro("reinit_after_fork", &:reinit_after_fork)
+    def reinit_macros_after_fork(logger)
+      each_macro(logger, "reinit_after_fork") { |_name, macro| macro.reinit_after_fork }
     end
 
-    def release_macros
-      each_macro("release", &:release)
-    end
-
-    def execute(entry, live = nil)
-      adapter = entry["adapter"].to_s.strip
-      strategy = entry["strategy"].to_s.strip
-      name = entry["name"].to_s.strip
-      method_name = STRATEGIES[strategy]
-
-      unless method_name
-        Log.safe(logger, :error, "[HireFire] Unknown plan strategy #{strategy.inspect} for " \
-          "#{name.inspect}. Entry skipped.")
-        return
-      end
-
-      macro = ADAPTERS[adapter]
-      unless macro
-        Log.safe(logger, :error, "[HireFire] Unknown plan adapter #{adapter.inspect} for " \
-          "#{name.inspect}. Entry skipped.")
-        return
-      end
-
-      unless macro.supports_plan_strategy?(strategy)
-        Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} does not support " \
-          "strategy #{strategy.inspect} for #{name.inspect}. Entry skipped.")
-        return
-      end
-
-      queues = normalize_queues(entry["queues"], name: name)
-      return if queues.nil?
-
-      if queues_required?(adapter) && queues.empty?
-        Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} for #{name.inspect} " \
-          "requires named queues. Entry skipped.")
-        return
-      end
-
-      options = macro.plan_options(strategy, entry["options"])
-        .merge(macro.plan_connection_options)
-      sample_job_strategy(macro, name, strategy, method_name, queues, options, live: live)
-      sample_working(macro, name, queues, live: live) if sample_working?(macro, strategy, options)
-    rescue StandardError, ScriptError => e
-      Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " +
-        Log.format_error(e))
+    def release_macros(logger)
+      each_macro(logger, "release") { |_name, macro| macro.release }
     end
 
     private
 
-    def each_macro(hook)
+    def each_macro(logger, hook)
       ADAPTERS.each do |name, macro|
-        yield macro
+        yield name, macro
       rescue => e
-        Log.safe(logger, :error, "[HireFire] #{hook} for #{name.inspect} raised " + Log.format_error(e))
+        Log.safe(logger, :error, "[HireFire] #{hook} for #{name.inspect} raised #{Log.format_error(e)}")
       end
-    end
-
-    def sample_working?(macro, strategy, options)
-      return false unless macro.respond_to?(:job_queue_working)
-
-      strategy == Strategy::JQL || options[:skip_working] == true
-    end
-
-    def sample_job_strategy(macro, name, strategy, method_name, queues, options, live: nil)
-      value = macro.public_send(method_name, *queues, **options)
-      return if live && !live.call
-
-      unless Sample.valid?(value)
-        Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} returned " \
-          "#{Sample.format(value)}, expected a non-negative number. Sample dropped.")
-        return
-      end
-
-      record_sample(name, strategy, Sample.coerce(value))
-    rescue StandardError, ScriptError => e
-      Log.safe(logger, :error, "[HireFire] Plan sampler for #{name.inspect} raised " +
-        Log.format_error(e))
-    end
-
-    def sample_working(macro, name, queues, live: nil)
-      wrk = macro.job_queue_working(*queues)
-      return if live && !live.call
-
-      unless Sample.valid?(wrk)
-        Log.safe(logger, :error, "[HireFire] Plan working sampler for #{name.inspect} returned " \
-          "#{Sample.format(wrk)}, expected a non-negative number. wrk sample dropped.")
-        return
-      end
-
-      record_sample(name, Strategy::WRK, Sample.coerce(wrk))
-    rescue StandardError, ScriptError => e
-      Log.safe(logger, :error, "[HireFire] Plan working sampler for #{name.inspect} raised " +
-        Log.format_error(e))
-    end
-
-    def record_sample(name, strategy, value)
-      HireFire.configuration.buffer.sample(name, strategy, value)
-    end
-
-    def normalize_queues(queues, name:)
-      return [] if queues.nil?
-
-      unless queues.is_a?(Array)
-        Log.safe(logger, :error,
-          "[HireFire] Plan queues for #{name.inspect} must be an array. Entry skipped.")
-        return nil
-      end
-
-      list = queues.filter_map do |queue|
-        qname = queue.to_s.strip
-        next if qname.empty? || qname.bytesize > MAX_QUEUE_NAME_BYTES
-
-        qname
-      end
-
-      if list.empty? && !queues.empty?
-        Log.safe(logger, :error,
-          "[HireFire] Plan queue list for #{name.inspect} had no valid names. Entry skipped.")
-        return nil
-      end
-
-      if list.size > MAX_QUEUES
-        Log.safe(logger, :error,
-          "[HireFire] Plan queue list truncated to #{MAX_QUEUES} names.")
-        list = list.first(MAX_QUEUES)
-      end
-
-      list
-    end
-
-    def logger
-      HireFire.configuration.logger
     end
   end
 end

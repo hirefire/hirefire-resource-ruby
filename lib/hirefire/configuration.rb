@@ -4,11 +4,12 @@ require "logger"
 
 module HireFire
   class Configuration
-    attr_reader :job_queues, :log_queue_metrics, :logger
+    attr_reader :job_queues, :log_queue_metrics, :logger, :once
     attr_writer :token
 
     def initialize
-      @job_queues = Source::JobQueues.new(self)
+      @job_queues = Source::JobQueues.new
+      @once = Once.new(self)
       @buffer = nil
       @dispatcher = nil
       @logger = Logger.new($stdout)
@@ -95,7 +96,7 @@ module HireFire
       end
 
       if @always_on_http.nil? || !@always_on_http.name.casecmp?(name)
-        @always_on_http = Source::HTTP.new(name)
+        @always_on_http = Source::HTTP.new(name, buffer)
       end
       @always_on_http
     end
@@ -112,7 +113,7 @@ module HireFire
       end
 
       if @always_on_cpu.nil? || !@always_on_cpu.name.casecmp?(identity)
-        @always_on_cpu = Source::CPU.new(identity)
+        @always_on_cpu = Source::CPU.new(identity, buffer)
       end
       [@always_on_cpu]
     end
@@ -127,11 +128,10 @@ module HireFire
     end
 
     def warn_plain_http_data_url_once(host)
-      return if defined?(@plain_http_data_url_warned)
-
-      @plain_http_data_url_warned = true
-      Log.safe(logger, :warn, "[HireFire] HIREFIRE_DATA_URL uses http, so the HireFire token " \
-        "is sent to #{host} in clear text. Use an https URL.")
+      @once.log(:warn, :plain_http_data_url) do
+        "[HireFire] HIREFIRE_DATA_URL uses http, so the HireFire token " \
+        "is sent to #{host} in clear text. Use an https URL."
+      end
     end
 
     private
@@ -172,58 +172,53 @@ module HireFire
     end
 
     def warn_identity_name_too_long_once(name)
-      return if defined?(@identity_name_too_long_warned)
-
-      @identity_name_too_long_warned = true
-      Log.safe(logger, :error, "[HireFire] Process identity exceeds #{Identity::MAX_NAME_BYTES} bytes " \
-        "(#{name.bytesize}). Metrics under this identity are disabled until the name is shortened.")
+      @once.log(:error, :identity_name_too_long) do
+        "[HireFire] Process identity exceeds #{Identity::MAX_NAME_BYTES} bytes " \
+        "(#{name.bytesize}). Metrics under this identity are disabled until the name is shortened."
+      end
     end
 
     def warn_bare_web_dyno_once
-      return if defined?(@bare_web_dyno_warned)
-
-      @bare_web_dyno_warned = true
-      Log.safe(logger, :warn, "[HireFire] config.dyno(:web) is deprecated. It does nothing. " \
+      @once.log(:warn, :bare_web_dyno) do
+        "[HireFire] config.dyno(:web) is deprecated. It does nothing. " \
         "Request queue time is sampled automatically from HTTP traffic. You can remove this " \
-        "line. Leaving it does not break anything.")
+        "line. Leaving it does not break anything."
+      end
     end
 
     def warn_log_queue_metrics_once
-      return if defined?(@log_queue_metrics_warned)
-
-      @log_queue_metrics_warned = true
-      Log.safe(logger, :warn, "[HireFire] config.log_queue_metrics is deprecated. Stdout " \
+      @once.log(:warn, :log_queue_metrics) do
+        "[HireFire] config.log_queue_metrics is deprecated. Stdout " \
         "[hirefire:router] lines still emit while this flag is set. Switch to HireFire " \
         "Request Queue Time: install hirefire-resource 2.0.0 or newer, remove this " \
         "log_queue_metrics = true line, in the HireFire UI change Logplex - Request Queue " \
-        "Time to HireFire - Request Queue Time, and set HIREFIRE_TOKEN in the Heroku env.")
+        "Time to HireFire - Request Queue Time, and set HIREFIRE_TOKEN in the Heroku env."
+      end
     end
 
     def warn_rqt_unresolved_once
-      return if defined?(@rqt_unresolved_warned)
-
-      @rqt_unresolved_warned = true
-      Log.safe(logger, :warn, "[HireFire] Request queue time samples dropped: process identity " \
-        "is unresolved. Set HIREFIRE_SERVICE_NAME or DYNO.")
+      @once.log(:warn, :rqt_unresolved) do
+        "[HireFire] Request queue time samples dropped: process identity " \
+        "is unresolved. Set HIREFIRE_SERVICE_NAME or DYNO."
+      end
     end
 
     def warn_heroku_conflict_once
-      return if defined?(@heroku_conflict_warned)
       return unless HireFire::Identity.heroku_conflict?
 
-      @heroku_conflict_warned = true
-      Log.safe(logger, :warn, "[HireFire] HIREFIRE_SERVICE_NAME (#{HireFire::Identity.explicit}) does not " \
+      @once.log(:warn, :heroku_conflict) do
+        "[HireFire] HIREFIRE_SERVICE_NAME (#{HireFire::Identity.explicit}) does not " \
         "match the Heroku DYNO prefix (#{HireFire::Identity.heroku_dyno}). Heroku config vars " \
         "are app-wide, so this makes every dyno identify as the same name. Set it inline per " \
-        "process in the Procfile, or unset it to use automatic detection.")
+        "process in the Procfile, or unset it to use automatic detection."
+      end
     end
 
     def warn_cpu_unresolved_once
-      return if defined?(@cpu_unresolved_warned)
-
-      @cpu_unresolved_warned = true
-      Log.safe(logger, :warn, "[HireFire] CPU metrics disabled: process identity is unresolved. " \
-        "Set HIREFIRE_SERVICE_NAME or DYNO.")
+      @once.log(:warn, :cpu_unresolved) do
+        "[HireFire] CPU metrics disabled: process identity is unresolved. " \
+        "Set HIREFIRE_SERVICE_NAME or DYNO."
+      end
     end
   end
 end

@@ -25,6 +25,10 @@ module HireFire
       SKIP_LOCKED_CLAIM = "lock_type = 1 AND locked_by_id IS NOT NULL"
       NO_SKIP_LOCKED_CLAIM = "lock_type IS DISTINCT FROM 1 OR locked_by_id IS NULL"
 
+      def library_loaded?
+        !!defined?(::GoodJob)
+      end
+
       def plan_options(strategy, options)
         extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
       end

@@ -13,8 +13,12 @@ module HireFire
         {}
       end
 
+      def library_loaded?
+        false
+      end
+
       def supports_plan_strategy?(strategy)
-        HireFire::Plan.known_strategy?(strategy)
+        Strategy.job_queue?(strategy)
       end
 
       def queues_required?
@@ -33,6 +37,8 @@ module HireFire
 
       def release
       end
+
+      private
 
       def extract_plan_options(strategy, options, schema)
         return {} unless options.is_a?(Hash)

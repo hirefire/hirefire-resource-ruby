@@ -12,7 +12,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { assert_nil collector.sample }
     assert_empty buffer.flush
   end
@@ -21,7 +21,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
@@ -32,7 +32,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(4.0)
 
-    collector = HireFire::Source::CPU.new("worker")
+    collector = HireFire::Source::CPU.new("worker", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
@@ -43,7 +43,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [0.25, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(0.5)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
@@ -54,7 +54,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0 / 3.0, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
@@ -65,7 +65,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [0.01125, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
@@ -76,7 +76,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [5.0, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
@@ -87,7 +87,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.0, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { collector.sample }
 
@@ -98,7 +98,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [5.0, :cgroup_v2], [5.5, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
     Timecop.freeze(Time.at(1002)) { collector.sample }
@@ -110,7 +110,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :process], [11.0, :cgroup_v2], [11.5, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
     Timecop.freeze(Time.at(1002)) { collector.sample }
@@ -122,7 +122,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([nil, nil])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
     assert_empty buffer.flush
@@ -132,7 +132,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) do
       collector.sample
       assert_nil collector.sample
@@ -144,7 +144,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([10.0, :cgroup_v2], [10.5, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     HireFire::Clock.stubs(:monotonic).returns(100.0, 101.0)
 
     Timecop.freeze(Time.at(1000)) do
@@ -159,7 +159,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(nil)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
     assert_empty buffer.flush
@@ -169,7 +169,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(0.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
     assert_empty buffer.flush
@@ -179,7 +179,7 @@ class HireFire::Source::CPUTest < Minitest::Test
     HireFire::Source::CPU::Usage.stubs(:reading).returns([nil, nil], [10.0, :cgroup_v2], [10.5, :cgroup_v2])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
 
-    collector = HireFire::Source::CPU.new("clock")
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
     Timecop.freeze(Time.at(1000)) { assert_nil collector.sample }
     Timecop.freeze(Time.at(1001)) { assert_nil collector.sample }
     Timecop.freeze(Time.at(1002)) { collector.sample }

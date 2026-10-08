@@ -15,6 +15,10 @@ module HireFire
       extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
 
+      def library_loaded?
+        !!defined?(::Bunny)
+      end
+
       def plan_connection_options
         options = {reuse_connection: true}
         url = presence(ENV["HIREFIRE_BUNNY_URL"]) || presence(ENV["HIREFIRE_AMQP_URL"])
@@ -76,18 +80,13 @@ module HireFire
         write_timeout: 5,
         automatically_recover: false
       }.freeze
-      MISSING_QUEUE_WARN_LIMIT = 256
 
       private
 
       def warn_missing_queue_once(name)
-        @missing_queue_warned ||= {}
-        return if @missing_queue_warned[name]
-
-        @missing_queue_warned.shift while @missing_queue_warned.size >= MISSING_QUEUE_WARN_LIMIT
-        @missing_queue_warned[name] = true
-        HireFire::Log.safe(HireFire.configuration.logger, :warn,
-          "[HireFire] RabbitMQ queue #{name.inspect} does not exist. It counts as 0 messages.")
+        HireFire.configuration.once.log(:warn, :missing_queue, name) do
+          "[HireFire] RabbitMQ queue #{name.inspect} does not exist. It counts as 0 messages."
+        end
       end
 
       def presence(value)

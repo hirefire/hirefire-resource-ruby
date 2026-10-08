@@ -82,7 +82,7 @@ class HireFireTest < Minitest::Test
 
   def test_a_sampler_configured_after_boot_is_sampled_once_the_lease_is_granted
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
-    HireFire::Plan.stubs(:any_allowlisted_job_queue_library_loaded?).returns(false)
+    HireFire::Plan.stubs(:any_library_loaded?).returns(false)
     bodies = []
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |request|
       bodies << JSON.parse(request.body)

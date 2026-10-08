@@ -13,9 +13,8 @@ class HireFire::Macro::QCTest < Minitest::Test
   end
 
   def test_library_loaded_is_true_when_queue_classic_gem_is_loaded
-    assert HireFire::Plan.library_loaded?("queue_classic")
-    assert HireFire::Plan.executable?("queue_classic")
-    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
+    assert HireFire::Macro::QC.library_loaded?
+    assert HireFire::Plan.any_library_loaded?
   end
 
   def test_job_queue_latency_without_jobs
@@ -245,7 +244,7 @@ class HireFire::Macro::QCTest < Minitest::Test
     refute_nil queue.lock
     queue.enqueue("BasicJob.perform")
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "queue_classic",
       "strategy" => "jqs",
@@ -276,7 +275,7 @@ class HireFire::Macro::QCTest < Minitest::Test
     refute_nil queue.lock
     queue.enqueue("BasicJob.perform")
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "queue_classic",
       "strategy" => "jqs",
@@ -298,7 +297,7 @@ class HireFire::Macro::QCTest < Minitest::Test
     queue.enqueue("BasicJob.perform")
     refute_nil queue.lock
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "queue_classic",
       "strategy" => "jql",
@@ -323,7 +322,7 @@ class HireFire::Macro::QCTest < Minitest::Test
     refute_nil default.lock
     refute_nil mailer.lock
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "queue_classic",
       "strategy" => "jqs",

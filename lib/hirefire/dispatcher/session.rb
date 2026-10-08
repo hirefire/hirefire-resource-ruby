@@ -23,12 +23,7 @@ module HireFire
         @round_started_at = nil
         @failures = 0
         @failure_logged_at = nil
-        @unloaded_adapter_warned = {}
-        @plan_override_warned = {}
-        @unknown_adapter_warned = {}
-        @unsupported_strategy_warned = {}
-        @unknown_strategy_warned = {}
-        @empty_queues_warned = {}
+        @sampler = Sampler.new(configuration)
       end
 
       def start
@@ -70,14 +65,15 @@ module HireFire
         if round_overdue?
           release_overdue_round
         else
-          @lease.request_if_due(hold: method(:hold_lease?))
+          @lease.request_if_due(hold: @sampler.method(:can_sample?))
         end
       end
 
       def sample
         @lease.sample_if_due do
           @round_started_at = Clock.monotonic
-          sample_job_queues
+          trace = @sampler.round(@lease.job_queues, method(:sampling?))
+          @pending_sample_trace = trace if @lease.trace?
         ensure
           @round_started_at = nil
         end
@@ -117,7 +113,7 @@ module HireFire
           pause
         end
       ensure
-        guard { Plan.release_macros }
+        guard { Plan.release_macros(logger) }
       end
 
       def cycle
@@ -167,137 +163,7 @@ module HireFire
       end
 
       def enter_race?
-        configuration.job_queues.any? || Plan.any_allowlisted_job_queue_library_loaded?
-      end
-
-      def hold_lease?(plan_job_queues)
-        return true if configuration.job_queues.any?
-
-        plan_job_queues.any? do |entry|
-          adapter_present?(entry) && Plan.sampleable_entry?(entry)
-        end
-      end
-
-      def sample_job_queues
-        live = method(:sampling?)
-        probe = Probe.start
-        Plan.around_job_queue_sample do
-          local_job_queues = configuration.job_queues
-
-          @lease.job_queues.each do |entry|
-            break unless live.call
-
-            probe.measure(entry) do
-              if adapter_present?(entry)
-                sample_plan_adapter(entry, local_job_queues, live)
-              else
-                sample_strategy_only(entry, local_job_queues, live)
-              end
-            end
-          end
-        end
-        payload = probe.finish
-        probe.log_to(logger) if verbose?
-        @pending_sample_trace = payload if @lease.trace?
-      end
-
-      def verbose?
-        value = ENV["HIREFIRE_VERBOSE"].to_s
-        !value.empty? && !%w[0 false no].include?(value.downcase)
-      end
-
-      def sample_plan_adapter(entry, local_job_queues, live)
-        name = entry["name"].to_s
-        adapter = entry["adapter"]
-        strategy = entry["strategy"]
-
-        if Plan.executable?(adapter)
-          unless Plan.supports_strategy?(adapter, strategy)
-            warn_unsupported_strategy_once(name, adapter, strategy)
-            return
-          end
-
-          if Plan.queues_required?(adapter) && !Plan.named_plan_queues?(entry["queues"])
-            warn_empty_queues_once(name, adapter)
-            return
-          end
-
-          warn_plan_override_once(name) if local_job_queues.find_by_name(name)
-          Plan.execute(entry, live)
-        elsif Plan.known_adapter?(adapter)
-          warn_unloaded_adapter_once(name, adapter)
-        else
-          warn_unknown_adapter_once(name, adapter)
-        end
-      end
-
-      def sample_strategy_only(entry, local_job_queues, live)
-        name = entry["name"].to_s
-        strategy = entry["strategy"].to_s
-
-        unless Plan.known_strategy?(strategy)
-          warn_unknown_strategy_once(name, strategy)
-          return
-        end
-
-        job_queue = local_job_queues.find_by_name(name)
-        local_job_queues.sample_job_queue(job_queue, strategy, live: live, name: name.strip) if job_queue
-      end
-
-      def remember_warn(map, key)
-        return true if map[key]
-
-        map.shift while map.size >= WARN_MAP_LIMIT
-        map[key] = true
-        false
-      end
-
-      def warn_unloaded_adapter_once(name, adapter)
-        return if remember_warn(@unloaded_adapter_warned, name)
-
-        Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} for #{name.inspect} " \
-          "is not loaded in this process. Entry skipped.")
-      end
-
-      def warn_plan_override_once(name)
-        return if remember_warn(@plan_override_warned, name)
-
-        Log.safe(logger, :warn, "[HireFire] A HireFire UI adapter is configured for " \
-          "#{name.inspect}, so config.dyno(#{name.inspect}) with a local sampler is ignored. " \
-          "You can remove that local configuration. The UI adapter is used instead.")
-      end
-
-      def warn_unknown_adapter_once(name, adapter)
-        return if remember_warn(@unknown_adapter_warned, name)
-
-        Log.safe(logger, :error, "[HireFire] Unknown plan adapter " \
-          "#{adapter.inspect} for #{name.inspect}. Entry skipped.")
-      end
-
-      def warn_unsupported_strategy_once(name, adapter, strategy)
-        return if remember_warn(@unsupported_strategy_warned, "#{name}\0#{adapter}\0#{strategy}")
-
-        Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} does not support " \
-          "strategy #{strategy.inspect} for #{name.inspect}. Entry skipped.")
-      end
-
-      def warn_unknown_strategy_once(name, strategy)
-        return if remember_warn(@unknown_strategy_warned, "#{name}\0#{strategy}")
-
-        Log.safe(logger, :error, "[HireFire] Unknown plan strategy #{strategy.inspect} for " \
-          "#{name.inspect}. Entry skipped.")
-      end
-
-      def warn_empty_queues_once(name, adapter)
-        return if remember_warn(@empty_queues_warned, "#{name}\0#{adapter}")
-
-        Log.safe(logger, :error, "[HireFire] Plan adapter #{adapter.inspect} for #{name.inspect} " \
-          "requires named queues. Entry skipped.")
-      end
-
-      def adapter_present?(entry)
-        adapter = entry["adapter"]
-        !(adapter.nil? || adapter == "")
+        configuration.job_queues.any? || Plan.any_library_loaded?
       end
 
       def dispatch_if_due
@@ -327,7 +193,7 @@ module HireFire
         end
         return drop_oversized_payload(body, watermark) if body.bytesize > PAYLOAD_SIZE_LIMIT
 
-        Log.safe(logger, :info, "[HireFire] Dispatching metrics: #{body}") if verbose?
+        Log.safe(logger, :info, "[HireFire] Dispatching metrics: #{body}") if Log.verbose?
         response = @client.submit_samples(body)
         apply_dispatch_frequency(response)
 

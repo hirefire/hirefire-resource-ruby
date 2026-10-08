@@ -39,6 +39,8 @@ end)
 
 require "minitest/autorun"
 require "mocha/minitest"
+
+Mocha.configure { |config| config.stubbing_non_existent_method = :prevent }
 require "webmock/minitest"
 require "timecop"
 
@@ -91,6 +93,30 @@ class Minitest::Test
 
       sleep(0.005)
     end
+  end
+
+  def sample_plan(*entries, &live)
+    HireFire::Sampler.new(HireFire.configuration).round(entries, live || -> { true })
+  end
+
+  def plan_adapter(samples)
+    Module.new.tap do |adapter|
+      adapter.extend(HireFire::Plan::Hooks)
+      adapter.define_singleton_method(:library_loaded?) { true }
+      samples.each do |method_name, value|
+        adapter.define_singleton_method(method_name) { |*_queues, **_options| value.respond_to?(:call) ? value.call : value }
+      end
+    end
+  end
+
+  def with_plan_adapters(adapters)
+    original = HireFire::Plan::ADAPTERS
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original.merge(adapters))
+    yield
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
   end
 
   def assert_integer_count(value)

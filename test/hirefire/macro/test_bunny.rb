@@ -11,14 +11,12 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   TEST_MESSAGE = "Test Message"
 
   def test_library_loaded_is_true_when_bunny_gem_is_loaded
-    assert HireFire::Plan.library_loaded?("bunny")
-    assert HireFire::Plan.executable?("bunny")
-    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
+    assert HireFire::Macro::Bunny.library_loaded?
+    assert HireFire::Plan.any_library_loaded?
   end
 
   def test_queues_required
     assert HireFire::Macro::Bunny.queues_required?
-    assert HireFire::Plan.queues_required?("bunny")
   end
 
   def test_missing_queues_raises_error
@@ -157,7 +155,7 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     buffer = HireFire.configuration.buffer
     buffer.flush
 
-    HireFire::Plan.execute(
+    sample_plan(
       "name" => "worker",
       "adapter" => "bunny",
       "strategy" => "jqs",
@@ -442,7 +440,7 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   def test_the_connection_that_plan_samples_reuse_closes_when_the_library_is_reset
     with_connection(queue: :reuse_reset) do |_connection, _channel, queue|
       before = open_sessions
-      HireFire::Plan.around_job_queue_sample do
+      HireFire::Plan.around_job_queue_sample(HireFire.configuration.logger) do
         HireFire::Macro::Bunny.job_queue_size(queue.name, **HireFire::Macro::Bunny.plan_connection_options)
       end
       assert_equal before + 1, open_sessions

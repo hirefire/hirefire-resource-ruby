@@ -23,6 +23,10 @@ module HireFire
       LOCKED = "locked_at IS NOT NULL AND locked_by IN (SELECT pid FROM pg_stat_activity)"
       UNLOCKED = "(locked_at IS NULL OR locked_by IS NULL OR locked_by NOT IN (SELECT pid FROM pg_stat_activity))"
 
+      def library_loaded?
+        !!defined?(::QC)
+      end
+
       def plan_options(strategy, options)
         extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
       end

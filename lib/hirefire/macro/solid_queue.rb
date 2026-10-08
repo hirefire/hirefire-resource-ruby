@@ -20,6 +20,10 @@ module HireFire
         }.freeze
       }.freeze
 
+      def library_loaded?
+        !!defined?(::SolidQueue)
+      end
+
       def plan_options(strategy, options)
         extract_plan_options(strategy, options, PLAN_OPTION_SCHEMA)
       end

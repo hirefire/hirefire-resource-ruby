@@ -12,7 +12,6 @@ module HireFire
     SAMPLE_ROUND_LIMIT = 60
     JOIN_TIMEOUT = 5
     TICK = 1
-    WARN_MAP_LIMIT = 256
 
     def initialize(configuration)
       @configuration = configuration
@@ -94,7 +93,7 @@ module HireFire
 
     def reset_after_fork
       @configuration.buffer.reinit_after_fork
-      Plan.reinit_macros_after_fork
+      Plan.reinit_macros_after_fork(logger)
       @configuration.reset_after_fork
     end
 

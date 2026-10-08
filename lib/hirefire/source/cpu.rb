@@ -5,8 +5,9 @@ module HireFire
     class CPU
       attr_reader :name
 
-      def initialize(name)
+      def initialize(name, buffer)
         @name = name.to_s
+        @buffer = buffer
         @last_usage = nil
         @last_time = nil
         @last_source = nil
@@ -36,7 +37,7 @@ module HireFire
         cores_used = usage_delta / elapsed_delta
         percentage = (cores_used / available * 100.0).clamp(0.0, 100.0)
 
-        HireFire.configuration.buffer.sample(@name, Strategy::CPU, percentage.round(2))
+        @buffer.sample(@name, Strategy::CPU, percentage.round(2))
       end
     end
   end

@@ -21,9 +21,8 @@ class HireFire::Macro::QueTest < Minitest::Test
   end
 
   def test_library_loaded_is_true_when_que_gem_is_loaded
-    assert HireFire::Plan.library_loaded?("que")
-    assert HireFire::Plan.executable?("que")
-    assert HireFire::Plan.any_allowlisted_job_queue_library_loaded?
+    assert HireFire::Macro::Que.library_loaded?
+    assert HireFire::Plan.any_library_loaded?
   end
 
   def test_job_queue_latency_without_jobs
@@ -313,7 +312,7 @@ class HireFire::Macro::QueTest < Minitest::Test
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
 
     with_advisory_lock(locked.que_attrs[:id]) do
-      HireFire::Plan.execute(
+      sample_plan(
         "name" => "worker",
         "adapter" => "que",
         "strategy" => "jqs",
@@ -344,7 +343,7 @@ class HireFire::Macro::QueTest < Minitest::Test
     enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
 
     with_advisory_lock(locked.que_attrs[:id]) do
-      HireFire::Plan.execute(
+      sample_plan(
         "name" => "worker",
         "adapter" => "que",
         "strategy" => "jqs",
@@ -366,7 +365,7 @@ class HireFire::Macro::QueTest < Minitest::Test
     locked = enqueue(job_options: {job_class: "BasicJob", queue: "default", run_at: Time.now - 1})
 
     with_advisory_lock(locked.que_attrs[:id]) do
-      HireFire::Plan.execute(
+      sample_plan(
         "name" => "worker",
         "adapter" => "que",
         "strategy" => "jql",
@@ -389,7 +388,7 @@ class HireFire::Macro::QueTest < Minitest::Test
     mailer = enqueue(job_options: {job_class: "BasicJob", queue: "mailer", run_at: Time.now - 1})
 
     with_advisory_locks(default.que_attrs[:id], mailer.que_attrs[:id]) do
-      HireFire::Plan.execute(
+      sample_plan(
         "name" => "worker",
         "adapter" => "que",
         "strategy" => "jqs",

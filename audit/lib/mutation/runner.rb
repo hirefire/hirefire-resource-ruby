@@ -10,6 +10,18 @@ module Audit
     class Runner
       FREE_CELLS = %w[default rack_2 rack_3 rails_7 rails_8 sinatra_3 sinatra_4 hanami_2 hanami_3].freeze
       CELL_TIMEOUT = 45
+      FOCUSED = {
+        "dispatcher/session" => %w[test_dispatcher.rb test_wire.rb],
+        "dispatcher/failure_log" => %w[test_dispatcher.rb],
+        "plan/entry" => %w[plan/test_entry.rb test_sampler.rb],
+        "sample" => %w[test_sampler.rb],
+        "source/cpu/usage" => %w[test_cpu.rb test_cpu_platform.rb],
+        "source/cpu" => %w[test_cpu.rb],
+        "source/http" => %w[test_source_http.rb],
+        "source/job_queue" => %w[test_source_job_queue.rb],
+        "source/job_queues" => %w[test_source_job_queues.rb],
+        "version" => %w[test_hirefire.rb]
+      }.freeze
 
       def initialize(root:, results:, free_dirs:, service_dirs:, cells:, coverage:, files:)
         @root = root
@@ -93,12 +105,15 @@ module Audit
           timed_out = false
           begin
             File.write(path, mutant.apply(original))
-            job.fetch(pool).each do |cell|
-              outcome = run_cell(dir, cell)
-              job[:run] << cell
+            stages = job.fetch(pool).map { |cell| [cell, cell, nil] }
+            focused = (pool == :free) ? focused_tests(dir, mutant.file) : []
+            stages.unshift(["focused", "default", focused]) if focused.any?
+            stages.each do |label, cell, paths|
+              outcome = run_cell(dir, cell, paths)
+              job[:run] << label
               next if outcome == :passed
 
-              killer = cell
+              killer = label
               timed_out = outcome == :timeout
               break
             end
@@ -124,8 +139,14 @@ module Audit
         end
       end
 
-      def run_cell(dir, cell)
-        paths = @cells.fetch(cell).map { |file| File.join(dir, "test/hirefire", file) }
+      def focused_tests(dir, file)
+        name = file.delete_prefix("lib/hirefire/").delete_suffix(".rb")
+        tests = FOCUSED[name] || [File.join(File.dirname(name), "test_#{File.basename(name)}.rb").delete_prefix("./")]
+        (tests & @cells.fetch("default")).map { |test| File.join(dir, "test/hirefire", test) }
+      end
+
+      def run_cell(dir, cell, paths = nil)
+        paths ||= @cells.fetch(cell).map { |file| File.join(dir, "test/hirefire", file) }
         env = {"BUNDLE_GEMFILE" => File.join(dir, "gemfiles/#{cell}.gemfile"), "COVERAGE" => "false"}
         command = ["bundle", "exec", "ruby", "-Ilib:test", "-e", "ARGV.each { |file| require file }", *paths]
         Bundler.with_unbundled_env do

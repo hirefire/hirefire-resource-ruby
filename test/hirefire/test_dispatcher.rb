@@ -2090,7 +2090,7 @@ class HireFire::DispatcherTest < Minitest::Test
 
     (1000..1059).each { |second| Timecop.freeze(Time.at(second)) { session.report } }
     assert_equal 1, log.string.scan("Dispatch error").size
-    assert_includes log.string, "Dispatch error: HireFire::Errors::RequestError: Server responded with 500 status.\n"
+    assert_includes log.string, "Dispatch error: HireFire::Errors::RequestError: Ingest request failed with 500 status.\n"
 
     (1060..1125).each { |second| Timecop.freeze(Time.at(second)) { session.report } }
     assert_equal ["(6 failed attempts in a row)", "(8 failed attempts in a row)"], log.string.scan(/\(\d+ failed attempts in a row\)/)
@@ -2139,6 +2139,35 @@ class HireFire::DispatcherTest < Minitest::Test
     (1000..1004).each { |second| Timecop.freeze(Time.at(second)) { session.report } }
 
     assert_equal [1000, 1001, 1002, 1003, 1004], attempts
+  end
+
+  def test_a_rejected_token_follows_the_dispatch_frequency_the_server_sends_with_it
+    stub_lease
+    attempts = []
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |_request|
+      attempts << Time.now.to_i
+      {status: 401, headers: {"HireFire-Dispatch-Frequency" => "30"}}
+    end
+    configure_web_only
+
+    (1000..1065).each { |second| Timecop.freeze(Time.at(second)) { session.report } }
+
+    assert_equal [1000, 1030, 1060], attempts
+    refute_includes log.string, "Dispatch error"
+  end
+
+  def test_a_rejected_payload_follows_the_dispatch_frequency_the_server_sends_with_it
+    stub_lease
+    attempts = []
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |_request|
+      attempts << Time.now.to_i
+      {status: 413, headers: {"HireFire-Dispatch-Frequency" => "10"}}
+    end
+    configure_web_only
+
+    (1000..1025).each { |second| Timecop.freeze(Time.at(second)) { session.report } }
+
+    assert_equal [1000, 1010, 1020], attempts
   end
 
   private

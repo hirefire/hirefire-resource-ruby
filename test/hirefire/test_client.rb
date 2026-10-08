@@ -4,7 +4,7 @@ require "test_helper"
 
 class HireFire::ClientTest < Minitest::Test
   def client
-    @client ||= HireFire::Client.new
+    @client ||= HireFire::Client.new(HireFire.configuration)
   end
 
   def log
@@ -40,13 +40,16 @@ class HireFire::ClientTest < Minitest::Test
     assert_requested request
   end
 
-  def test_submit_samples_returns_nil_on_unauthorized
+  def test_submit_samples_returns_the_response_of_a_rejected_token_with_its_headers
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")
-      .to_return(status: 401)
+      .to_return(status: 401, headers: {"HireFire-Dispatch-Frequency" => "30"})
 
     result = client.submit_samples('[{"name":"web","metrics":{"1000":[]}}]')
 
-    assert_nil result
+    assert result.unauthorized?
+    refute result.ok?
+    refute result.too_large?
+    assert_equal 30, result.integer("HireFire-Dispatch-Frequency")
   end
 
   def test_submit_samples_raises_on_server_error
@@ -69,11 +72,16 @@ class HireFire::ClientTest < Minitest::Test
     end
   end
 
-  def test_submit_samples_returns_payload_too_large_on_413
+  def test_submit_samples_returns_the_response_of_a_rejected_payload
     stub_request(:post, "https://data.hirefire.io/metrics/ingest")
       .to_return(status: 413, body: '{"error":"payload too large"}')
 
-    assert_equal :payload_too_large, client.submit_samples("[]")
+    result = client.submit_samples("[]")
+
+    assert result.too_large?
+    refute result.ok?
+    refute result.unauthorized?
+    assert_equal 413, result.status
   end
 
   def test_connection_bypasses_ambient_http_proxy
@@ -146,7 +154,7 @@ class HireFire::ClientTest < Minitest::Test
 
     result = client.submit_samples("[]")
 
-    assert_kind_of Net::HTTPSuccess, result
+    assert result.ok?
     refute_same established, client.instance_variable_get(:@http)
   end
 
@@ -188,7 +196,7 @@ class HireFire::ClientTest < Minitest::Test
     end
 
     error = assert_raises(HireFire::Errors::RequestError) do
-      HireFire::Client.new(timeout: 0.1).submit_samples("[]")
+      HireFire::Client.new(HireFire.configuration, timeout: 0.1).submit_samples("[]")
     end
 
     assert_equal "Request timed out.", error.message
@@ -200,13 +208,13 @@ class HireFire::ClientTest < Minitest::Test
       sleep(0.3) if slow
       {status: 200}
     end
-    client = HireFire::Client.new(timeout: 0.1)
+    client = HireFire::Client.new(HireFire.configuration, timeout: 0.1)
 
     assert_raises(HireFire::Errors::RequestError) { client.submit_samples("[]") }
     assert_nil client.instance_variable_get(:@http)
     slow = false
 
-    assert_kind_of Net::HTTPSuccess, client.submit_samples("[]")
+    assert client.submit_samples("[]").ok?
   end
 
   def test_open_read_and_write_timeouts_match
@@ -230,7 +238,7 @@ class HireFire::ClientTest < Minitest::Test
 
     result = client.submit_samples("[]")
 
-    assert_kind_of Net::HTTPSuccess, result
+    assert result.ok?
     refute_same established, client.instance_variable_get(:@http)
   end
 
@@ -298,7 +306,7 @@ class HireFire::ClientTest < Minitest::Test
 
     assert_equal "Response body exceeded 131072 bytes (status 500).", error.message
     assert_nil client.instance_variable_get(:@http)
-    assert_kind_of Net::HTTPSuccess, client.submit_samples("[]")
+    assert client.submit_samples("[]").ok?
   end
 
   def test_a_response_body_of_exactly_the_limit_is_read_in_full
@@ -315,14 +323,33 @@ class HireFire::ClientTest < Minitest::Test
     assert_equal "", client.request_lease("abc123").body
   end
 
-  def test_header_integer_reads_positive_whole_numbers_only
-    response = {"plain" => "30", "padded" => " 7 ", "zero" => "0", "negative" => "-5", "words" => "soon", "mixed" => "3abc", "decimal" => "1.5", "grouped" => "1_000", "empty" => ""}
+  def test_a_response_reads_a_header_as_a_positive_whole_number_or_not_at_all
+    headers = {"plain" => "30", "padded" => " 7 ", "zero" => "0", "negative" => "-5", "words" => "soon", "mixed" => "3abc", "decimal" => "1.5", "grouped" => "1_000", "empty" => ""}
+    response = HireFire::Client::Response.new(200, headers, "")
 
-    assert_equal 30, HireFire::Client.header_integer(response, "plain")
-    assert_equal 7, HireFire::Client.header_integer(response, "padded")
+    assert_equal 30, response.integer("plain")
+    assert_equal 7, response.integer("padded")
     %w[zero negative words mixed decimal grouped empty missing].each do |name|
-      assert_nil HireFire::Client.header_integer(response, name), "#{name} was read as a number"
+      assert_nil response.integer(name), "#{name} was read as a number"
     end
+  end
+
+  def test_a_response_is_ok_for_every_2xx_status_and_no_other
+    assert HireFire::Client::Response.new(200, {}, "").ok?
+    assert HireFire::Client::Response.new(299, {}, "").ok?
+    refute HireFire::Client::Response.new(199, {}, "").ok?
+    refute HireFire::Client::Response.new(300, {}, "").ok?
+  end
+
+  def test_a_response_reads_headers_without_regard_to_case
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true", "HireFire-Lease-TTL" => "9"})
+
+    response = client.request_lease("abc123")
+
+    assert_equal "true", response["hirefire-lease-granted"]
+    assert_equal 9, response.integer("HIREFIRE-LEASE-TTL")
+    assert_equal 200, response.status
   end
 
   def test_request_lease_raises_on_timeout
@@ -357,7 +384,7 @@ class HireFire::ClientTest < Minitest::Test
   def test_blank_and_slash_only_data_url_falls_back_to_default
     ["", "   ", "/", "///"].each do |value|
       ENV["HIREFIRE_DATA_URL"] = value
-      fresh = HireFire::Client.new
+      fresh = HireFire::Client.new(HireFire.configuration)
       assert_equal "https://data.hirefire.io", fresh.send(:base_url),
         "expected default base for #{value.inspect}"
     end
@@ -367,7 +394,7 @@ class HireFire::ClientTest < Minitest::Test
 
   def test_whitespace_padded_data_url_is_stripped
     ENV["HIREFIRE_DATA_URL"] = "  https://custom.hirefire.io  "
-    custom_client = HireFire::Client.new
+    custom_client = HireFire::Client.new(HireFire.configuration)
 
     request = stub_request(:post, "https://custom.hirefire.io/metrics/ingest")
       .to_return(status: 200)
@@ -381,7 +408,7 @@ class HireFire::ClientTest < Minitest::Test
 
   def test_custom_data_url
     ENV["HIREFIRE_DATA_URL"] = "https://custom.hirefire.io"
-    custom_client = HireFire::Client.new
+    custom_client = HireFire::Client.new(HireFire.configuration)
 
     request = stub_request(:post, "https://custom.hirefire.io/metrics/ingest")
       .to_return(status: 200)
@@ -393,7 +420,7 @@ class HireFire::ClientTest < Minitest::Test
 
   def test_custom_data_url_over_plain_http
     ENV["HIREFIRE_DATA_URL"] = "http://localhost:9999"
-    custom_client = HireFire::Client.new
+    custom_client = HireFire::Client.new(HireFire.configuration)
 
     request = stub_request(:post, "http://localhost:9999/metrics/ingest")
       .to_return(status: 200)
@@ -409,7 +436,7 @@ class HireFire::ClientTest < Minitest::Test
 
     client.submit_samples("[]")
     client.request_lease("abc123")
-    HireFire::Client.new.submit_samples("[]")
+    HireFire::Client.new(HireFire.configuration).submit_samples("[]")
 
     assert_equal 1, log.string.scan("HIREFIRE_DATA_URL uses http, so the HireFire token is sent to collector.example.com in clear text. Use an https URL.").size
   ensure
@@ -421,7 +448,7 @@ class HireFire::ClientTest < Minitest::Test
       ENV["HIREFIRE_DATA_URL"] = url
       stub_request(:post, "#{url}/metrics/ingest").to_return(status: 200)
 
-      HireFire::Client.new.submit_samples("[]")
+      HireFire::Client.new(HireFire.configuration).submit_samples("[]")
     end
 
     assert_empty log.string
@@ -434,7 +461,7 @@ class HireFire::ClientTest < Minitest::Test
       ENV["HIREFIRE_DATA_URL"] = url
 
       error = assert_raises(HireFire::Errors::RequestError, "#{url.inspect} was accepted") do
-        HireFire::Client.new.submit_samples("[]")
+        HireFire::Client.new(HireFire.configuration).submit_samples("[]")
       end
       assert_equal "HIREFIRE_DATA_URL must be an http or https URL with a host.", error.message
     end
@@ -444,7 +471,7 @@ class HireFire::ClientTest < Minitest::Test
 
   def test_custom_data_url_with_a_trailing_slash_does_not_double_the_path
     ENV["HIREFIRE_DATA_URL"] = "https://custom.hirefire.io/prefix/"
-    custom_client = HireFire::Client.new
+    custom_client = HireFire::Client.new(HireFire.configuration)
 
     request = stub_request(:post, "https://custom.hirefire.io/prefix/metrics/ingest")
       .to_return(status: 200)
@@ -456,7 +483,7 @@ class HireFire::ClientTest < Minitest::Test
 
   def test_custom_data_url_honors_a_path_prefix
     ENV["HIREFIRE_DATA_URL"] = "https://proxy.example.com/hf"
-    custom_client = HireFire::Client.new
+    custom_client = HireFire::Client.new(HireFire.configuration)
 
     request = stub_request(:post, "https://proxy.example.com/hf/metrics/ingest")
       .to_return(status: 200)
@@ -486,7 +513,7 @@ class HireFire::ClientTest < Minitest::Test
       Errno::EPIPE.new,
       Net::ProtocolError.new("protocol error")
     ].each do |error|
-      fresh = HireFire::Client.new
+      fresh = HireFire::Client.new(HireFire.configuration)
       stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
       fresh.submit_samples("[]")
 
@@ -495,7 +522,7 @@ class HireFire::ClientTest < Minitest::Test
         .to_return(status: 200)
 
       result = fresh.submit_samples("[]")
-      assert_kind_of Net::HTTPSuccess, result, error.class.name
+      assert result.ok?, error.class.name
     end
   end
 
@@ -518,7 +545,7 @@ class HireFire::ClientTest < Minitest::Test
     first = client.instance_variable_get(:@http)
 
     ENV["HIREFIRE_DATA_URL"] = "https://other.example.com"
-    other = HireFire::Client.new
+    other = HireFire::Client.new(HireFire.configuration)
     stub_request(:post, "https://other.example.com/metrics/ingest").to_return(status: 200)
     other.submit_samples("[]")
     second = other.instance_variable_get(:@http)

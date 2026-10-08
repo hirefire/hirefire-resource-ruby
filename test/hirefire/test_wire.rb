@@ -151,7 +151,7 @@ class HireFire::WireTest < Minitest::Test
     @ingest = {status: 500}
 
     HireFire.configure { |_| }
-    wait_for_log("Dispatch error: HireFire::Errors::RequestError: Server responded with 500 status.")
+    wait_for_log("Dispatch error: HireFire::Errors::RequestError: Ingest request failed with 500 status.")
     @ingest = {status: 200}
     failed = @server.requests.size
     errors = @log.string.scan("Dispatch error").size
@@ -166,9 +166,9 @@ class HireFire::WireTest < Minitest::Test
     "a_reset_connection" => [{then: :reset}, "Dispatch error: HireFire::Errors::RequestError: Network error ("],
     "a_closed_connection" => [{then: :close}, "Dispatch error: HireFire::Errors::RequestError: Network error ("],
     "a_reply_that_is_not_http" => [{raw: "\x00\xFFthis is not http\r\n\r\n".b, after: :close}, "Dispatch error: HireFire::Errors::RequestError: Network error (Net::HTTPBadResponse"],
-    "a_redirect" => [{status: 302, headers: {"Location" => "/elsewhere"}}, "Dispatch error: HireFire::Errors::RequestError: Unexpected response code 302."],
-    "a_rate_limit" => [{status: 429, headers: {"Retry-After" => "30"}}, "Dispatch error: HireFire::Errors::RequestError: Unexpected response code 429."],
-    "an_unavailable_server" => [{status: 503}, "Dispatch error: HireFire::Errors::RequestError: Server responded with 503 status."],
+    "a_redirect" => [{status: 302, headers: {"Location" => "/elsewhere"}}, "Dispatch error: HireFire::Errors::RequestError: Ingest request failed with 302 status."],
+    "a_rate_limit" => [{status: 429, headers: {"Retry-After" => "30"}}, "Dispatch error: HireFire::Errors::RequestError: Ingest request failed with 429 status."],
+    "an_unavailable_server" => [{status: 503}, "Dispatch error: HireFire::Errors::RequestError: Ingest request failed with 503 status."],
     "a_rejected_payload" => [{status: 413}, "Dropped metrics payload: 52 bytes server rejected (413)."]
   }.freeze
 

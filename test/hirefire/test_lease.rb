@@ -4,7 +4,7 @@ require "test_helper"
 
 class HireFire::LeaseTest < Minitest::Test
   def lease
-    @lease ||= HireFire::Lease.new
+    @lease ||= HireFire::Lease.new(HireFire.configuration)
   end
 
   def setup
@@ -240,18 +240,13 @@ class HireFire::LeaseTest < Minitest::Test
     client = target.instance_variable_get(:@client)
     client.define_singleton_method(:request_lease) do |_process_id|
       target.demote!
-      response = Net::HTTPOK.new("1.1", "200", "OK")
-      response.instance_variable_set(:@read, true)
       body = {version: 1, job_queues: [{"name" => "worker", "strategy" => "jql"}]}.to_json
       headers = {
         "HireFire-Lease-Granted" => "true",
         "HireFire-Sample-Frequency" => "30",
         "HireFire-Lease-TTL" => "120"
       }
-      response.define_singleton_method(:body) { body }
-      response.define_singleton_method(:[]) { |key| headers[key] }
-      response.define_singleton_method(:key?) { |key| headers.key?(key) }
-      response
+      HireFire::Client::Response.new(200, headers, body)
     end
 
     target.request_if_due(hold: ->(_) { true })
@@ -721,7 +716,7 @@ class HireFire::LeaseTest < Minitest::Test
           "HireFire-Lease-Granted" => "true",
           "HireFire-Sample-Frequency" => value
         })
-      lease = HireFire::Lease.new
+      lease = HireFire::Lease.new(HireFire.configuration)
 
       lease.request_if_due(hold: ->(_) { true })
 
@@ -761,7 +756,7 @@ class HireFire::LeaseTest < Minitest::Test
           "HireFire-Lease-Granted" => "true",
           "HireFire-Lease-TTL" => value
         })
-      lease = Timecop.freeze(Time.at(1000)) { HireFire::Lease.new }
+      lease = Timecop.freeze(Time.at(1000)) { HireFire::Lease.new(HireFire.configuration) }
 
       Timecop.freeze(Time.at(1000)) { lease.request_if_due(hold: ->(_) { true }) }
       Timecop.freeze(Time.at(1014)) { lease.request_if_due(hold: ->(_) { true }) }
@@ -931,7 +926,7 @@ class HireFire::LeaseTest < Minitest::Test
       '"string"'.to_json,
       {version: 1, job_queues: {}}.to_json
     ].each do |body|
-      lease = HireFire::Lease.new
+      lease = HireFire::Lease.new(HireFire.configuration)
       stub_request(:post, "https://data.hirefire.io/metrics/lease")
         .to_return(status: 200, headers: {
           "HireFire-Lease-Granted" => "true",

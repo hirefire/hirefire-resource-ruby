@@ -7,8 +7,8 @@ module HireFire
     class Session
       def initialize(configuration)
         @configuration = configuration
-        @client = Client.new
-        @lease = Lease.new
+        @client = Client.new(configuration)
+        @lease = Lease.new(configuration)
         @mutex = Mutex.new
         @wake = Thread::ConditionVariable.new
         @live = true
@@ -329,11 +329,11 @@ module HireFire
 
         Log.safe(logger, :info, "[HireFire] Dispatching metrics: #{body}") if verbose?
         response = @client.submit_samples(body)
+        apply_dispatch_frequency(response)
 
-        if response == :payload_too_large
+        if response.too_large?
           drop_oversized_payload(body, watermark, server: true)
         else
-          apply_dispatch_frequency(response)
           @last_rqt_second = watermark if watermark
           @pending_sample_trace = nil
         end
@@ -369,7 +369,7 @@ module HireFire
       end
 
       def apply_dispatch_frequency(response)
-        value = Client.header_integer(response, "HireFire-Dispatch-Frequency") if response
+        value = response.integer("HireFire-Dispatch-Frequency")
         @dispatch_frequency = value.clamp(DEFAULT_DISPATCH_FREQUENCY, MAX_DISPATCH_FREQUENCY) if value
       end
 

@@ -13,9 +13,10 @@ module HireFire
 
     attr_reader :process_id, :sample_frequency, :job_queues
 
-    def initialize
+    def initialize(configuration)
+      @configuration = configuration
       @process_id = SecureRandom.uuid
-      @client = Client.new
+      @client = Client.new(configuration)
       @mutex = Mutex.new
       @ttl = 15
       @granted = false
@@ -72,19 +73,19 @@ module HireFire
         raise
       end
 
-      if response.is_a?(Net::HTTPUnauthorized)
+      if response.unauthorized?
         @mutex.synchronize { clear_grant if @epoch == epoch }
         return
       end
 
-      unless response.is_a?(Net::HTTPSuccess)
+      unless response.ok?
         @mutex.synchronize { clear_grant if @epoch == epoch }
-        raise Errors::RequestError, "Lease request failed with #{response.code} status."
+        raise Errors::RequestError, "Lease request failed with #{response.status} status."
       end
 
       next_sample_frequency = @sample_frequency
       next_sample_at = @next_sample_at
-      if (frequency = Client.header_integer(response, "HireFire-Sample-Frequency"))
+      if (frequency = response.integer("HireFire-Sample-Frequency"))
         previous_frequency = @sample_frequency
         next_sample_frequency = frequency.clamp(SAMPLE_FREQUENCY_BOUNDS)
         if next_sample_frequency < previous_frequency
@@ -95,7 +96,7 @@ module HireFire
 
       next_ttl = @ttl
       next_expires_at = @expires_at
-      if (ttl = Client.header_integer(response, "HireFire-Lease-TTL"))
+      if (ttl = response.integer("HireFire-Lease-TTL"))
         next_ttl = ttl.clamp(TTL_BOUNDS)
         next_expires_at = Clock.monotonic + next_ttl
       end
@@ -116,7 +117,7 @@ module HireFire
         if granted && !hold_ok
           clear_grant
           @process_id = SecureRandom.uuid
-          Log.safe(HireFire.configuration.logger, :info,
+          Log.safe(@configuration.logger, :info,
             "[HireFire] Lease grant dropped: this process cannot sample the plan " \
             "(no local job-queue samplers and no executable plan adapter).")
         else
@@ -144,7 +145,7 @@ module HireFire
 
       payload = JSON.parse(body)
       unless payload.is_a?(Hash)
-        Log.safe(HireFire.configuration.logger, :error,
+        Log.safe(@configuration.logger, :error,
           "[HireFire] Lease grant body was not a JSON object. Plan ignored.")
         return empty_grant_body
       end
@@ -152,7 +153,7 @@ module HireFire
       trace = payload["trace"] == true
       entries = payload["job_queues"]
       unless entries.is_a?(Array)
-        Log.safe(HireFire.configuration.logger, :error,
+        Log.safe(@configuration.logger, :error,
           "[HireFire] Lease grant body job_queues was not an array. Plan ignored.")
         return empty_grant_body(trace: trace)
       end
@@ -161,18 +162,18 @@ module HireFire
       invalid = entries.size - valid.size
 
       if valid.size > MAX_JOB_QUEUES
-        Log.safe(HireFire.configuration.logger, :error,
+        Log.safe(@configuration.logger, :error,
           "[HireFire] Lease plan truncated to #{MAX_JOB_QUEUES} job queue entries" \
           "#{" (#{invalid} invalid also skipped)" if invalid.positive?}.")
       elsif invalid.positive?
         label = (invalid == 1) ? "entry" : "entries"
-        Log.safe(HireFire.configuration.logger, :error,
+        Log.safe(@configuration.logger, :error,
           "[HireFire] Lease plan skipped #{invalid} invalid job queue #{label}.")
       end
 
       GrantBody.new(job_queues: valid.first(MAX_JOB_QUEUES), trace: trace)
     rescue JSON::ParserError
-      Log.safe(HireFire.configuration.logger, :error,
+      Log.safe(@configuration.logger, :error,
         "[HireFire] Lease grant body was not valid JSON. Plan ignored.")
       empty_grant_body
     end

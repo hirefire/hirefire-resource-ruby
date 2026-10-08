@@ -20,13 +20,32 @@ module HireFire
     DEFAULT_URL = "https://data.hirefire.io"
     LOCAL_HOSTS = ["localhost", "127.0.0.1", "::1"].freeze
 
-    def self.header_integer(response, name)
-      text = response[name].to_s.strip
-      value = text.to_i if text.match?(/\A\d+\z/)
-      value if value&.positive?
+    Response = Struct.new(:status, :headers, :body) do
+      def ok?
+        status.between?(200, 299)
+      end
+
+      def unauthorized?
+        status == 401
+      end
+
+      def too_large?
+        status == 413
+      end
+
+      def [](name)
+        headers[name]
+      end
+
+      def integer(name)
+        text = self[name].to_s.strip
+        value = text.to_i if text.match?(/\A\d+\z/)
+        value if value&.positive?
+      end
     end
 
-    def initialize(timeout: TIMEOUT)
+    def initialize(configuration, timeout: TIMEOUT)
+      @configuration = configuration
       @timeout = timeout
       @mutex = Mutex.new
       @http = nil
@@ -42,19 +61,9 @@ module HireFire
       request["HireFire-Agent"] = "Ruby-#{HireFire::VERSION}"
       request.body = body
       response = execute(uri, request)
+      return response if response.ok? || response.unauthorized? || response.too_large?
 
-      case response
-      when Net::HTTPSuccess
-        response
-      when Net::HTTPUnauthorized
-        nil
-      when Net::HTTPRequestEntityTooLarge
-        :payload_too_large
-      when Net::HTTPServerError
-        raise Errors::RequestError, "Server responded with #{response.code} status."
-      else
-        raise Errors::RequestError, "Unexpected response code #{response.code}."
-      end
+      raise Errors::RequestError, "Ingest request failed with #{response.status} status."
     end
 
     def request_lease(process_id)
@@ -75,7 +84,8 @@ module HireFire
 
     def execute(uri, request)
       @mutex.synchronize do
-        Timeout.timeout(@timeout) { perform(uri, request) }
+        http = Timeout.timeout(@timeout) { perform(uri, request) }
+        Response.new(http.code.to_i, http, http.body)
       rescue Timeout::Error
         reset_connection
         raise Errors::RequestError, "Request timed out."
@@ -163,7 +173,7 @@ module HireFire
         raise Errors::RequestError, "HIREFIRE_DATA_URL must be an http or https URL with a host." unless uri
 
         if uri.scheme == "http" && !LOCAL_HOSTS.include?(uri.hostname)
-          HireFire.configuration.warn_plain_http_data_url_once(uri.hostname)
+          @configuration.warn_plain_http_data_url_once(uri.hostname)
         end
         url
       end
@@ -177,7 +187,7 @@ module HireFire
     end
 
     def token
-      HireFire.configuration.token
+      @configuration.token
     end
 
     def require_token!

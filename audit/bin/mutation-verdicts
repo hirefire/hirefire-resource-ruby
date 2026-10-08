@@ -34,7 +34,7 @@ end
 matches = lambda do |rule, record, name|
   first = record["original"].lines.first.to_s.strip
   (rule[:file].nil? || record["file"] == "lib/hirefire/#{rule[:file]}.rb" || record["file"] == rule[:file]) &&
-    (rule[:method].nil? || rule[:method] == name) &&
+    (rule[:method].nil? || Array(rule[:method]).include?(name)) &&
     (rule[:kind].nil? || Array(rule[:kind]).include?(record["kind"])) &&
     (rule[:original].nil? || rule[:original] === first) &&
     (rule[:replacement].nil? || rule[:replacement] === record["replacement"].lines.first.to_s.strip)

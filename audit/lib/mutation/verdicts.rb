@@ -6,7 +6,17 @@ module Audit
     ONE_ROW = "the query returns one row, so the first row is the last"
     ROUND_MEMORY = "the end of a round clears the walks and the snapshot of running jobs to release their memory. The next round clears them again before it reads, so no result depends on it"
 
+    LOCK_FREE_READ = "the read before the lock is a shortcut. The locked branch returns the same object"
+    START_CHECK = "the check before the lock is a shortcut that the locked check repeats, and callers read the result of start as true or not true"
+
     VERDICTS = [
+      {file: "configuration", method: %w[buffer dispatcher], kind: "logical_right", verdict: "equivalent", reason: LOCK_FREE_READ},
+      {file: "dispatcher", method: "start", kind: %w[return_nil], verdict: "equivalent", reason: START_CHECK},
+      {file: "dispatcher", method: "start", kind: "condition_false", original: "healthy?", verdict: "equivalent", reason: START_CHECK},
+      {file: "dispatcher", method: "start", kind: "logical_left", original: "@stopping || healthy?", verdict: "accepted",
+       reason: "the health check under the lock closes the race between two starts that both passed the first check. A test cannot stage that race without holding the lock of the dispatcher from outside"},
+      {file: "macro/solid_queue", method: "scheduled_latency", kind: "drop_call", verdict: "equivalent",
+       reason: "the smallest scheduled time of a queue is the oldest due one whenever one is due, and a smallest time in the future is clamped to zero"},
       {method: "initialize", kind: "delete_statement", original: /\A@\w+ = (nil|false)\z/, verdict: "equivalent", reason: NIL_INITIALIZER},
       {file: "macro/que", kind: "method_swap", original: "first", verdict: "equivalent", reason: ONE_ROW},
       {file: "macro/helpers/good_job", method: "good_job_class", kind: "condition_true", verdict: "accepted",

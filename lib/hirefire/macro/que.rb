@@ -138,22 +138,21 @@ module HireFire
       end
 
       def not_advisory_locked_sql
-        <<~SQL.chomp
-          AND NOT EXISTS (
-            SELECT 1
-            FROM pg_locks
-            WHERE locktype = 'advisory'
-              AND (classid::bigint << 32) + objid::bigint = que_jobs.#{advisory_lock_id_column}
-          )
-        SQL
+        "AND NOT #{advisory_lock_exists_sql}"
       end
 
       def advisory_locked_sql
+        "AND #{advisory_lock_exists_sql}"
+      end
+
+      def advisory_lock_exists_sql
         <<~SQL.chomp
-          AND EXISTS (
+          EXISTS (
             SELECT 1
             FROM pg_locks
             WHERE locktype = 'advisory'
+              AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+              AND objsubid = 1
               AND (classid::bigint << 32) + objid::bigint = que_jobs.#{advisory_lock_id_column}
           )
         SQL

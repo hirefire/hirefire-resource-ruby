@@ -398,6 +398,77 @@ class HireFire::ConfigurationTest < Minitest::Test
     refute_same first, second
   end
 
+  def test_requests_are_recorded_under_the_identity_read_at_the_last_dispatcher_start
+    ENV["HIREFIRE_TOKEN"] = "token"
+    ENV["HIREFIRE_SERVICE_NAME"] = "first"
+    @configuration.dispatcher.stubs(:start).returns(true, false, false, true, false)
+
+    2.times { @configuration.sample_request_queue_time(5) }
+    ENV["HIREFIRE_SERVICE_NAME"] = "second"
+    @configuration.sample_request_queue_time(5)
+    assert_equal ["first"], @configuration.buffer.flush.keys
+
+    2.times { @configuration.sample_request_queue_time(5) }
+    assert_equal ["first", "second"], @configuration.buffer.flush.keys
+  end
+
+  def test_the_token_is_read_again_only_when_the_dispatcher_starts
+    ENV["HIREFIRE_TOKEN"] = "token"
+    ENV["HIREFIRE_SERVICE_NAME"] = "web"
+    @configuration.dispatcher.stubs(:start).returns(false, false, true, false)
+
+    @configuration.sample_request_queue_time(5)
+    ENV.delete("HIREFIRE_TOKEN")
+    2.times { @configuration.sample_request_queue_time(5) }
+    assert_equal 3, @configuration.buffer.flush.dig("web", "rqt").values.sum { |bucket| bucket[:count] }
+
+    @configuration.sample_request_queue_time(5)
+    assert_empty @configuration.buffer.flush
+  end
+
+  def test_setting_the_token_makes_the_next_request_read_it
+    ENV["HIREFIRE_SERVICE_NAME"] = "web"
+    @configuration.token = "token"
+    @configuration.dispatcher.stubs(:start).returns(false)
+
+    @configuration.sample_request_queue_time(5)
+    @configuration.token = ""
+    @configuration.sample_request_queue_time(5)
+
+    assert_equal 1, @configuration.buffer.flush.dig("web", "rqt").values.sum { |bucket| bucket[:count] }
+  end
+
+  def test_a_request_with_a_token_and_no_identity_records_nothing_and_starts_the_dispatcher
+    ENV["HIREFIRE_TOKEN"] = "token"
+    @configuration.dispatcher.expects(:start).twice.returns(false)
+
+    2.times { @configuration.sample_request_queue_time(5) }
+
+    assert_empty @configuration.buffer.flush
+  end
+
+  def test_a_request_without_a_token_records_nothing_and_starts_nothing
+    ENV["DYNO"] = "web.1"
+    @configuration.dispatcher.expects(:start).never
+
+    @configuration.sample_request_queue_time(5)
+
+    assert_empty @configuration.buffer.flush
+  end
+
+  def test_a_fork_reset_makes_the_next_request_read_the_identity_again
+    ENV["HIREFIRE_TOKEN"] = "token"
+    ENV["HIREFIRE_SERVICE_NAME"] = "first"
+    @configuration.dispatcher.stubs(:start).returns(false)
+
+    @configuration.sample_request_queue_time(5)
+    ENV["HIREFIRE_SERVICE_NAME"] = "second"
+    @configuration.reset_after_fork
+    @configuration.sample_request_queue_time(5)
+
+    assert_equal ["first", "second"], @configuration.buffer.flush.keys
+  end
+
   def test_canonical_name_preserves_first_seen_casing
     @configuration.dyno(:Web) { 1 }
     assert_equal "Web", @configuration.job_queues.find_by_name("Web").name

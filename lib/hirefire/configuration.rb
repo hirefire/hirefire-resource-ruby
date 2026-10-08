@@ -5,7 +5,6 @@ require "logger"
 module HireFire
   class Configuration
     attr_reader :job_queues, :log_queue_metrics, :logger, :once
-    attr_writer :token
 
     def initialize
       @job_queues = Source::JobQueues.new
@@ -19,7 +18,13 @@ module HireFire
       @mutex = Mutex.new
       @always_on_cpu = nil
       @always_on_http = nil
+      @request_source = nil
       @http_active = false
+    end
+
+    def token=(value)
+      @token = value
+      @request_source = nil
     end
 
     def logger=(value)
@@ -101,6 +106,18 @@ module HireFire
       @always_on_http
     end
 
+    def sample_request_queue_time(value)
+      source = @request_source
+      if source.nil?
+        return unless token
+
+        mark_http_active!
+        source = http_source
+      end
+      source&.sample(value)
+      @request_source = dispatcher.start ? nil : source
+    end
+
     def rqt_liveness?
       rqt_enabled? && !soft_identity.nil?
     end
@@ -121,6 +138,7 @@ module HireFire
     def reset_after_fork
       @always_on_cpu = nil
       @always_on_http = nil
+      @request_source = nil
     end
 
     def prefork_web_handoff?

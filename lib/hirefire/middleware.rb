@@ -26,12 +26,7 @@ module HireFire
       configuration = HireFire.configuration
 
       log_request_queue_time(request_queue_time) if configuration.log_queue_metrics
-
-      if configuration.token
-        configuration.mark_http_active!
-        configuration.http_source&.sample(request_queue_time)
-        configuration.dispatcher.start
-      end
+      configuration.sample_request_queue_time(request_queue_time)
     rescue => e
       HireFire.configuration.once.log(:error, :middleware_error, e.class) do
         "[HireFire] Middleware error: #{Log.format_error(e)}"

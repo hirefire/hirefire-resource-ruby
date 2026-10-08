@@ -188,13 +188,24 @@ module HireFire
         payload, watermark = build_payload(data)
         return if payload.empty?
 
-        body = JSON.generate(payload)
-        if body.bytesize > PAYLOAD_SIZE_LIMIT && Payload.traced?(payload)
-          @pending_sample_trace = nil
-          body = JSON.generate(Payload.without_trace(payload))
-        end
+        body = encode(payload)
         return drop_oversized_payload(body, watermark) if body.bytesize > PAYLOAD_SIZE_LIMIT
 
+        submit(body, watermark)
+      rescue => e
+        repopulate_rqt(data) if data && (final || @live || @handoff)
+        dispatch_failed(e)
+      end
+
+      def encode(payload)
+        body = JSON.generate(payload)
+        return body unless body.bytesize > PAYLOAD_SIZE_LIMIT && Payload.traced?(payload)
+
+        @pending_sample_trace = nil
+        JSON.generate(Payload.without_trace(payload))
+      end
+
+      def submit(body, watermark)
         Log.safe(logger, :info, "[HireFire] Dispatching metrics: #{body}") if Log.verbose?
         response = @client.submit_samples(body)
         apply_dispatch_frequency(response)
@@ -206,9 +217,6 @@ module HireFire
           @pending_sample_trace = nil
         end
         dispatch_succeeded
-      rescue => e
-        repopulate_rqt(data) if data && (final || @live || @handoff)
-        dispatch_failed(e)
       end
 
       def dispatch_succeeded

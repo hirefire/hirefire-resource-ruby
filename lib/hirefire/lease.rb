@@ -53,80 +53,17 @@ module HireFire
     end
 
     def request_if_due(hold:)
-      epoch = nil
-      @mutex.synchronize do
-        reset_after_fork if @owner_pid != Process.pid
-        return unless Clock.monotonic >= @expires_at
-
-        epoch = @epoch
-        @expires_at = Clock.monotonic + @ttl
-      end
-
-      begin
-        response = @client.request_lease(@process_id)
-      rescue
-        @mutex.synchronize do
-          return if @epoch != epoch
-
-          clear_grant
-        end
-        raise
-      end
-
-      if response.unauthorized?
-        @mutex.synchronize { clear_grant if @epoch == epoch }
-        return
-      end
-
-      unless response.ok?
-        @mutex.synchronize { clear_grant if @epoch == epoch }
-        raise Errors::RequestError, "Lease request failed with #{response.status} status."
-      end
-
-      next_sample_frequency = @sample_frequency
-      next_sample_at = @next_sample_at
-      if (frequency = response.integer("HireFire-Sample-Frequency"))
-        previous_frequency = @sample_frequency
-        next_sample_frequency = frequency.clamp(SAMPLE_FREQUENCY_BOUNDS)
-        if next_sample_frequency < previous_frequency
-          sooner = Clock.monotonic + next_sample_frequency
-          next_sample_at = sooner if next_sample_at > sooner
-        end
-      end
-
-      next_ttl = @ttl
-      next_expires_at = @expires_at
-      if (ttl = response.integer("HireFire-Lease-TTL"))
-        next_ttl = ttl.clamp(TTL_BOUNDS)
-        next_expires_at = Clock.monotonic + next_ttl
-      end
-
+      epoch = reserve or return
+      response = fetch(epoch) or return
       granted = response["HireFire-Lease-Granted"] == "true"
-      grant_body = granted ? parse_grant_body(response.body) : empty_grant_body
-
-      hold_ok = !granted || hold.call(grant_body.job_queues)
+      grant = granted ? parse_grant_body(response.body) : empty_grant_body
+      held = !granted || hold.call(grant.job_queues)
 
       @mutex.synchronize do
-        return if @epoch != epoch
+        next if @epoch != epoch
 
-        @sample_frequency = next_sample_frequency
-        @next_sample_at = next_sample_at
-        @ttl = next_ttl
-        @expires_at = next_expires_at
-
-        if granted && !hold_ok
-          clear_grant
-          @process_id = SecureRandom.uuid
-          Log.safe(@configuration.logger, :info,
-            "[HireFire] Lease grant dropped: this process cannot sample the plan " \
-            "(no local job-queue samplers and no executable plan adapter).")
-        else
-          was_granted = @granted
-          @granted = granted
-          @trace = granted && grant_body.trace
-          @job_queues = grant_body.job_queues
-          @next_sample_at = Clock.monotonic if granted && !was_granted
-        end
+        apply_cadence(response)
+        held ? apply_grant(granted, grant) : drop_grant
       end
     end
 
@@ -136,6 +73,61 @@ module HireFire
 
     private
 
+    def reserve
+      @mutex.synchronize do
+        reset_after_fork if @owner_pid != Process.pid
+        next unless Clock.monotonic >= @expires_at
+
+        @expires_at = Clock.monotonic + @ttl
+        @epoch
+      end
+    end
+
+    def fetch(epoch)
+      response = begin
+        @client.request_lease(@process_id)
+      rescue
+        raise if revoke(epoch)
+        return
+      end
+      return response if response.ok?
+
+      revoke(epoch)
+      raise Errors::RequestError, "Lease request failed with #{response.status} status." unless response.unauthorized?
+    end
+
+    def revoke(epoch)
+      @mutex.synchronize { (@epoch == epoch).tap { |current| clear_grant if current } }
+    end
+
+    def apply_cadence(response)
+      if (frequency = response.integer("HireFire-Sample-Frequency"))
+        frequency = frequency.clamp(SAMPLE_FREQUENCY_BOUNDS)
+        @next_sample_at = [@next_sample_at, Clock.monotonic + frequency].min if frequency < @sample_frequency
+        @sample_frequency = frequency
+      end
+
+      if (ttl = response.integer("HireFire-Lease-TTL"))
+        @ttl = ttl.clamp(TTL_BOUNDS)
+        @expires_at = Clock.monotonic + @ttl
+      end
+    end
+
+    def apply_grant(granted, grant)
+      @next_sample_at = Clock.monotonic if granted && !@granted
+      @granted = granted
+      @trace = granted && grant.trace
+      @job_queues = grant.job_queues
+    end
+
+    def drop_grant
+      clear_grant
+      @process_id = SecureRandom.uuid
+      Log.safe(@configuration.logger, :info,
+        "[HireFire] Lease grant dropped: this process cannot sample the plan " \
+        "(no local job-queue samplers and no executable plan adapter).")
+    end
+
     def empty_grant_body(trace: false)
       GrantBody.new(job_queues: [], trace: trace)
     end
@@ -144,20 +136,23 @@ module HireFire
       return empty_grant_body if body.nil? || body.empty?
 
       payload = JSON.parse(body)
-      unless payload.is_a?(Hash)
-        Log.safe(@configuration.logger, :error,
-          "[HireFire] Lease grant body was not a JSON object. Plan ignored.")
-        return empty_grant_body
-      end
+      return ignore_plan("was not a JSON object") unless payload.is_a?(Hash)
 
       trace = payload["trace"] == true
       entries = payload["job_queues"]
-      unless entries.is_a?(Array)
-        Log.safe(@configuration.logger, :error,
-          "[HireFire] Lease grant body job_queues was not an array. Plan ignored.")
-        return empty_grant_body(trace: trace)
-      end
+      return ignore_plan("job_queues was not an array", trace: trace) unless entries.is_a?(Array)
 
+      GrantBody.new(job_queues: plan_entries(entries), trace: trace)
+    rescue JSON::ParserError
+      ignore_plan("was not valid JSON")
+    end
+
+    def ignore_plan(reason, trace: false)
+      Log.safe(@configuration.logger, :error, "[HireFire] Lease grant body #{reason}. Plan ignored.")
+      empty_grant_body(trace: trace)
+    end
+
+    def plan_entries(entries)
       valid = entries.filter_map { |entry| normalize_entry(entry) }
       invalid = entries.size - valid.size
 
@@ -171,11 +166,7 @@ module HireFire
           "[HireFire] Lease plan skipped #{invalid} invalid job queue #{label}.")
       end
 
-      GrantBody.new(job_queues: valid.first(MAX_JOB_QUEUES), trace: trace)
-    rescue JSON::ParserError
-      Log.safe(@configuration.logger, :error,
-        "[HireFire] Lease grant body was not valid JSON. Plan ignored.")
-      empty_grant_body
+      valid.first(MAX_JOB_QUEUES)
     end
 
     def normalize_entry(entry)

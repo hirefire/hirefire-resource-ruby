@@ -137,7 +137,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
   def test_the_end_of_a_round_forgets_the_walk_and_the_next_round_starts_at_the_first_member
     plant("schedule", queue: "default", age: 100)
     assert_equal 1, Macro.job_queue_size(:default, **SCHEDULE_SIZE)
-    assert Cache.end_sample!(@round)
+    Cache.end_sample!(@round)
 
     plant("schedule", queue: "default", age: 90)
     Cache.begin_sample!
@@ -174,12 +174,13 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal 1, Macro.job_queue_size(:default, **SCHEDULE_SIZE)
     ZrangeLog::CALLS.clear
 
-    refute Cache.end_sample!(@round)
+    Cache.end_sample!(@round)
+    plant("schedule", queue: "default", age: 90)
     assert_equal 1, Macro.job_queue_size(:default, **SCHEDULE_SIZE)
     assert_empty reads("schedule")
 
-    assert Cache.end_sample!(current)
-    assert Cache.end_sample!
+    Cache.end_sample!(current)
+    assert_equal 2, Macro.job_queue_size(:default, **SCHEDULE_SIZE)
   end
 
   def test_the_due_moment_of_a_round_is_fixed_when_the_set_is_first_read

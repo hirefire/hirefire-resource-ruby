@@ -55,8 +55,7 @@ module HireFire
 
         queues = normalize_queues(queues, allow_empty: false)
 
-        using_reused = connection.nil? && reuse_connection
-        if using_reused
+        if connection.nil? && reuse_connection
           connection = reused_connection(amqp_url)
           owned_connection = false
         else
@@ -67,7 +66,7 @@ module HireFire
 
         begin
           queues.sum do |name|
-            channel ||= open_channel(connection, close_connection_on_failure: owned_connection)
+            channel ||= connection.create_channel
             channel.queue(name, passive: true).message_count
           rescue ::Bunny::NotFound
             warn_missing_queue_once(name)
@@ -75,7 +74,7 @@ module HireFire
             0
           end
         rescue
-          discard_reused_connection(connection) if using_reused
+          discard_reused_connection(connection)
           raise
         ensure
           close_channel(channel)
@@ -103,13 +102,6 @@ module HireFire
         nil
       end
 
-      def open_channel(connection, close_connection_on_failure:)
-        connection.create_channel
-      rescue
-        close_connection(connection) if close_connection_on_failure
-        raise
-      end
-
       def acquire_connection(amqp_url)
         session = nil
         session = ::Bunny.new(resolve_amqp_url(amqp_url), SAMPLE_CONNECTION_OPTIONS)
@@ -132,7 +124,7 @@ module HireFire
       def reused_connection(amqp_url)
         url = resolve_amqp_url(amqp_url)
         @connection_mutex.synchronize do
-          if @reused_connection && @reused_url == url && connection_open?(@reused_connection)
+          if @reused_url == url && connection_open?(@reused_connection)
             return @reused_connection
           end
 
@@ -156,7 +148,7 @@ module HireFire
       end
 
       def connection_open?(connection)
-        connection.respond_to?(:open?) && connection.open?
+        connection.open?
       rescue ::Bunny::Exception
         false
       end

@@ -44,7 +44,7 @@ module HireFire
             LIMIT 1
           SQL
           result = query_one(connection, query, queues.to_a)
-          (result && result["latency"]) ? result["latency"].to_f : 0.0
+          result ? result["latency"].to_f : 0.0
         end
       end
 
@@ -78,25 +78,16 @@ module HireFire
       private
 
       def filter_by_queues_if_any(queues, style:)
-        return "" unless queues.any?
-
-        placeholders =
-          if style == :ar
-            (["?"] * queues.size).join(", ")
-          else
-            (1..queues.size).map { |i| "$#{i}" }.join(", ")
-          end
-        "AND q_name IN (#{placeholders})"
+        placeholders = (style == :ar) ? ["?"] * queues.size : (1..queues.size).map { |i| "$#{i}" }
+        "AND q_name IN (#{placeholders.join(", ")})" if queues.any?
       end
 
       def query_one(connection, query, binds)
         if connection
           sql = binds.any? ? ActiveRecord::Base.sanitize_sql_array([query, *binds]) : query
           connection.select_one(sql)
-        elsif binds.any?
-          ::QC.default_conn_adapter.execute(query, *binds)
         else
-          ::QC.default_conn_adapter.execute(query)
+          ::QC.default_conn_adapter.execute(query, *binds)
         end
       end
     end

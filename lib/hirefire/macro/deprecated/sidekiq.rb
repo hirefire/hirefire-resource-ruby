@@ -11,7 +11,6 @@ module HireFire
         end
 
         def queue(*args)
-          args.flatten!
           options = args.last.is_a?(Hash) ? args.pop : {}
 
           job_queue_size(*args, **options.slice(*QUEUE_OPTIONS))

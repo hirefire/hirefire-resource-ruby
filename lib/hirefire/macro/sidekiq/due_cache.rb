@@ -33,12 +33,11 @@ module HireFire
 
           def end_sample!(round = nil)
             @mutex.synchronize do
-              return false if round && round != @round
+              next if round && round != @round
 
               @round = nil
               @caches = {}
               @working = nil
-              true
             end
           end
 
@@ -51,15 +50,15 @@ module HireFire
           end
 
           def latency(set_name, queues)
-            return first_due_age(set_name) if queues.nil? || queues.empty?
+            return first_due_age(set_name) if queues.empty?
 
             walk(set_name) { |cache| cache.latency(queues) }
           end
 
           def size(set_name, queues, max_scheduled: nil)
-            return due_count(set_name, Time.now.to_f) if queues.nil? || queues.empty?
+            return due_count(set_name, Time.now.to_f) if queues.empty?
 
-            cap = [max_scheduled, 0].max if max_scheduled && set_name == "schedule"
+            cap = [max_scheduled, 0].max if max_scheduled
             walk(set_name) { |cache| cache.size(queues, cap) }
           end
 
@@ -151,16 +150,14 @@ module HireFire
         end
 
         def record(member, score)
-          queue = queue_of(member) or return
-
+          queue = queue_of(member)
           @oldest[queue] ||= score
           @sizes[queue] += 1
         end
 
         def queue_of(member)
           payload = JSON.parse(member)
-          queue = payload["queue"] if payload.is_a?(Hash)
-          queue.to_s unless queue.nil? || queue == ""
+          payload["queue"].to_s if payload.is_a?(Hash)
         rescue JSON::ParserError
           nil
         end

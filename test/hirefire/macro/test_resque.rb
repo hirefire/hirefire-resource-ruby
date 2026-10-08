@@ -431,6 +431,11 @@ class HireFire::Macro::ResqueTest < Minitest::Test
         HireFire::Macro::Resque.job_queue_size(skip_working: true)
       end
       assert_equal "Resque delayed walk exceeded budget", error.message
+
+      HireFire::Clock.stubs(:monotonic).returns(5.0)
+      assert_raises(HireFire::Errors::SampleIncompleteError) do
+        HireFire::Macro::Resque.job_queue_size(skip_working: true)
+      end
     end
   end
 

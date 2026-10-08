@@ -97,7 +97,7 @@ module HireFire
 
       def query_job_queue_latency(query, queues)
         result = ::Que.execute(query, queues.to_a).first
-        result ? (result[:latency] || result["latency"]).to_f : 0.0
+        result ? result[:latency].to_f : 0.0
       end
 
       def query_job_queue_size(query, queues)
@@ -109,9 +109,7 @@ module HireFire
       end
 
       def filter_by_queues_if_any(queues)
-        return "" if queues.empty?
-        placeholders = (1..queues.size).map { |i| "$#{i}" }.join(", ")
-        "AND queue IN (#{placeholders})"
+        "AND queue IN (#{(1..queues.size).map { |i| "$#{i}" }.join(", ")})" if queues.any?
       end
     end
   end

@@ -8,7 +8,6 @@ module HireFire
           QUEUE_OPTIONS = %i[min_priority max_priority].freeze
 
           def queue(*queues)
-            queues.flatten!
             options = queues.last.is_a?(Hash) ? queues.pop : {}
 
             job_queue_size(*queues, **options.slice(*QUEUE_OPTIONS))

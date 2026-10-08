@@ -112,7 +112,7 @@ module HireFire
           latencies << enqueued_latency(queues)
           latencies << DueCache.latency("retry", queues) unless skip_retries
           latencies << DueCache.latency("schedule", queues) unless skip_scheduled
-          (latencies.max || 0.0).to_f
+          latencies.max.to_f
         end
 
         private
@@ -132,12 +132,10 @@ module HireFire
             job_enqueued_latency(parse_live_job(job_payload))
           end
 
-          (max_latencies.max || 0.0).to_f
+          max_latencies.max.to_f
         end
 
         def parse_live_job(job_payload)
-          return {} if job_payload.nil? || job_payload == ""
-
           job = JSON.parse(job_payload)
           job.is_a?(Hash) ? job : {}
         rescue JSON::ParserError, TypeError
@@ -146,8 +144,6 @@ module HireFire
 
         def job_enqueued_latency(job)
           timestamp = job["enqueued_at"] || job["created_at"]
-          return 0.0 unless timestamp
-
           epoch =
             case timestamp
             when Float

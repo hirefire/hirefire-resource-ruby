@@ -58,7 +58,7 @@ module HireFire
       end
 
       def scheduled_size(queues)
-        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        started = Clock.monotonic
         return due_timestamp_pages.sum { |timestamps| delayed_lengths(timestamps, started) } if queues.empty?
 
         jobs_seen = 0
@@ -80,8 +80,6 @@ module HireFire
         min_score = "-inf"
         loop do
           timestamps = ::Resque.redis.zrangebyscore("delayed_queue_schedule", min_score, now, limit: [0, WALK_BATCH])
-          break if timestamps.empty?
-
           yield timestamps
           break if timestamps.size < WALK_BATCH
 
@@ -95,8 +93,6 @@ module HireFire
         cursor = 0
         loop do
           encoded_jobs = ::Resque.redis.lrange("delayed:#{timestamp}", cursor, cursor + WALK_BATCH - 1)
-          break if encoded_jobs.empty?
-
           yield encoded_jobs
           break if encoded_jobs.size < WALK_BATCH
 
@@ -115,7 +111,7 @@ module HireFire
       def working_size(queues)
         total_size = 0
         jobs_seen = 0
-        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        started = Clock.monotonic
 
         live_worker_ids.each_slice(WALK_BATCH) do |ids|
           encoded_jobs = ::Resque.redis.pipelined do |pipeline|
@@ -161,20 +157,14 @@ module HireFire
       end
 
       def raise_if_walk_budget_exceeded!(walk, started, jobs_seen: 0)
-        return if jobs_seen < WALK_JOB_BUDGET &&
-          (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) < WALK_TIME_BUDGET
+        return if jobs_seen < WALK_JOB_BUDGET && (Clock.monotonic - started) < WALK_TIME_BUDGET
 
         raise HireFire::Errors::SampleIncompleteError, "Resque #{walk} walk exceeded budget"
       end
 
       def encoded_queue(encoded_job)
         payload = JSON.parse(encoded_job)
-        return unless payload.is_a?(Hash)
-
-        queue = payload["queue"]
-        return if queue.nil? || queue == ""
-
-        queue
+        payload["queue"] if payload.is_a?(Hash)
       rescue JSON::ParserError, TypeError
         nil
       end

@@ -2,6 +2,7 @@
 
 require "net/http"
 require "openssl"
+require "timeout"
 
 module HireFire
   class Client
@@ -16,6 +17,7 @@ module HireFire
       Net::ProtocolError
     ].freeze
 
+    TIMEOUT = 5
     MAX_BODY_BYTES = 131_072
     DEFAULT_URL = "https://data.hirefire.io"
     LOCAL_HOSTS = ["localhost", "127.0.0.1", "::1"].freeze
@@ -26,7 +28,7 @@ module HireFire
       value if value&.positive?
     end
 
-    def initialize(timeout: 5)
+    def initialize(timeout: TIMEOUT)
       @timeout = timeout
       @mutex = Mutex.new
       @http = nil
@@ -74,13 +76,22 @@ module HireFire
     private
 
     def execute(uri, request)
-      retried = false
       @mutex.synchronize do
-        reused = reusable?(uri)
-        connection(uri).request(request) { |response| read_body(response) }
+        Timeout.timeout(@timeout) { perform(uri, request) }
       rescue Timeout::Error
         reset_connection
         raise RequestError, "Request timed out."
+      rescue RequestError
+        reset_connection
+        raise
+      end
+    end
+
+    def perform(uri, request)
+      retried = false
+      begin
+        reused = reusable?(uri)
+        connection(uri).request(request) { |response| read_body(response) }
       rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError, Net::HTTPBadResponse, Net::ProtocolError => e
         reset_connection
         if reused && !retried && stale_connection?(e)
@@ -88,9 +99,6 @@ module HireFire
           retry
         end
         raise RequestError, "Network error (#{e.class}: #{e.message})."
-      rescue RequestError
-        reset_connection
-        raise
       end
     end
 

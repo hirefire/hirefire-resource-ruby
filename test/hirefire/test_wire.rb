@@ -234,6 +234,57 @@ class HireFire::WireTest < Minitest::Test
     end
   end
 
+  def test_a_server_that_never_answers_fails_the_request_at_the_deadline_and_stop_returns_soon_after
+    ENV["DYNO"] = "web.1"
+    @ingest = {then: :stall}
+
+    with_client_timeout(0.3) do
+      HireFire.configure { |_| }
+      wait_for_log("Dispatch error: HireFire::Client::RequestError: Request timed out.")
+
+      assert_operator seconds_to { HireFire.configuration.stop_dispatcher }, :<, 2
+      assert_equal [200, {}, ["served"]], serve_request(queued_for: 0.025)
+    end
+  end
+
+  def test_a_response_that_arrives_one_byte_at_a_time_fails_the_request_at_the_deadline
+    ENV["DYNO"] = "web.1"
+    @ingest = {status: 200, body: "x" * 40, drip: 0.1}
+
+    with_client_timeout(0.3) do
+      HireFire.configure { |_| }
+      wait_for_log("Dispatch error: HireFire::Client::RequestError: Request timed out.", seconds: 2)
+
+      assert_operator seconds_to { HireFire.configuration.stop_dispatcher }, :<, 2
+    end
+  end
+
+  def test_a_server_that_does_not_speak_tls_fails_the_request_at_the_deadline
+    ENV["DYNO"] = "web.1"
+    ENV["HIREFIRE_DATA_URL"] = "https://127.0.0.1:#{@server.port}"
+
+    with_client_timeout(0.3) do
+      HireFire.configure { |_| }
+      wait_for_log("Dispatch error: HireFire::Client::RequestError: Request timed out.", seconds: 2)
+
+      assert HireFire.configuration.dispatcher.running?
+      assert_operator seconds_to { HireFire.configuration.stop_dispatcher(flush: false) }, :<, 2
+    end
+  end
+
+  def test_a_slow_answer_inside_the_deadline_is_a_success
+    ENV["DYNO"] = "web.1"
+    @ingest = {status: 200, delay: 0.2}
+
+    with_client_timeout(1) do
+      HireFire.configure { |_| }
+      wait_for_request("/metrics/ingest")
+      HireFire.configuration.stop_dispatcher(flush: false)
+
+      assert_equal ["Starting dispatcher.", "Dispatcher stopped."], log_messages
+    end
+  end
+
   def test_a_failed_lease_request_is_logged_and_leaves_the_dispatcher_running
     @lease = {status: 500}
 
@@ -247,6 +298,22 @@ class HireFire::WireTest < Minitest::Test
 
   def serve_request(queued_for:)
     HireFire::Middleware.new(APP).call("HTTP_X_REQUEST_START" => "t=#{Time.now.to_f - queued_for}")
+  end
+
+  def with_client_timeout(seconds)
+    original = HireFire::Client::TIMEOUT
+    HireFire::Client.send(:remove_const, :TIMEOUT)
+    HireFire::Client.const_set(:TIMEOUT, seconds)
+    yield
+  ensure
+    HireFire::Client.send(:remove_const, :TIMEOUT)
+    HireFire::Client.const_set(:TIMEOUT, original)
+  end
+
+  def seconds_to
+    started = Time.now
+    yield
+    Time.now - started
   end
 
   def wait_for(what, seconds: 5)
@@ -263,8 +330,8 @@ class HireFire::WireTest < Minitest::Test
     wait_for("a request to #{path}") { @server.requests.find { |request| request.path == path } }
   end
 
-  def wait_for_log(message)
-    wait_for("the log line #{message.inspect}") { @log.string.include?(message) }
+  def wait_for_log(message, seconds: 5)
+    wait_for("the log line #{message.inspect}", seconds: seconds) { @log.string.include?(message) }
   end
 
   def log_messages

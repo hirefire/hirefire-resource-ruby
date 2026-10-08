@@ -180,6 +180,35 @@ class HireFire::ClientTest < Minitest::Test
     assert_operator client.instance_variable_get(:@http).keep_alive_timeout, :>, 30
   end
 
+  def test_one_deadline_covers_a_whole_request
+    assert_equal 5, HireFire::Client::TIMEOUT
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do
+      sleep(0.3)
+      {status: 200}
+    end
+
+    error = assert_raises(HireFire::Client::RequestError) do
+      HireFire::Client.new(timeout: 0.1).submit_samples("[]")
+    end
+
+    assert_equal "Request timed out.", error.message
+  end
+
+  def test_a_request_after_one_that_passed_its_deadline_uses_a_new_connection
+    slow = true
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do
+      sleep(0.3) if slow
+      {status: 200}
+    end
+    client = HireFire::Client.new(timeout: 0.1)
+
+    assert_raises(HireFire::Client::RequestError) { client.submit_samples("[]") }
+    assert_nil client.instance_variable_get(:@http)
+    slow = false
+
+    assert_kind_of Net::HTTPSuccess, client.submit_samples("[]")
+  end
+
   def test_open_read_and_write_timeouts_match
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
     client.submit_samples("[]")

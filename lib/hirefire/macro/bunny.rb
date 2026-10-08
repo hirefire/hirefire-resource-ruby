@@ -15,13 +15,21 @@ module HireFire
       extend HireFire::Errors::JobQueueLatencyUnsupported
       extend self
 
+      SAMPLE_CONNECTION_OPTIONS = {
+        connection_timeout: 5,
+        continuation_timeout: 5_000,
+        read_timeout: 5,
+        write_timeout: 5,
+        automatically_recover: false
+      }.freeze
+
       def library_loaded?
         !!defined?(::Bunny)
       end
 
       def plan_connection_options
         options = {reuse_connection: true}
-        url = presence(ENV["HIREFIRE_BUNNY_URL"]) || presence(ENV["HIREFIRE_AMQP_URL"])
+        url = Env["HIREFIRE_BUNNY_URL"] || Env["HIREFIRE_AMQP_URL"]
         options[:amqp_url] = url if url
         options
       end
@@ -73,27 +81,12 @@ module HireFire
         end
       end
 
-      SAMPLE_CONNECTION_OPTIONS = {
-        connection_timeout: 5,
-        continuation_timeout: 5_000,
-        read_timeout: 5,
-        write_timeout: 5,
-        automatically_recover: false
-      }.freeze
-
       private
 
       def warn_missing_queue_once(name)
         HireFire.configuration.once.log(:warn, :missing_queue, name) do
           "[HireFire] RabbitMQ queue #{name.inspect} does not exist. It counts as 0 messages."
         end
-      end
-
-      def presence(value)
-        return if value.nil?
-
-        stripped = value.to_s.strip
-        stripped unless stripped.empty?
       end
 
       def close_channel(channel)
@@ -127,10 +120,10 @@ module HireFire
 
       def resolve_amqp_url(amqp_url)
         amqp_url ||
-          ENV["AMQP_URL"] ||
-          ENV["RABBITMQ_URL"] ||
-          ENV["RABBITMQ_BIGWIG_URL"] ||
-          ENV["CLOUDAMQP_URL"] ||
+          Env["AMQP_URL"] ||
+          Env["RABBITMQ_URL"] ||
+          Env["RABBITMQ_BIGWIG_URL"] ||
+          Env["CLOUDAMQP_URL"] ||
           "amqp://guest:guest@localhost:5672"
       end
 

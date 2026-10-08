@@ -368,7 +368,7 @@ class HireFire::ClientTest < Minitest::Test
     end
 
     assert_includes error.message, "HIREFIRE_TOKEN"
-    assert_includes error.message, "config.token"
+    assert_equal "HireFire token is not set. Set HIREFIRE_TOKEN or config.token to enable metric dispatch.", error.message
   end
 
   def test_raises_with_empty_token

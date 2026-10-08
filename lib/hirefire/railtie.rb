@@ -10,7 +10,7 @@ module HireFire
 
     config.after_initialize do
       cfg = HireFire.configuration
-      cfg.logger = ::Rails.logger if cfg.using_default_logger? && defined?(::Rails) && ::Rails.logger
+      cfg.logger = ::Rails.logger if cfg.using_default_logger? && ::Rails.logger
       HireFire.boot if cfg.token && !defined?(::Rails::Console) && HireFire::Identity.resolve
     end
 

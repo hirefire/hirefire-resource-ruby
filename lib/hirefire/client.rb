@@ -193,10 +193,8 @@ module HireFire
     def require_token!
       return if token
 
-      raise Errors::RequestError, <<~MSG
-        HireFire token is not set.
-        Set HIREFIRE_TOKEN or config.token to enable metric dispatch.
-      MSG
+      raise Errors::RequestError,
+        "HireFire token is not set. Set HIREFIRE_TOKEN or config.token to enable metric dispatch."
     end
   end
 end

@@ -12,11 +12,11 @@ module HireFire
     end
 
     def explicit
-      presence(ENV["HIREFIRE_SERVICE_NAME"])
+      Env["HIREFIRE_SERVICE_NAME"]
     end
 
     def heroku_dyno
-      dyno = presence(ENV["DYNO"])
+      dyno = Env["DYNO"]
       return unless dyno
 
       name = if dyno.include?(".")
@@ -24,11 +24,11 @@ module HireFire
       else
         dyno.sub(/-[A-Za-z0-9]+-[A-Za-z0-9]+\z/, "")
       end
-      presence(name)
+      name unless name.to_s.empty?
     end
 
     def render_service
-      presence(ENV["RENDER_SERVICE_NAME"])
+      Env["RENDER_SERVICE_NAME"]
     end
 
     def heroku_conflict?
@@ -50,15 +50,8 @@ module HireFire
     end
 
     def render_web_service?
-      type = presence(ENV["RENDER_SERVICE_TYPE"])
+      type = Env["RENDER_SERVICE_TYPE"]
       !type.nil? && type.casecmp?("web")
-    end
-
-    def presence(value)
-      return if value.nil?
-
-      stripped = value.to_s.strip
-      stripped unless stripped.empty?
     end
   end
 end

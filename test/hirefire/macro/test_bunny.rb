@@ -431,6 +431,12 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     end
 
     keys.each { |k| ENV.delete(k) }
+    ENV["AMQP_URL"] = ""
+    ENV["RABBITMQ_URL"] = "  "
+    ENV["CLOUDAMQP_URL"] = " amqp://cloudamqp.example/vhost "
+    expect_bunny_connection("amqp://cloudamqp.example/vhost")
+
+    keys.each { |k| ENV.delete(k) }
     expect_bunny_connection("amqp://guest:guest@localhost:5672")
   ensure
     keys.each { |k| ENV.delete(k) }

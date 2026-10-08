@@ -58,6 +58,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Request queue time ignores samples older than 60 seconds.
 - Named Sidekiq scheduled and retry samples stop at a time/job budget instead of walking the whole set, and count the jobs they did not read as waiting, so the result is never too low. Named Resque delayed samples that cannot finish within the budget are dropped instead of hanging. A Resque sample without queue names is dropped only when it takes longer than two seconds.
 - Bunny samples fail within five seconds when RabbitMQ does not complete the handshake.
+- Bunny treats an empty `AMQP_URL`, `RABBITMQ_URL`, `RABBITMQ_BIGWIG_URL`, or `CLOUDAMQP_URL` as not set and reads the next one.
 - Sidekiq job queue latency ignores malformed timestamps instead of treating them as the Unix epoch, and treats a future timestamp as zero.
 - Sidekiq `server: true` counts scheduled jobs that become due in the current second, and skips corrupt schedule or retry members instead of aborting the sample.
 - Sidekiq `server: true` reads at most 10,000 scheduled and 10,000 retry jobs per sample and counts the due jobs beyond that as waiting. 1.x read both sets to the end while Redis served no other client.

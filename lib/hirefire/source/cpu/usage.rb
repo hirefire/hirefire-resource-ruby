@@ -114,9 +114,9 @@ module HireFire
         end
 
         def cgroup_v1_quota
-          quota = read(CGROUP_V1_QUOTA)&.to_i
-          period = read(CGROUP_V1_PERIOD)&.to_f
-          return if quota.nil? || quota <= 0 || period.nil? || period <= 0
+          quota = number(read(CGROUP_V1_QUOTA))
+          period = number(read(CGROUP_V1_PERIOD))
+          return if quota.nil? || period.nil? || quota <= 0 || period <= 0
 
           quota / period
         end

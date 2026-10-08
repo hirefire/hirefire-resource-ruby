@@ -1,0 +1,78 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "optparse"
+require_relative "../lib/matrix"
+require_relative "../lib/results"
+require_relative "../lib/mutation/runner"
+
+root = Tools::Matrix::ROOT
+results = Tools.results("mutation/mutants.jsonl")
+FileUtils.mkdir_p(File.dirname(results))
+files = Dir.chdir(root) { Dir["lib/**/*.rb"].sort }
+
+def score(records)
+  counted = records.reject { |record| record["status"] == "invalid" }
+  killed = counted.count { |record| %w[killed timeout].include?(record["status"]) }
+  [killed, counted.size, counted.empty? ? nil : (killed * 100.0 / counted.size).round(1)]
+end
+
+case ARGV.shift
+when "count"
+  total = 0
+  files.each do |file|
+    mutants = Tools::Mutation::Generator.call(root, file)
+    total += mutants.size
+    puts format("%5d  %s  %s", mutants.size, file, mutants.map(&:kind).tally.sort_by { |_, count| -count }.first(4).map { |kind, count| "#{kind}=#{count}" }.join(" "))
+  end
+  puts format("%5d  total", total)
+when "run"
+  options = {free: [], service: [], only: nil}
+  OptionParser.new do |opts|
+    opts.on("--free DIRS") { |list| options[:free] = list.split(",") }
+    opts.on("--service DIRS") { |list| options[:service] = list.split(",") }
+    opts.on("--only FILES") { |list| options[:only] = list.split(",") }
+  end.parse!
+  abort "usage: mutate run --free DIR,DIR --service DIR,DIR [--only lib/a.rb,lib/b.rb]" if options[:free].empty? || options[:service].empty?
+
+  Tools::Mutation::Runner.new(
+    root: root,
+    results: results,
+    free_dirs: options[:free],
+    service_dirs: options[:service],
+    cells: Tools::Matrix.cells,
+    coverage: JSON.parse(File.read(Tools.coverage_file)),
+    files: options[:only] || files
+  ).run
+when "report"
+  records = File.readlines(results).map { |line| JSON.parse(line) }
+  by_file = records.group_by { |record| record.fetch("file") }
+  rows = files.map do |file|
+    list = by_file[file] || []
+    killed, total, percent = score(list)
+    {
+      file: file, mutants: total, killed: killed,
+      survived: list.count { |record| record["status"] == "survived" },
+      uncovered: list.count { |record| record["status"] == "uncovered" },
+      timeout: list.count { |record| record["status"] == "timeout" },
+      score: percent
+    }
+  end
+  puts "file                                             mutants killed survived uncovered timeout  score"
+  rows.each do |row|
+    puts format("%-48s %7d %6d %8d %9d %7d %6s", row[:file], row[:mutants], row[:killed], row[:survived], row[:uncovered], row[:timeout], row[:score] || "n/a")
+  end
+  killed, total, percent = score(records)
+  puts format("%-48s %7d %6d %8d %9d %7d %6s", "TOTAL", total, killed, records.count { |record| record["status"] == "survived" }, records.count { |record| record["status"] == "uncovered" }, records.count { |record| record["status"] == "timeout" }, percent)
+  File.write(Tools.results("mutation/scores.json"), JSON.pretty_generate(files: rows, total: {mutants: total, killed: killed, score: percent}) + "\n")
+
+  survivors = records.select { |record| %w[survived uncovered].include?(record["status"]) }.sort_by { |record| [record["file"], record["line"], record["kind"]] }
+  lines = survivors.map do |record|
+    [record["id"], record["status"], "#{record["file"]}:#{record["line"]}", record["kind"], record["original"].lines.first.to_s.strip[0, 70], record["replacement"].lines.first.to_s.strip[0, 50]].join("\t")
+  end
+  File.write(Tools.results("mutation/survivors.tsv"), lines.join("\n") + "\n")
+  puts "#{survivors.size} survivors -> #{Tools.results("mutation/survivors.tsv")}"
+else
+  abort "usage: mutate count | run --free DIRS --service DIRS [--only FILES] | report"
+end

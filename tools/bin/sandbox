@@ -1,0 +1,22 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ "$#" -lt 1 ]; then
+  echo "usage: sandbox DESTINATION [--services]" >&2
+  exit 1
+fi
+
+src="$(cd "$(dirname "$0")/../.." && pwd -P)"
+dest="$1"
+mkdir -p "$dest"
+rsync -a --delete \
+  --exclude .git --exclude .env --exclude coverage --exclude pkg \
+  --exclude tools/results \
+  "$src/" "$dest/"
+cd "$dest"
+[ -d .git ] || git init -q .
+git add -A >/dev/null 2>&1
+
+if [ "${2:-}" = "--services" ]; then
+  bin/services up
+fi

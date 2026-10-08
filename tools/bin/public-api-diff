@@ -1,0 +1,33 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require_relative "../lib/results"
+
+def listing(path)
+  JSON.parse(File.read(path)).transform_values do |lines|
+    lines.to_h { |line| [line[/\A[.#]?[A-Za-z_]\w*[?!=]?/], line.sub(/ = (Hash|String) \(.*\)\z/, ' = \1')] }
+  end
+end
+
+before = listing(File.join(Tools::ROOT, "tools/baseline/public_api.json"))
+after = listing(Tools.results("public_api.json"))
+removed = added = changed = 0
+
+(before.keys | after.keys).sort.each do |owner|
+  old = before[owner] || {}
+  new = after[owner] || {}
+  lines = []
+  lines << "  - the #{owner[/\w+\z/]} constant itself" if before.key?(owner) && !after.key?(owner)
+  lines << "  + the #{owner[/\w+\z/]} constant itself" if after.key?(owner) && !before.key?(owner)
+  (old.keys - new.keys).each { |name| lines << "  - #{old[name]}" }
+  (new.keys - old.keys).each { |name| lines << "  + #{new[name]}" }
+  (old.keys & new.keys).each { |name| lines << "  ~ #{old[name]}  ->  #{new[name]}" if old[name] != new[name] }
+  next if lines.empty?
+
+  removed += lines.count { |line| line.start_with?("  -") }
+  added += lines.count { |line| line.start_with?("  +") }
+  changed += lines.count { |line| line.start_with?("  ~") }
+  puts owner, lines
+end
+puts "#{removed} removed, #{added} added, #{changed} changed"

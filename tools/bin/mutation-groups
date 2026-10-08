@@ -1,0 +1,51 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "prism"
+require_relative "../lib/results"
+
+root = File.expand_path("../..", __dir__)
+records = File.readlines(Tools.results("mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
+alive = records.select { |record| %w[survived uncovered].include?(record["status"]) }
+
+class Methods < Prism::Visitor
+  attr_reader :ranges
+
+  def initialize
+    super
+    @ranges = []
+  end
+
+  def visit_def_node(node)
+    @ranges << [node.location.start_line, node.location.end_line, node.name.to_s]
+    super
+  end
+end
+
+methods = Hash.new do |hash, file|
+  visitor = Methods.new
+  visitor.visit(Prism.parse_file(File.join(root, file)).value)
+  hash[file] = visitor.ranges
+end
+
+groups = alive.group_by do |record|
+  range = methods[record["file"]].select { |first, last, _| record["line"].between?(first, last) }.min_by { |first, last, _| last - first }
+  [record["file"], range ? range[2] : "(top level)"]
+end
+
+rows = groups.map do |(file, name), list|
+  {
+    file: file, method: name, survived: list.count { |record| record["status"] == "survived" },
+    uncovered: list.count { |record| record["status"] == "uncovered" },
+    lines: list.map { |record| record["line"] }.minmax,
+    kinds: list.map { |record| record["kind"] }.tally.sort_by { |_, count| -count }.map { |kind, count| "#{kind}=#{count}" }.join(" ")
+  }
+end
+
+File.write(Tools.results("mutation/groups.json"), JSON.pretty_generate(rows.sort_by { |row| [row[:file], row[:lines].first] }) + "\n")
+only = ARGV.first
+rows.select { |row| only.nil? || row[:file].include?(only) }.sort_by { |row| [row[:file], row[:lines].first] }.each do |row|
+  puts format("%-44s %-34s s=%-3d u=%-3d %s", row[:file].delete_prefix("lib/hirefire/"), "#{row[:method]} (#{row[:lines].join("-")})", row[:survived], row[:uncovered], row[:kinds][0, 70])
+end
+puts "#{alive.size} alive in #{rows.size} methods"

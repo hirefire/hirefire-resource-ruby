@@ -1,0 +1,91 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "bundler"
+require "fileutils"
+require "json"
+require "optparse"
+require "time"
+require_relative "../lib/matrix"
+require_relative "../lib/results"
+
+options = {coverage: false, cells: nil, timeout: 1800, seed: nil}
+parser = OptionParser.new do |opts|
+  opts.banner = "usage: matrix-run RUN_ID [--coverage] [--cells a,b] [--seed N] [--timeout SECONDS]"
+  opts.on("--coverage") { options[:coverage] = true }
+  opts.on("--cells LIST") { |list| options[:cells] = list.split(",") }
+  opts.on("--seed N", Integer) { |seed| options[:seed] = seed }
+  opts.on("--timeout SECONDS", Integer) { |seconds| options[:timeout] = seconds }
+end
+parser.parse!
+run_id = ARGV.shift or abort(parser.banner)
+
+root = Tools::Matrix::ROOT
+run_dir = Tools.results("matrix", run_id)
+FileUtils.mkdir_p(run_dir)
+cells = options[:cells] || Tools::Matrix.cells.keys
+
+def parse_log(log)
+  counts = log.scan(/^(\d+) runs, (\d+) assertions, (\d+) failures, (\d+) errors, (\d+) skips/).last
+  failed = log.scan(/^\s+\d+\) (?:Failure|Error):\n(\S+#\S+)/).flatten.uniq
+  {
+    seed: log[/Run options: .*--seed (\d+)/, 1]&.to_i,
+    runs: counts&.[](0)&.to_i,
+    assertions: counts&.[](1)&.to_i,
+    failures: counts&.[](2)&.to_i,
+    errors: counts&.[](3)&.to_i,
+    skips: counts&.[](4)&.to_i,
+    failed_tests: failed
+  }
+end
+
+results = cells.map do |cell|
+  paths = Tools::Matrix.test_paths(cell)
+  log_path = File.join(run_dir, "#{cell}.log")
+  env = {
+    "BUNDLE_GEMFILE" => Tools::Matrix.gemfile(cell),
+    "COVERAGE" => options[:coverage].to_s,
+    "COVERAGE_CELL" => cell,
+    "COVERAGE_DIR" => Tools.results("coverage/cells", cell)
+  }
+  command = ["bundle", "exec", "ruby", "-Ilib:test", "-e", "ARGV.shift(#{paths.size}).each { |file| require file }", *paths]
+  command += ["--seed", options[:seed].to_s] if options[:seed]
+
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  timed_out = false
+  status = Bundler.with_unbundled_env do
+    pid = Process.spawn(env, *command, chdir: root, out: log_path, err: [:child, :out], pgroup: true)
+    waiter = Thread.new { Process.wait2(pid).last }
+    unless waiter.join(options[:timeout])
+      timed_out = true
+      begin
+        Process.kill("KILL", -pid)
+      rescue Errno::ESRCH
+        nil
+      end
+    end
+    waiter.value
+  end
+  seconds = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(1)
+
+  result = {cell: cell, exit: status.exitstatus, timed_out: timed_out, seconds: seconds}.merge(parse_log(File.read(log_path)))
+  mark = (result[:exit] == 0) ? "ok  " : "FAIL"
+  puts format("%s %-30s runs=%-5s failures=%-3s errors=%-3s skips=%-3s seed=%-6s %6.1fs", mark, cell, result[:runs], result[:failures], result[:errors], result[:skips], result[:seed], seconds)
+  result[:failed_tests].each { |name| puts "       #{name}" }
+  result
+end
+
+totals = %i[runs assertions failures errors skips].to_h { |key| [key, results.sum { |result| result[key].to_i }] }
+summary = {
+  run_id: run_id,
+  commit: `git -C #{root} rev-parse HEAD`.strip,
+  ruby: RUBY_DESCRIPTION,
+  coverage: options[:coverage],
+  finished_at: Time.now.utc.iso8601,
+  cells: results,
+  totals: totals,
+  failed_cells: results.reject { |result| result[:exit] == 0 }.map { |result| result[:cell] }
+}
+File.write(File.join(run_dir, "summary.json"), JSON.pretty_generate(summary) + "\n")
+puts format("total cells=%d runs=%d assertions=%d failures=%d errors=%d skips=%d failed_cells=%s", results.size, totals[:runs], totals[:assertions], totals[:failures], totals[:errors], totals[:skips], summary[:failed_cells].inspect)
+exit(summary[:failed_cells].empty? ? 0 : 1)

@@ -3,8 +3,13 @@
 
 require "bundler/setup"
 require "digest"
+require "json"
 require "rails" if Gem.loaded_specs.key?("railties")
+$LOAD_PATH.unshift(ENV["AUDIT_LIB"]) if ENV["AUDIT_LIB"]
 require "hirefire-resource"
+require_relative "../lib/results"
+
+OWNED = Hash.new { |owned, owner| owned[owner] = [] }
 
 def signature(method)
   method.parameters.map do |kind, name|
@@ -49,13 +54,17 @@ def walk(mod, seen, lines)
   return if seen.include?(mod)
 
   seen << mod
+  first = lines.size + 1
   describe(mod, lines)
+  OWNED[mod.name].concat(lines[first..].map(&:strip))
   mod.constants(false).sort.each do |name|
     value = mod.const_get(name)
     if value.is_a?(Module)
+      OWNED[mod.name] << "#{name} -> #{value.name}" unless value.name == "#{mod.name}::#{name}"
       walk(value, seen, lines) if value.name.to_s.start_with?("HireFire")
     else
       lines << "  #{name} = #{summarize(value)}"
+      OWNED[mod.name] << lines.last.strip
     end
   end
 end
@@ -64,11 +73,12 @@ lines = []
 walk(HireFire, [], lines)
 
 root = File.expand_path("../..", __dir__)
-path = File.join(root, "audit/baseline/public_api.txt")
+path = ENV["AUDIT_API_OUT"] || (ENV["AUDIT_RUN"] ? Audit.results("public_api.txt") : File.join(root, "audit/baseline/public_api.txt"))
 header = [
   "commit #{`git -C #{root} rev-parse HEAD`.strip}",
   "gemfile #{File.basename(ENV.fetch("BUNDLE_GEMFILE"))}",
   ""
 ]
 File.write(path, (header + lines).join("\n") + "\n")
+File.write(path.sub(/\.txt\z/, ".json"), JSON.pretty_generate(OWNED) + "\n") if ENV["AUDIT_API_OUT"] || ENV["AUDIT_RUN"]
 puts "#{lines.count { |line| line.start_with?("class ", "module ") }} modules and classes, #{lines.count { |line| line.start_with?("  .", "  #") }} methods, #{lines.count { |line| line.match?(/\A  [A-Z]/) }} constants -> #{path}"

@@ -239,6 +239,14 @@ class HireFire::Source::CPU::PlatformTest < Minitest::Test
     end
   end
 
+  def test_a_render_cpu_count_too_large_for_a_float_falls_back_to_the_processor_count
+    ENV["RENDER"] = "true"
+    ENV["RENDER_CPU_COUNT"] = "1e999"
+    closed_world(nproc: 32)
+
+    assert_equal 32, Usage.available_cpus
+  end
+
   def test_render_quota_beats_misleading_render_cpu_count_low
     ENV["RENDER"] = "true"
     ENV["RENDER_CPU_COUNT"] = "0.1"

@@ -59,6 +59,23 @@ module HireFire
         assert_equal "started with the Rails logger", railtie_boot("DYNO" => "web.1")
       end
 
+      def test_railtie_keeps_a_logger_the_application_set
+        own = "HireFire.configuration.logger = Logger.new(File::NULL)"
+
+        assert_equal "started with its own logger", railtie_boot({"DYNO" => "web.1"}, "", own)
+      end
+
+      def test_railtie_keeps_the_default_logger_when_rails_has_none
+        no_logger = "ActiveSupport.on_load(:after_initialize) { Rails.logger = nil }"
+        logger = "[HireFire.configuration.logger.class, HireFire.configuration.using_default_logger?].join(\" \")"
+
+        assert_equal "Logger true", railtie_boot({"DYNO" => "web.1"}, no_logger, "", logger)
+      end
+
+      def test_railtie_names_its_initializer
+        assert_includes HireFire::Railtie.initializers.map(&:name), "hirefire.insert_middleware"
+      end
+
       def test_railtie_boots_in_a_worker_dyno
         assert_equal "started with the Rails logger", railtie_boot("DYNO" => "worker.2")
       end

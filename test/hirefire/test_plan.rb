@@ -718,7 +718,7 @@ class HireFire::PlanTest < Minitest::Test
     assert_equal :ok, result
     assert_equal [:good_before, :body, [:good_after, :tok]], events
     refute_includes events, :bad_after
-    assert_includes log.string, "before_sample_job_queues"
+    assert_includes log.string, %([HireFire] before_sample_job_queues for "bad" raised RuntimeError: before boom)
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
@@ -743,7 +743,7 @@ class HireFire::PlanTest < Minitest::Test
 
     assert_equal :ok, HireFire::Plan.around_job_queue_sample(HireFire.configuration.logger) { :ok }
     assert_equal [:good], events
-    assert_includes log.string, "after_sample_job_queues"
+    assert_includes log.string, %([HireFire] after_sample_job_queues for "bad" raised RuntimeError: after boom)
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)
@@ -766,7 +766,25 @@ class HireFire::PlanTest < Minitest::Test
 
     HireFire::Plan.reinit_macros_after_fork(HireFire.configuration.logger)
     assert_equal [:good], called
-    assert_includes log.string, "reinit_after_fork"
+    assert_includes log.string, %([HireFire] reinit_after_fork for "bad" raised RuntimeError: reinit boom)
+  ensure
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, original)
+  end
+
+  def test_release_macros_reaches_every_adapter_and_logs_the_one_that_raises
+    original = HireFire::Plan::ADAPTERS
+    released = []
+    bad = stub_macro { |m| m.define_singleton_method(:release) { raise "release boom" } }
+    good = stub_macro { |m| m.define_singleton_method(:release) { released << :good } }
+    HireFire::Plan.send(:remove_const, :ADAPTERS)
+    HireFire::Plan.const_set(:ADAPTERS, {"bad" => bad, "good" => good})
+    log = StringIO.new
+
+    HireFire::Plan.release_macros(Logger.new(log))
+
+    assert_equal [:good], released
+    assert_includes log.string, %([HireFire] release for "bad" raised RuntimeError: release boom)
   ensure
     HireFire::Plan.send(:remove_const, :ADAPTERS)
     HireFire::Plan.const_set(:ADAPTERS, original)

@@ -185,7 +185,8 @@ class HireFire::ClientTest < Minitest::Test
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
     client.submit_samples("[]")
 
-    assert_operator client.instance_variable_get(:@http).keep_alive_timeout, :>, 30
+    assert_equal 60, client.instance_variable_get(:@http).keep_alive_timeout
+    assert_operator 60, :>, HireFire::Dispatcher::MAX_DISPATCH_FREQUENCY
   end
 
   def test_one_deadline_covers_a_whole_request
@@ -504,6 +505,39 @@ class HireFire::ClientTest < Minitest::Test
     client.request_lease("abc123")
 
     assert_requested request
+  end
+
+  def test_request_lease_raises_without_a_token_and_sends_nothing
+    ENV["HIREFIRE_TOKEN"] = nil
+    request = stub_request(:post, "https://data.hirefire.io/metrics/lease").to_return(status: 200)
+
+    error = assert_raises(HireFire::Errors::RequestError) { client.request_lease("abc123") }
+
+    assert_equal "HireFire token is not set. Set HIREFIRE_TOKEN or config.token to enable metric dispatch.", error.message
+    assert_not_requested request
+  end
+
+  def test_does_not_retry_an_error_on_a_reused_connection_that_is_not_a_stale_connection
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    client.submit_samples("[]")
+    WebMock.reset_executed_requests!
+    request = stub_request(:post, "https://data.hirefire.io/metrics/ingest")
+      .to_raise(SocketError.new("getaddrinfo boom")).then
+      .to_return(status: 200)
+
+    error = assert_raises(HireFire::Errors::RequestError) { client.submit_samples("[]") }
+
+    assert_equal "Network error (SocketError: getaddrinfo boom).", error.message
+    assert_requested request, times: 1
+  end
+
+  def test_a_response_whose_declared_length_is_exactly_the_limit_is_read
+    limit = HireFire::Client::MAX_BODY_BYTES
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"Content-Length" => limit.to_s}, body: "x" * limit)
+
+    assert_equal limit, client.request_lease("abc123").body.bytesize
+    assert_equal 131_072, limit
   end
 
   def test_retries_once_on_each_stale_connection_error

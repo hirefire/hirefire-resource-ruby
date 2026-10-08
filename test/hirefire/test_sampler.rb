@@ -88,6 +88,31 @@ class HireFire::SamplerTest < Minitest::Test
     refute_includes @log.string, "secret"
   end
 
+  def test_a_value_whose_text_cannot_be_read_is_named_by_its_class
+    unreadable = Class.new do
+      def self.name = "Unreadable"
+
+      def to_s = raise("no text")
+    end
+    HireFire.configuration.dyno(:worker) { unreadable.new }
+
+    sample_plan(local("worker"))
+
+    assert_includes @log.string, 'The sampler for "worker" returned Unreadable, expected a non-negative number. Sample dropped.'
+  end
+
+  def test_an_adapter_whose_plan_hook_raises_is_logged_and_the_next_entry_is_sampled
+    broken = plan_adapter(job_queue_size: 1)
+    broken.define_singleton_method(:library_loaded?) { raise "redis://user:secret@localhost:6379/0 hook boom" }
+
+    with_plan_adapters("resque" => broken, "sidekiq" => plan_adapter(job_queue_size: 7)) do
+      sample_plan(planned("worker", "adapter" => "resque"), planned("mailer"))
+    end
+
+    assert_equal ["mailer"], buffer.flush.keys
+    assert_includes @log.string, '[HireFire] Plan sampler for "worker" raised RuntimeError: redis://***@localhost:6379/0 hook boom'
+  end
+
   def test_a_logger_that_raises_does_not_end_the_round
     HireFire.configuration.dyno(:worker) { raise "Redis down" }
     HireFire.configuration.dyno(:mailer) { 18 }

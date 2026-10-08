@@ -20,6 +20,10 @@ class HireFire::ConfigurationTest < Minitest::Test
     assert_equal custom_logger, @configuration.logger
   end
 
+  def test_log_queue_metrics_is_false_until_it_is_set
+    assert_equal false, @configuration.log_queue_metrics
+  end
+
   def test_job_queues_default_to_empty
     assert @configuration.job_queues.none?
   end

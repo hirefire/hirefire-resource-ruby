@@ -204,6 +204,73 @@ class HireFireTest < Minitest::Test
     assert_includes log.string, "spawn failed"
   end
 
+  def test_after_daemonizing_the_dispatcher_starts_again_only_when_it_ran_before
+    HireFire::Dispatcher.any_instance.expects(:start).once
+
+    HireFire.after_daemon(false)
+    HireFire.after_daemon(true)
+  end
+
+  def test_a_failed_start_after_daemonizing_is_logged_and_does_not_raise
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    HireFire::Dispatcher.any_instance.stubs(:start).raises(RuntimeError, "spawn failed")
+
+    HireFire.after_daemon(true)
+
+    assert_includes log.string, "[HireFire] After-daemon restart failed: spawn failed"
+  end
+
+  def test_a_failure_while_a_parent_waits_for_its_children_is_logged_and_a_later_fork_is_watched_again
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["DYNO"] = "web.1"
+    log = StringIO.new
+    HireFire.configuration.logger = Logger.new(log)
+    Process.stubs(:kill).raises(RuntimeError, "kill boom")
+
+    with_tick(0.01) do
+      HireFire.after_fork_in_parent(4_000_000)
+      wait_until { log.string.include?("[HireFire] After-fork resume failed: kill boom") }
+      wait_until { Thread.list.none? { |thread| thread.name == "hirefire-handoff" } }
+
+      Process.stubs(:kill).raises(Errno::ESRCH)
+      HireFire::Dispatcher.any_instance.expects(:start).once
+      HireFire.after_fork_in_parent(4_000_001)
+      wait_until { Thread.list.none? { |thread| thread.name == "hirefire-handoff" } }
+    end
+  end
+
+  def test_daemonizing_ends_the_wait_for_the_children_of_the_process_it_replaced
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["DYNO"] = "web.1"
+    Process.stubs(:kill).raises(Errno::EPERM)
+    HireFire::Dispatcher.any_instance.expects(:start).never
+
+    with_tick(0.01) do
+      HireFire.after_fork_in_parent(4_000_000)
+      assert_equal 1, Thread.list.count { |thread| thread.name == "hirefire-handoff" }
+
+      HireFire.after_daemon(false)
+      wait_until { Thread.list.none? { |thread| thread.name == "hirefire-handoff" } }
+    end
+  end
+
+  def test_a_child_this_process_may_not_signal_counts_as_alive
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["DYNO"] = "web.1"
+    Process.stubs(:kill).raises(Errno::EPERM)
+    HireFire::Dispatcher.any_instance.expects(:start).never
+
+    with_tick(0.01) do
+      HireFire.after_fork_in_parent(4_000_000)
+      sleep(0.1)
+
+      assert_equal 1, Thread.list.count { |thread| thread.name == "hirefire-handoff" }
+      HireFire.reset
+      wait_until { Thread.list.none? { |thread| thread.name == "hirefire-handoff" } }
+    end
+  end
+
   def test_after_fork_in_parent_stops_without_flush
     ENV["DYNO"] = "web.1"
     flush_args = []

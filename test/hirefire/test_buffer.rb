@@ -232,6 +232,16 @@ class HireFire::BufferTest < Minitest::Test
     end
   end
 
+  def test_repopulate_keeps_a_bucket_at_exactly_the_count_limit_as_it_is
+    Timecop.freeze Time.at(100) do
+      limit = HireFire::Buffer::SAMPLE_COUNT_LIMIT
+      buffer.repopulate("web", "rqt", {100 => {sum: 7.7, count: limit}})
+
+      assert_equal({sum: 7.7, count: limit}, buffer.flush["web"]["rqt"][100])
+      assert_equal 1_000_000, limit
+    end
+  end
+
   def test_repopulate_rqt_keeps_the_second_exactly_at_the_ttl_boundary
     Timecop.freeze Time.at(100) do
       buffer.repopulate("web", "rqt", {40 => {sum: 5.0, count: 1}})

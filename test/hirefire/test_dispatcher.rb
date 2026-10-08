@@ -1149,6 +1149,15 @@ class HireFire::DispatcherTest < Minitest::Test
     assert_empty HireFire.configuration.buffer.flush
   end
 
+  def test_a_failure_while_abandoning_inherited_state_is_logged_and_does_not_raise
+    dispatcher = configure_web_only
+    HireFire.configuration.buffer.stubs(:reinit_after_fork).raises(RuntimeError, "reinit boom")
+
+    dispatcher.abandon_inherited_state!
+
+    assert_includes log.string, "[HireFire] Could not abandon inherited dispatcher state: reinit boom"
+  end
+
   def test_stop_after_abandon_does_not_post_buffered_samples
     stub_lease
     ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)

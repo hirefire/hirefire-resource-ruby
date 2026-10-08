@@ -438,10 +438,11 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
     Macro.reinit_after_fork
     plant("schedule", queue: "default", age: 90)
+    ZrangeLog::CALLS.clear
 
     assert_equal 2, Macro.job_queue_size(:default, **SCHEDULE_SIZE)
     assert_equal 2, Macro.job_queue_size(:default, **SCHEDULE_SIZE)
-    assert_equal [0, 0], reads("schedule").select(&:zero?).last(2)
+    assert_equal 2, reads("schedule").count(&:zero?)
   ensure
     holder&.kill
   end

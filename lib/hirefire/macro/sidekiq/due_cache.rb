@@ -18,9 +18,7 @@ module HireFire
         class << self
           def reinit_after_fork
             @mutex = Mutex.new
-            @round = nil
-            @caches = {}
-            @working = nil
+            end_sample!
           end
 
           def begin_sample!

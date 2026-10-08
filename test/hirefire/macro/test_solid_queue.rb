@@ -104,6 +104,18 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size
   end
 
+  def test_a_fork_reset_ends_the_round_the_child_inherited
+    BasicJob.perform_later
+    BasicJob.set(queue: :mailer).perform_later
+    HireFire::Macro::SolidQueue.before_sample_job_queues
+    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size
+
+    HireFire::Macro::SolidQueue.reinit_after_fork
+    pause_queue("mailer")
+
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size
+  end
+
   def test_a_sample_leaves_the_primary_pool_alone_when_the_jobs_have_their_own_pool
     checkouts = primary_checkouts_while_on_its_own_pool(SolidQueue::Record) do
       HireFire::Macro::SolidQueue.job_queue_size

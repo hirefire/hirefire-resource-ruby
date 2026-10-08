@@ -59,12 +59,10 @@ module HireFire
 
       def after_sample_job_queues(_token = nil)
         @round = false
-        @round_paused_queues = nil
       end
 
       def reinit_after_fork
         after_sample_job_queues
-        @registered_queues = nil
         @registered_queues_at = nil
       end
 

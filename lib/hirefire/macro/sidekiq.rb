@@ -36,14 +36,10 @@ module HireFire
       end
 
       def before_sample_job_queues
-        return nil unless defined?(::Sidekiq)
-
         DueCache.begin_sample!
       end
 
       def after_sample_job_queues(token = nil)
-        return unless defined?(::Sidekiq)
-
         DueCache.end_sample!(token)
       end
 

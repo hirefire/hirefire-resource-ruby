@@ -298,9 +298,10 @@ class HireFire::WireTest < Minitest::Test
     end
   end
 
-  def test_a_server_that_does_not_speak_tls_fails_the_request_at_the_deadline
+  def test_a_tls_handshake_that_gets_no_answer_fails_the_request_at_the_deadline
     ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_DATA_URL"] = "https://127.0.0.1:#{@server.port}"
+    @server.on_accept = :stall
 
     with_client_timeout(0.3) do
       HireFire.configure { |_| }

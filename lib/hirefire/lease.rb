@@ -60,10 +60,11 @@ module HireFire
       held = !granted || hold.call(grant.job_queues)
 
       @mutex.synchronize do
-        next if @epoch != epoch
+        next false if @epoch != epoch
 
         apply_cadence(response)
         held ? apply_grant(granted, grant) : drop_grant
+        true
       end
     end
 
@@ -123,9 +124,10 @@ module HireFire
     def drop_grant
       clear_grant
       @process_id = SecureRandom.uuid
-      Log.safe(@configuration.logger, :info,
+      @configuration.once.log(:info, :lease_grant_dropped) do
         "[HireFire] Lease grant dropped: this process cannot sample the plan " \
-        "(no local job-queue samplers and no executable plan adapter).")
+          "(no local job-queue samplers and no executable plan adapter)."
+      end
     end
 
     def empty_grant_body(trace: false)

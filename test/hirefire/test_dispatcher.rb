@@ -1535,13 +1535,54 @@ class HireFire::DispatcherTest < Minitest::Test
     Timecop.freeze Time.at(1000) do
       configure_web_and_workers
       HireFire.configuration.buffer.sample("web", "rqt", 12)
-      error = assert_raises(HireFire::Errors::RequestError) { session.renew }
-      assert_includes error.message, "Network error"
+      session.renew
       session.sample
       session.report
     end
 
+    assert_includes log.string, "Lease request error: HireFire::Errors::RequestError: Network error"
     assert_equal 1, bodies.size
+  end
+
+  def test_the_first_failed_lease_request_is_logged_and_later_ones_once_a_minute_with_their_count
+    stub_request(:post, "https://data.hirefire.io/metrics/lease").to_return(status: 500)
+    configure_web_and_workers
+
+    (1000..1059).each { |second| Timecop.freeze(Time.at(second)) { session.renew } }
+    assert_requested(:post, "https://data.hirefire.io/metrics/lease", times: 4)
+    assert_equal 1, log.string.scan("Lease request error").size
+    assert_includes log.string, "Lease request error: HireFire::Errors::RequestError: Lease request failed with 500 status.\n"
+
+    (1060..1125).each { |second| Timecop.freeze(Time.at(second)) { session.renew } }
+    assert_equal ["(5 failed attempts in a row)", "(9 failed attempts in a row)"], log.string.scan(/\(\d+ failed attempts in a row\)/)
+  end
+
+  def test_a_recovery_after_several_failed_lease_requests_is_logged_once
+    calls = 0
+    stub_request(:post, "https://data.hirefire.io/metrics/lease").to_return do |_request|
+      calls += 1
+      {status: (calls <= 2) ? 500 : 200, headers: {"HireFire-Lease-Granted" => "false"}}
+    end
+    configure_web_and_workers
+
+    (1000..1050).each { |second| Timecop.freeze(Time.at(second)) { session.renew } }
+
+    assert_equal 1, log.string.scan("Lease request recovered after 2 failed attempts.").size
+    assert_equal 1, log.string.scan("Lease request error").size
+  end
+
+  def test_a_lease_request_that_is_not_due_does_not_count_as_a_recovery
+    calls = 0
+    stub_request(:post, "https://data.hirefire.io/metrics/lease").to_return do |_request|
+      calls += 1
+      {status: 500}
+    end
+    configure_web_and_workers
+
+    (1000..1029).each { |second| Timecop.freeze(Time.at(second)) { session.renew } }
+
+    assert_equal 2, calls
+    refute_includes log.string, "recovered"
   end
 
   def test_a_plan_this_process_can_sample_keeps_the_grant_without_a_local_sampler
@@ -1613,6 +1654,7 @@ class HireFire::DispatcherTest < Minitest::Test
     Timecop.freeze(Time.at(1005)) { session.renew }
 
     assert_equal 2, ids.uniq.size
+    assert_equal 1, log.string.scan("Lease grant dropped").size
   end
 
   def test_a_plan_adapter_without_a_local_sampler_is_sampled

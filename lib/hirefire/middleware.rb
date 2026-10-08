@@ -33,7 +33,9 @@ module HireFire
         configuration.dispatcher.start
       end
     rescue => e
-      Log.safe(HireFire.configuration.logger, :error, "[HireFire] Middleware error: #{e.message}")
+      HireFire.configuration.once.log(:error, :middleware_error, e.class) do
+        "[HireFire] Middleware error: #{Log.format_error(e)}"
+      end
     end
 
     def log_request_queue_time(request_queue_time)

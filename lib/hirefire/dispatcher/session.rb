@@ -2,6 +2,7 @@
 
 require "json"
 require_relative "payload"
+require_relative "failure_log"
 
 module HireFire
   class Dispatcher
@@ -22,8 +23,8 @@ module HireFire
         @last_rqt_second = nil
         @pending_sample_trace = nil
         @round_started_at = nil
-        @failures = 0
-        @failure_logged_at = nil
+        @dispatch_failures = FailureLog.new("Dispatch", configuration)
+        @lease_failures = FailureLog.new("Lease request", configuration)
         @sampler = Sampler.new(configuration)
         @once = Once.new(configuration)
       end
@@ -64,11 +65,11 @@ module HireFire
       end
 
       def renew
-        if round_overdue?
-          release_overdue_round
-        else
-          @lease.request_if_due(hold: @sampler.method(:can_sample?))
-        end
+        return release_overdue_round if round_overdue?
+
+        @lease_failures.recovered if @lease.request_if_due(hold: @sampler.method(:can_sample?))
+      rescue => e
+        @lease_failures.failed(e)
       end
 
       def sample
@@ -176,9 +177,10 @@ module HireFire
       end
 
       def dispatch_interval
-        return @dispatch_frequency if @failures.zero?
+        failures = @dispatch_failures.count
+        return @dispatch_frequency if failures.zero?
 
-        [@dispatch_frequency * 2**[@failures, BACKOFF_DOUBLINGS].min, MAX_DISPATCH_FREQUENCY].min
+        [@dispatch_frequency * 2**[failures, BACKOFF_DOUBLINGS].min, MAX_DISPATCH_FREQUENCY].min
       end
 
       def dispatch(final: false)
@@ -194,7 +196,7 @@ module HireFire
         submit(body, watermark)
       rescue => e
         repopulate_rqt(data) if data && (final || @live || @handoff)
-        dispatch_failed(e)
+        @dispatch_failures.failed(e)
       end
 
       def encode(payload)
@@ -216,25 +218,7 @@ module HireFire
           @last_rqt_second = watermark if watermark
           @pending_sample_trace = nil
         end
-        dispatch_succeeded
-      end
-
-      def dispatch_succeeded
-        if @failures > 1
-          Log.safe(logger, :info, "[HireFire] Dispatch recovered after #{@failures} failed attempts.")
-        end
-        @failures = 0
-        @failure_logged_at = nil
-      end
-
-      def dispatch_failed(error)
-        @failures += 1
-        now = Clock.monotonic
-        return if @failure_logged_at && now - @failure_logged_at < FAILURE_LOG_INTERVAL
-
-        @failure_logged_at = now
-        attempts = " (#{@failures} failed attempts in a row)" if @failures > 1
-        Log.safe(logger, :error, "[HireFire] Dispatch error: #{Log.format_error(error)}#{attempts}")
+        @dispatch_failures.recovered
       end
 
       def repopulate_rqt(data)

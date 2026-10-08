@@ -550,6 +550,23 @@ class HireFire::MiddlewareTest < Minitest::Test
     assert_includes log.string, "Middleware error"
   end
 
+  def test_a_repeating_internal_failure_is_logged_once_per_error_class_and_names_the_class
+    ENV["DYNO"] = "web.1"
+    ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"
+    HireFire.configuration.logger = Logger.new(log)
+    HireFire.configuration.dispatcher.stubs(:start)
+
+    Timecop.freeze Time.at(1_700_000_001) do
+      HireFire::Source::HTTP.any_instance.stubs(:sample).raises(StandardError, "sample boom")
+      3.times { @middleware.call(Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")) }
+      HireFire::Source::HTTP.any_instance.stubs(:sample).raises(ArgumentError, "other boom")
+      2.times { @middleware.call(Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")) }
+    end
+
+    assert_equal ["Middleware error: StandardError: sample boom", "Middleware error: ArgumentError: other boom"],
+      log.string.scan(/Middleware error: \w+: [a-z ]+/)
+  end
+
   def test_a_raising_http_source_sample_does_not_start_the_dispatcher
     ENV["DYNO"] = "web.1"
     ENV["HIREFIRE_TOKEN"] = "SOME_TOKEN"

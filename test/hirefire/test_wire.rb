@@ -291,7 +291,7 @@ class HireFire::WireTest < Minitest::Test
     @lease = {status: 500}
 
     HireFire.configure { |config| config.dyno(:worker) { 42 } }
-    wait_for_log("HireFire::Errors::RequestError: Lease request failed with 500 status.")
+    wait_for_log("Lease request error: HireFire::Errors::RequestError: Lease request failed with 500 status.")
 
     assert HireFire.configuration.dispatcher.running?
   end

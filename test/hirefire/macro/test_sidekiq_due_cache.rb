@@ -840,16 +840,9 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   def test_all_queues_zcount_includes_corrupt_named_walk_excludes
     Sidekiq.redis do |connection|
-      case identify_redis_client(connection)
-      when :redis
-        connection.zadd("schedule", Time.now.to_f - 300, "{bad")
-        connection.zadd("schedule", Time.now.to_f - 250, "null")
-        connection.zadd("schedule", Time.now.to_f - 240, "[1]")
-      when :redis_client
-        connection.call("zadd", "schedule", Time.now.to_f - 300, "{bad")
-        connection.call("zadd", "schedule", Time.now.to_f - 250, "null")
-        connection.call("zadd", "schedule", Time.now.to_f - 240, "[1]")
-      end
+      connection.call("zadd", "schedule", Time.now.to_f - 300, "{bad")
+      connection.call("zadd", "schedule", Time.now.to_f - 250, "null")
+      connection.call("zadd", "schedule", Time.now.to_f - 240, "[1]")
     end
     plant_sorted_set_job("schedule", queue: "a", score: Time.now.to_f - 20, enqueued_at: Time.now.to_f)
     plant_sorted_set_job("schedule", queue: "b", score: Time.now.to_f - 10, enqueued_at: Time.now.to_f)
@@ -1925,18 +1918,10 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   def plant_corrupt_sorted_set_members(set_name)
     Sidekiq.redis do |connection|
-      case identify_redis_client(connection)
-      when :redis
-        connection.zadd(set_name, Time.now.to_f - 200, "not-json")
-        connection.zadd(set_name, Time.now.to_f - 150, "null")
-        connection.zadd(set_name, Time.now.to_f - 140, "[1]")
-        connection.zadd(set_name, Time.now.to_f - 130, "true")
-      when :redis_client
-        connection.call("zadd", set_name, Time.now.to_f - 200, "not-json")
-        connection.call("zadd", set_name, Time.now.to_f - 150, "null")
-        connection.call("zadd", set_name, Time.now.to_f - 140, "[1]")
-        connection.call("zadd", set_name, Time.now.to_f - 130, "true")
-      end
+      connection.call("zadd", set_name, Time.now.to_f - 200, "not-json")
+      connection.call("zadd", set_name, Time.now.to_f - 150, "null")
+      connection.call("zadd", set_name, Time.now.to_f - 140, "[1]")
+      connection.call("zadd", set_name, Time.now.to_f - 130, "true")
     end
   end
 
@@ -1972,45 +1957,23 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   def plant_sorted_set_jobs_bulk(set_name, count:, queue:, score_start:, score_step:, enqueued_at:)
     Sidekiq.redis do |connection|
-      case identify_redis_client(connection)
-      when :redis
-        connection.pipelined do |pipe|
-          count.times do |i|
-            payload = Sidekiq.dump_json(
-              "queue" => queue,
-              "class" => "SampleWorker",
-              "args" => [],
-              "jid" => format("bulk%010d", i),
-              "enqueued_at" => enqueued_at
-            )
-            pipe.zadd(set_name, score_start + i * score_step, payload)
-          end
-        end
-      when :redis_client
-        count.times do |i|
-          payload = Sidekiq.dump_json(
-            "queue" => queue,
-            "class" => "SampleWorker",
-            "args" => [],
-            "jid" => format("bulk%010d", i),
-            "enqueued_at" => enqueued_at
-          )
-          connection.call("zadd", set_name, score_start + i * score_step, payload)
-        end
+      count.times do |i|
+        payload = Sidekiq.dump_json(
+          "queue" => queue,
+          "class" => "SampleWorker",
+          "args" => [],
+          "jid" => format("bulk%010d", i),
+          "enqueued_at" => enqueued_at
+        )
+        connection.call("zadd", set_name, score_start + i * score_step, payload)
       end
     end
   end
 
   def flush_sidekiq_redis
     Sidekiq.redis do |connection|
-      case identify_redis_client(connection)
-      when :redis
-        connection.flushdb
-        connection.script(:flush)
-      when :redis_client
-        connection.call("flushdb")
-        connection.call("script", "flush")
-      end
+      connection.call("flushdb")
+      connection.call("script", "flush")
     end
   end
 
@@ -2079,22 +2042,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   def plant_raw_sorted_set_member(set_name, score:, member:)
     Sidekiq.redis do |connection|
-      case identify_redis_client(connection)
-      when :redis
-        connection.zadd(set_name, score, member)
-      when :redis_client
-        connection.call("zadd", set_name, score, member)
-      end
-    end
-  end
-
-  def identify_redis_client(connection)
-    if defined?(::Sidekiq::RedisClientAdapter::CompatClient) && connection.is_a?(::Sidekiq::RedisClientAdapter::CompatClient)
-      :redis_client
-    elsif defined?(::Redis) && connection.is_a?(::Redis)
-      :redis
-    else
-      raise "Unknown Redis Client: #{connection.inspect}"
+      connection.call("zadd", set_name, score, member)
     end
   end
 end

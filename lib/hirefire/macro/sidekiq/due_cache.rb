@@ -223,13 +223,7 @@ module HireFire
           end
 
           def zrange_first_with_score(set_name)
-            batch = ::Sidekiq.redis do |connection|
-              if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("7.0.0")
-                connection.zrange(set_name, 0, 0, "WITHSCORES")
-              else
-                connection.zrange(set_name, 0, 0, withscores: true)
-              end
-            end
+            batch = ::Sidekiq.redis { |connection| connection.zrange(set_name, 0, 0, "WITHSCORES") }
             return nil if batch.nil? || batch.empty?
 
             member, score = batch.first
@@ -371,13 +365,7 @@ module HireFire
           end
 
           def zrange_batch(set_name, rank)
-            ::Sidekiq.redis do |connection|
-              if Gem::Version.new(::Sidekiq::VERSION) >= Gem::Version.new("7.0.0")
-                connection.zrange(set_name, rank, rank + BATCH - 1, "WITHSCORES")
-              else
-                connection.zrange(set_name, rank, rank + BATCH - 1, withscores: true)
-              end
-            end
+            ::Sidekiq.redis { |connection| connection.zrange(set_name, rank, rank + BATCH - 1, "WITHSCORES") }
           end
 
           def parse_queue(member)

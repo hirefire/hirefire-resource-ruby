@@ -31,14 +31,8 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
   def flush_sidekiq_redis
     Sidekiq.redis do |connection|
-      case identify_redis_client(connection)
-      when :redis
-        connection.flushdb
-        connection.script(:flush)
-      when :redis_client
-        connection.call("flushdb")
-        connection.call("script", "flush")
-      end
+      connection.call("flushdb")
+      connection.call("script", "flush")
     end
   end
 
@@ -791,12 +785,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   def test_server_lookup_skips_corrupt_due_members
     plant_sorted_set_job("schedule", score: Time.now.to_i - 100, enqueued_at: Time.now.to_f)
     Sidekiq.redis do |connection|
-      case identify_redis_client(connection)
-      when :redis
-        connection.zadd("schedule", Time.now.to_i - 90, "not-json")
-      when :redis_client
-        connection.call("zadd", "schedule", Time.now.to_i - 90, "not-json")
-      end
+      connection.call("zadd", "schedule", Time.now.to_i - 90, "not-json")
     end
 
     options = {skip_retries: true, skip_working: true}
@@ -804,46 +793,9 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(server: true, **options)
   end
 
-  def test_count_with_redis_loads_script_and_retries_on_noscript
-    introduced_redis = false
-    unless defined?(::Redis::CommandError)
-      Object.const_set(:Redis, Module.new) unless defined?(::Redis)
-      Redis.const_set(:CommandError, Class.new(StandardError)) unless defined?(::Redis::CommandError)
-      introduced_redis = true
-    end
-
-    sha = HireFire::Macro::Sidekiq::JobQueueSize::SERVER_SIDE_SCRIPT_SHA
-    script = HireFire::Macro::Sidekiq::JobQueueSize::SERVER_SIDE_SCRIPT
-    argv = [1_700_000_000, -1, 0, 0, 0, "default"]
-
-    connection = mock("redis")
-    seq = sequence("noscript-redis")
-    connection.expects(:evalsha)
-      .with(sha, argv: argv)
-      .in_sequence(seq)
-      .raises(::Redis::CommandError.new("NOSCRIPT No matching script. Please use EVAL."))
-    connection.expects(:script)
-      .with(:load, script)
-      .in_sequence(seq)
-      .returns("loaded-sha")
-    connection.expects(:evalsha)
-      .with(sha, argv: argv)
-      .in_sequence(seq)
-      .returns(7)
-
-    result = HireFire::Macro::Sidekiq::JobQueueSize.send(:count_with_redis, connection, *argv)
-    assert_equal 7, result
-  ensure
-    if introduced_redis && defined?(::Redis) && !::Redis.is_a?(Class)
-      Object.send(:remove_const, :Redis)
-    end
-  end
-
   def test_a_server_that_keeps_reporting_a_missing_script_is_asked_twice_and_no_more
     noscript = ::RedisClient::CommandError.new("NOSCRIPT No matching script. Please use EVAL.")
     connection = mock("connection")
-    connection.stubs(:is_a?).returns(false)
-    connection.stubs(:is_a?).with(::Sidekiq::RedisClientAdapter::CompatClient).returns(true)
     connection.expects(:call).with("evalsha", any_parameters).once.raises(noscript)
     connection.expects(:call).with("eval", any_parameters).once.raises(noscript)
     ::Sidekiq.stubs(:redis).yields(connection)
@@ -856,8 +808,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
   def test_a_script_error_other_than_a_missing_script_is_raised_at_once
     failure = ::RedisClient::CommandError.new("ERR Error running script")
     connection = mock("connection")
-    connection.stubs(:is_a?).returns(false)
-    connection.stubs(:is_a?).with(::Sidekiq::RedisClientAdapter::CompatClient).returns(true)
     connection.expects(:call).with("evalsha", any_parameters).once.raises(failure)
     ::Sidekiq.stubs(:redis).yields(connection)
 
@@ -920,12 +870,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     populate_queue
 
     Sidekiq.redis do |connection|
-      case identify_redis_client(connection)
-      when :redis
-        connection.script(:flush)
-      when :redis_client
-        connection.call("script", "flush")
-      end
+      connection.call("script", "flush")
     end
 
     assert_equal 6, HireFire::Macro::Sidekiq.job_queue_size(server: true)
@@ -977,16 +922,6 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, :mailer, server: true, **options)
     assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(**options)
     assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(server: true, **options)
-  end
-
-  def test_server_lookup_raises_on_unsupported_connection_type
-    ::Sidekiq.stubs(:redis).yields(Object.new)
-
-    error = assert_raises(RuntimeError) do
-      HireFire::Macro::Sidekiq.job_queue_size(server: true)
-    end
-
-    assert_includes error.message, "Unsupported Redis connection type"
   end
 
   def test_deprecated_queue_method
@@ -1235,14 +1170,8 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
 
   def plant_raw_queue_payload(queue, payload)
     Sidekiq.redis do |connection|
-      case identify_redis_client(connection)
-      when :redis
-        connection.sadd?("queues", queue)
-        connection.lpush("queue:#{queue}", payload)
-      when :redis_client
-        connection.call("sadd", "queues", queue)
-        connection.call("lpush", "queue:#{queue}", payload)
-      end
+      connection.call("sadd", "queues", queue)
+      connection.call("lpush", "queue:#{queue}", payload)
     end
   end
 
@@ -1257,14 +1186,8 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     payload["created_at"] = created_at unless created_at.nil?
 
     Sidekiq.redis do |connection|
-      case identify_redis_client(connection)
-      when :redis
-        connection.sadd?("queues", queue)
-        connection.lpush("queue:#{queue}", Sidekiq.dump_json(payload))
-      when :redis_client
-        connection.call("sadd", "queues", queue)
-        connection.call("lpush", "queue:#{queue}", Sidekiq.dump_json(payload))
-      end
+      connection.call("sadd", "queues", queue)
+      connection.call("lpush", "queue:#{queue}", Sidekiq.dump_json(payload))
     end
   end
 
@@ -1279,12 +1202,7 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     payload["created_at"] = created_at unless created_at.nil?
 
     Sidekiq.redis do |connection|
-      case identify_redis_client(connection)
-      when :redis
-        connection.zadd(set_name, score, Sidekiq.dump_json(payload))
-      when :redis_client
-        connection.call("zadd", set_name, score, Sidekiq.dump_json(payload))
-      end
+      connection.call("zadd", set_name, score, Sidekiq.dump_json(payload))
     end
   end
 
@@ -1356,26 +1274,9 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
         "payload" => Sidekiq.dump_json(job_payload)
       }
 
-      case identify_redis_client(connection)
-      when :redis
-        connection.sadd?("processes", process_key)
-        connection.hincrby(process_key, "busy", 1)
-        connection.hset(worker_key, jid, Sidekiq.dump_json(worker_data))
-      when :redis_client
-        connection.call("sadd", "processes", process_key)
-        connection.call("hincrby", process_key, "busy", 1)
-        connection.call("hset", worker_key, jid, Sidekiq.dump_json(worker_data))
-      end
-    end
-  end
-
-  def identify_redis_client(connection)
-    if defined?(::Sidekiq::RedisClientAdapter::CompatClient) && connection.is_a?(::Sidekiq::RedisClientAdapter::CompatClient)
-      :redis_client
-    elsif defined?(::Redis) && connection.is_a?(::Redis)
-      :redis
-    else
-      raise "Unknown Redis Client: #{connection.inspect}"
+      connection.call("sadd", "processes", process_key)
+      connection.call("hincrby", process_key, "busy", 1)
+      connection.call("hset", worker_key, jid, Sidekiq.dump_json(worker_data))
     end
   end
 end

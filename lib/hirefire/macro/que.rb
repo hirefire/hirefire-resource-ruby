@@ -12,8 +12,6 @@ module HireFire
       extend HireFire::Plan::Hooks
       extend self
 
-      VERSION_1_0_0 = Gem::Version.new("1.0.0")
-
       PLAN_OPTION_SCHEMA = {
         "jqs" => {
           "skip_working" => :boolean
@@ -25,105 +23,38 @@ module HireFire
       end
 
       def job_queue_latency(*queues)
-        if version < VERSION_1_0_0
-          job_queue_latency_v0(*queues)
-        else
-          job_queue_latency_v1_v2(*queues)
-        end
+        queues = normalize_queues(queues, allow_empty: true)
+        query = <<~SQL
+          SELECT EXTRACT(EPOCH FROM (NOW() - run_at)) AS latency
+          FROM que_jobs
+          WHERE run_at <= NOW()
+          AND finished_at IS NULL
+          AND expired_at IS NULL
+          #{not_advisory_locked_sql}
+          #{filter_by_queues_if_any(queues)}
+          ORDER BY run_at ASC
+          LIMIT 1
+        SQL
+
+        query_job_queue_latency(query, queues)
       end
 
       def job_queue_size(*queues, skip_working: false)
-        if version < VERSION_1_0_0
-          job_queue_size_v0(*queues, skip_working: skip_working)
-        else
-          job_queue_size_v1_v2(*queues, skip_working: skip_working)
-        end
+        queues = normalize_queues(queues, allow_empty: true)
+        query = <<~SQL
+          SELECT COUNT(*) AS job_queue_size
+          FROM que_jobs
+          WHERE run_at <= NOW()
+          AND finished_at IS NULL
+          AND expired_at IS NULL
+          #{not_advisory_locked_sql if skip_working}
+          #{filter_by_queues_if_any(queues)}
+        SQL
+
+        query_job_queue_size(query, queues)
       end
 
       def job_queue_working(*queues)
-        if version < VERSION_1_0_0
-          job_queue_working_v0(*queues)
-        else
-          job_queue_working_v1_v2(*queues)
-        end
-      end
-
-      private
-
-      def job_queue_latency_v0(*queues)
-        queues = normalize_queues(queues, allow_empty: true)
-        query = <<~SQL
-          SELECT EXTRACT(EPOCH FROM (NOW() - run_at)) AS latency
-          FROM que_jobs
-          WHERE run_at <= NOW()
-          #{not_advisory_locked_sql}
-          #{filter_by_queues_if_any(queues)}
-          ORDER BY run_at ASC
-          LIMIT 1
-        SQL
-
-        query_job_queue_latency(query, queues)
-      end
-
-      def job_queue_latency_v1_v2(*queues)
-        queues = normalize_queues(queues, allow_empty: true)
-        query = <<~SQL
-          SELECT EXTRACT(EPOCH FROM (NOW() - run_at)) AS latency
-          FROM que_jobs
-          WHERE run_at <= NOW()
-          AND finished_at IS NULL
-          AND expired_at IS NULL
-          #{not_advisory_locked_sql}
-          #{filter_by_queues_if_any(queues)}
-          ORDER BY run_at ASC
-          LIMIT 1
-        SQL
-
-        query_job_queue_latency(query, queues)
-      end
-
-      def job_queue_size_v0(*queues, skip_working:)
-        queues = normalize_queues(queues, allow_empty: true)
-        query = <<~SQL
-          SELECT COUNT(*) AS job_queue_size
-          FROM que_jobs
-          WHERE run_at <= NOW()
-          #{not_advisory_locked_sql if skip_working}
-          #{filter_by_queues_if_any(queues)}
-        SQL
-
-        query_job_queue_size(query, queues)
-      end
-
-      def job_queue_size_v1_v2(*queues, skip_working:)
-        queues = normalize_queues(queues, allow_empty: true)
-        query = <<~SQL
-          SELECT COUNT(*) AS job_queue_size
-          FROM que_jobs
-          WHERE run_at <= NOW()
-          AND finished_at IS NULL
-          AND expired_at IS NULL
-          #{not_advisory_locked_sql if skip_working}
-          #{filter_by_queues_if_any(queues)}
-        SQL
-
-        query_job_queue_size(query, queues)
-      end
-
-      def job_queue_working_v0(*queues)
-        queues = normalize_queues(queues, allow_empty: true)
-        query = <<~SQL
-          SELECT COUNT(*) AS job_queue_working
-          FROM que_jobs
-          WHERE TRUE
-          #{advisory_locked_sql}
-          #{filter_by_queues_if_any(queues)}
-        SQL
-
-        query_job_queue_working(query, queues)
-      end
-
-      def job_queue_working_v1_v2(*queues)
         queues = normalize_queues(queues, allow_empty: true)
         query = <<~SQL
           SELECT COUNT(*) AS job_queue_working
@@ -136,6 +67,8 @@ module HireFire
 
         query_job_queue_working(query, queues)
       end
+
+      private
 
       def not_advisory_locked_sql
         "AND NOT #{advisory_lock_exists_sql}"
@@ -153,13 +86,9 @@ module HireFire
             WHERE locktype = 'advisory'
               AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
               AND objsubid = 1
-              AND (classid::bigint << 32) + objid::bigint = que_jobs.#{advisory_lock_id_column}
+              AND (classid::bigint << 32) + objid::bigint = que_jobs.id
           )
         SQL
-      end
-
-      def advisory_lock_id_column
-        (version < VERSION_1_0_0) ? "job_id" : "id"
       end
 
       def query_job_queue_latency(query, queues)
@@ -179,10 +108,6 @@ module HireFire
         return "" if queues.empty?
         placeholders = (1..queues.size).map { |i| "$#{i}" }.join(", ")
         "AND queue IN (#{placeholders})"
-      end
-
-      def version
-        Gem::Version.new(defined?(::Que::Version) ? ::Que::Version : ::Que::VERSION)
       end
     end
   end

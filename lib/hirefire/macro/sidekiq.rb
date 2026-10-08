@@ -335,39 +335,16 @@ module HireFire
 
         def server_lookup(queues, skip_scheduled: false, skip_retries: false, skip_working: false, max_scheduled: nil)
           max_scheduled = max_scheduled.nil? ? -1 : [max_scheduled.to_i, 0].max
+          flags = [skip_scheduled, skip_retries, skip_working].map { |skip| skip ? 1 : 0 }
+          arguments = [Time.now.to_f, max_scheduled, *flags, SERVER_WALK_MEMBER_BUDGET, *queues]
+
           ::Sidekiq.redis do |connection|
-            now = Time.now.to_f
-            skip_scheduled = skip_scheduled ? 1 : 0
-            skip_retries = skip_retries ? 1 : 0
-            skip_working = skip_working ? 1 : 0
+            connection.call("evalsha", SERVER_SIDE_SCRIPT_SHA, 0, *arguments)
+          rescue RedisClient::CommandError => e
+            raise unless e.message.include?("NOSCRIPT")
 
-            if defined?(::Sidekiq::RedisClientAdapter::CompatClient) && connection.is_a?(::Sidekiq::RedisClientAdapter::CompatClient)
-              count_with_redis_client(connection, now, max_scheduled, skip_scheduled, skip_retries, skip_working, SERVER_WALK_MEMBER_BUDGET, *queues)
-            elsif defined?(::Redis) && connection.is_a?(::Redis)
-              count_with_redis(connection, now, max_scheduled, skip_scheduled, skip_retries, skip_working, SERVER_WALK_MEMBER_BUDGET, *queues)
-            else
-              raise "Unsupported Redis connection type: #{connection.class}"
-            end
+            connection.call("eval", SERVER_SIDE_SCRIPT, 0, *arguments)
           end
-        end
-
-        def count_with_redis(connection, *args)
-          connection.evalsha(SERVER_SIDE_SCRIPT_SHA, argv: args)
-        rescue Redis::CommandError => e
-          if e.message.include?("NOSCRIPT")
-            connection.script(:load, SERVER_SIDE_SCRIPT)
-            retry
-          else
-            raise
-          end
-        end
-
-        def count_with_redis_client(connection, *args)
-          connection.call("evalsha", SERVER_SIDE_SCRIPT_SHA, 0, *args)
-        rescue RedisClient::CommandError => e
-          raise unless e.message.include?("NOSCRIPT")
-
-          connection.call("eval", SERVER_SIDE_SCRIPT, 0, *args)
         end
       end
     end

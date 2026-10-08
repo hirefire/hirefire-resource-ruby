@@ -377,7 +377,7 @@ class HireFire::LeaseTest < Minitest::Test
       }
     end
 
-    target.request_if_due(hold: ->(_) { true })
+    refute target.request_if_due(hold: ->(_) { true })
 
     refute target.granted?
     assert_empty target.job_queues
@@ -655,6 +655,27 @@ class HireFire::LeaseTest < Minitest::Test
     assert_equal 1, lease.job_queues.size
     assert_equal "worker", lease.job_queues[0]["name"]
     assert_includes log.string, "skipped"
+  end
+
+  def test_a_name_of_exactly_the_longest_length_is_kept
+    longest = "a" * HireFire::Identity::MAX_NAME_BYTES
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"},
+        body: {version: 1, job_queues: [{"name" => longest, "strategy" => "jqs"}]}.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert_equal [longest], lease.job_queues.map { |entry| entry["name"] }
+  end
+
+  def test_an_entry_without_an_adapter_gets_none
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "true"},
+        body: {version: 1, job_queues: [{"name" => " worker ", "strategy" => "jqs"}]}.to_json)
+
+    lease.request_if_due(hold: ->(_) { true })
+
+    assert_equal [{"name" => "worker", "strategy" => "jqs"}], lease.job_queues
   end
 
   def test_json_null_adapter_is_strategy_only

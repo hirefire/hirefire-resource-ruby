@@ -565,6 +565,8 @@ class HireFireTest < Minitest::Test
     boot_web_process
 
     with_tick(0.01) do
+      HireFire::Log.stubs(:safe)
+      HireFire::Log.expects(:safe).with(anything, :error, includes("After-fork resume failed")).never
       pid = Process.fork { exit!(0) }
       HireFire.reset
       Process.wait(pid)

@@ -76,7 +76,8 @@ module Audit
           anchor = relevant.select { |line| line < mutant.line }.max
           span = [anchor] if anchor
         end
-        span.flat_map { |line| lines[line.to_s] || [] }.uniq
+        cells = span.flat_map { |line| lines[line.to_s] || [] }.uniq
+        cells.empty? ? lines.values.flatten.uniq : cells
       end
 
       def work(queue, dir, pool)

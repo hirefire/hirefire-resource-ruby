@@ -969,6 +969,16 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     assert_equal macro.job_queue_size(skip_scheduled: true, skip_retries: true), macro.queue(skip_scheduled: true, skip_retries: true)
   end
 
+  def test_deprecated_queue_method_reads_options_from_inside_a_list_of_queues
+    enqueue
+    enqueue_scheduled(at: Time.now.to_i - 60)
+    enqueue_scheduled(queue: "mailer", at: Time.now.to_i - 60)
+
+    assert_equal 1, HireFire::Macro::Sidekiq.queue([:default, {skip_scheduled: true}])
+    assert_equal 1, HireFire::Macro::Sidekiq.queue([[:default, :mailer], {skip_scheduled: true}])
+    assert_equal 3, HireFire::Macro::Sidekiq.queue([[:default, :mailer]])
+  end
+
   def test_deprecated_queue_passes_on_only_the_options_the_1_x_method_read
     options = {skip_scheduled: true, skip_retries: true, skip_working: true, max_scheduled: 5}
     HireFire::Macro::Sidekiq.expects(:job_queue_size).with(:default, "critical", **options).returns(7)

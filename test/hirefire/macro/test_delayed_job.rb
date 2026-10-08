@@ -275,6 +275,15 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 2, HireFire::Macro::Delayed::Job.queue(mapper: mapper, min_priority: 0, max_priority: 10)
   end
 
+  def test_deprecated_queue_method_reads_options_from_inside_a_list_of_queues
+    BasicJob.delay(queue: :default, priority: 1).perform
+    BasicJob.delay(queue: :default, priority: 5).perform
+    BasicJob.delay(queue: :mailer, priority: 5).perform
+
+    assert_equal 1, HireFire::Macro::Delayed::Job.queue([:default, {min_priority: 3}])
+    assert_equal 2, HireFire::Macro::Delayed::Job.queue([[:default, :mailer], {min_priority: 3}])
+  end
+
   def test_deprecated_queue_method_accepts_and_drops_the_mapper
     BasicJob.delay(queue: :default).perform
 

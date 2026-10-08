@@ -30,7 +30,7 @@ module HireFire
       ].freeze
 
       def job_queue_latency(*queues)
-        with_connection do
+        with_connection(::SolidQueue::Record) do
           queues, now = determine_queues(queues), Time.now
 
           LATENCY_METHODS.map do |latency_method|
@@ -45,7 +45,7 @@ module HireFire
       ].freeze
 
       def job_queue_size(*queues, skip_working: false)
-        with_connection do
+        with_connection(::SolidQueue::Record) do
           queues = determine_queues(queues)
 
           size = SIZE_METHODS.sum do |count_method|
@@ -57,7 +57,7 @@ module HireFire
       end
 
       def job_queue_working(*queues)
-        with_connection do
+        with_connection(::SolidQueue::Record) do
           queues = determine_queues(queues)
           claimed_size(queues)
         end
@@ -112,7 +112,7 @@ module HireFire
       def prefetch_wave_lists
         return unless @wave_registered_queues == :pending
 
-        with_connection do
+        with_connection(::SolidQueue::Record) do
           @wave_registered_queues = cached_registered_queue_names
           @wave_paused_queues = ::SolidQueue::Pause.pluck(:queue_name)
         end

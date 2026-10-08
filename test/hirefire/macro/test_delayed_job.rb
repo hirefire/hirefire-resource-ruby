@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "support/own_pool"
 
 if defined?(ActiveRecord)
   require_relative "../../env/rails_delayed_job_active_record_4/config/environment"
@@ -11,6 +12,8 @@ if defined?(Mongoid)
 end
 
 class HireFire::Macro::Delayed::JobTest < Minitest::Test
+  include OwnPool
+
   LATENCY_DELTA = 2
 
   def setup
@@ -293,6 +296,19 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_equal 1, HireFire::Macro::Delayed::Job.job_queue_working(:mailer)
     assert_equal 0, HireFire::Macro::Delayed::Job.job_queue_working(:critical)
     assert_equal 2, HireFire::Macro::Delayed::Job.job_queue_working(:default, :mailer)
+  end
+
+  if Delayed::Job.respond_to?(:connection_pool)
+    def test_a_sample_leaves_the_primary_pool_alone_when_the_jobs_have_their_own_pool
+      checkouts = primary_checkouts_while_on_its_own_pool(Delayed::Job) do
+        HireFire::Macro::Delayed::Job.job_queue_size
+        HireFire::Macro::Delayed::Job.job_queue_size(skip_working: true)
+        HireFire::Macro::Delayed::Job.job_queue_latency
+        HireFire::Macro::Delayed::Job.job_queue_working
+      end
+
+      assert_equal 0, checkouts
+    end
   end
 
   def test_job_queue_working_excludes_unlocked_and_failed

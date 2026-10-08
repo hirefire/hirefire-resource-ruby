@@ -30,7 +30,7 @@ module HireFire
       end
 
       def job_queue_latency(*queues)
-        with_connection do
+        with_connection(good_job_class) do
           due_at = Arel.sql("COALESCE(scheduled_at, created_at)")
           oldest = [ready_jobs(queues), interrupted_jobs(queues)].filter_map { |jobs| jobs.minimum(due_at) }.min
           oldest ? [Time.now - oldest, 0.0].max : 0.0
@@ -38,14 +38,14 @@ module HireFire
       end
 
       def job_queue_size(*queues, skip_working: false)
-        with_connection do
+        with_connection(good_job_class) do
           started = skip_working ? interrupted_jobs(queues) : started_jobs(queues)
           ready_jobs(queues).count + started.count
         end
       end
 
       def job_queue_working(*queues)
-        with_connection do
+        with_connection(good_job_class) do
           working_jobs(queues).count
         end
       end

@@ -28,7 +28,7 @@ module HireFire
         end
 
         def job_queue_latency(*queues, min_priority: nil, max_priority: nil)
-          with_connection do
+          with_connection(::Delayed::Job) do
             query = due(waiting_scope, queues, min_priority, max_priority).order(run_at: :asc)
 
             if (job = query.first)
@@ -40,7 +40,7 @@ module HireFire
         end
 
         def job_queue_size(*queues, skip_working: false, min_priority: nil, max_priority: nil)
-          with_connection do
+          with_connection(::Delayed::Job) do
             query = skip_working ? waiting_scope : unfailed_scope
 
             due(query, queues, min_priority, max_priority).count
@@ -48,7 +48,7 @@ module HireFire
         end
 
         def job_queue_working(*queues)
-          with_connection do
+          with_connection(::Delayed::Job) do
             queues = normalize_queues(queues, allow_empty: true)
 
             case mapper

@@ -6,13 +6,11 @@ module HireFire
       module ActiveRecordConnection
         private
 
-        def with_connection
-          if defined?(::ActiveRecord::Base) &&
-              ::ActiveRecord::Base.respond_to?(:connection_pool)
-            ::ActiveRecord::Base.connection_pool.with_connection { |connection| yield connection }
-          else
-            yield nil
-          end
+        def with_connection(model = nil)
+          model ||= ::ActiveRecord::Base if defined?(::ActiveRecord::Base)
+          return yield(nil) unless model.respond_to?(:connection_pool)
+
+          model.connection_pool.with_connection { |connection| yield connection }
         end
       end
     end

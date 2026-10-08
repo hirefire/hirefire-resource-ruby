@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "support/own_pool"
 require "good_job/version"
 require "hirefire/macro/helpers/good_job"
 
@@ -8,6 +9,8 @@ major_version = Gem::Version.new(::GoodJob::VERSION).segments[0]
 require_relative "../../env/rails_good_job_#{major_version}/config/environment"
 
 class HireFire::Macro::GoodJobTest < Minitest::Test
+  include OwnPool
+
   include HireFire::Macro::Helpers::GoodJob
 
   LATENCY_DELTA = 2
@@ -340,6 +343,17 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal macro.job_queue_size(:default), macro.queue(:default)
     assert_equal macro.job_queue_size(:mailer), macro.queue("mailer")
     assert_equal macro.job_queue_size(:default, :other), macro.queue(:default, :other)
+  end
+
+  def test_a_sample_leaves_the_primary_pool_alone_when_the_jobs_have_their_own_pool
+    checkouts = primary_checkouts_while_on_its_own_pool(good_job_class) do
+      HireFire::Macro::GoodJob.job_queue_size
+      HireFire::Macro::GoodJob.job_queue_size(skip_working: true)
+      HireFire::Macro::GoodJob.job_queue_latency
+      HireFire::Macro::GoodJob.job_queue_working
+    end
+
+    assert_equal 0, checkouts
   end
 
   def test_job_queue_working_idle_is_zero

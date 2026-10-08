@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "support/own_pool"
 require "solid_queue/version"
 
 class HireFire::Macro::SolidQueueTest < Minitest::Test
+  include OwnPool
+
   MAJOR_VERSION = Gem::Version.new(::SolidQueue::VERSION).segments[0]
   require_relative "../../env/rails_solid_queue_#{MAJOR_VERSION}/config/environment"
 
@@ -61,6 +64,17 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
   ensure
     HireFire::Macro::SolidQueue.after_sample_job_queues
     pool.singleton_class.remove_method(:with_connection)
+  end
+
+  def test_a_sample_leaves_the_primary_pool_alone_when_the_jobs_have_their_own_pool
+    checkouts = primary_checkouts_while_on_its_own_pool(SolidQueue::Record) do
+      HireFire::Macro::SolidQueue.job_queue_size
+      HireFire::Macro::SolidQueue.job_queue_size(skip_working: true)
+      HireFire::Macro::SolidQueue.job_queue_latency
+      HireFire::Macro::SolidQueue.job_queue_working
+    end
+
+    assert_equal 0, checkouts
   end
 
   def test_registered_queues_are_cached_across_waves_while_pauses_stay_live

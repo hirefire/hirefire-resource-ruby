@@ -19,6 +19,7 @@ module HireFire
 
   def reset
     @configuration&.stop_dispatcher
+    Plan.release_macros
     @configuration = nil
   end
 

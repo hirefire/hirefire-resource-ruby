@@ -28,6 +28,10 @@ module HireFire
         @reused_url = nil
       end
 
+      def release
+        connection_mutex.synchronize { close_reused_connection }
+      end
+
       def queues_required?
         true
       end
@@ -138,9 +142,7 @@ module HireFire
             return @reused_connection
           end
 
-          close_connection(@reused_connection)
-          @reused_connection = nil
-          @reused_url = nil
+          close_reused_connection
           session = acquire_connection(url)
           @reused_url = url
           @reused_connection = session
@@ -149,12 +151,14 @@ module HireFire
 
       def discard_reused_connection(connection)
         connection_mutex.synchronize do
-          next unless @reused_connection.equal?(connection)
-
-          close_connection(@reused_connection)
-          @reused_connection = nil
-          @reused_url = nil
+          close_reused_connection if @reused_connection.equal?(connection)
         end
+      end
+
+      def close_reused_connection
+        close_connection(@reused_connection)
+        @reused_connection = nil
+        @reused_url = nil
       end
 
       def connection_open?(connection)

@@ -29,6 +29,9 @@ module HireFire
       def reinit_after_fork
       end
 
+      def release
+      end
+
       def extract_plan_options(strategy, options, schema)
         return {} unless options.is_a?(Hash)
 

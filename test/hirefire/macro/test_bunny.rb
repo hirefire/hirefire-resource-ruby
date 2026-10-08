@@ -439,6 +439,73 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     saved.each { |k, v| ENV[k] = v }
   end
 
+  def test_the_connection_that_plan_samples_reuse_closes_when_the_library_is_reset
+    with_connection(queue: :reuse_reset) do |_connection, _channel, queue|
+      before = open_sessions
+      HireFire::Plan.around_job_queue_sample do
+        HireFire::Macro::Bunny.job_queue_size(queue.name, **HireFire::Macro::Bunny.plan_connection_options)
+      end
+      assert_equal before + 1, open_sessions
+
+      HireFire.configuration.stop_dispatcher
+      HireFire.reset
+
+      assert_equal before, open_sessions
+    end
+  end
+
+  def test_the_connection_that_plan_samples_reuse_closes_when_the_process_loses_the_lease
+    with_connection(queue: :reuse_lease) do |_connection, _channel, queue|
+      ENV["HIREFIRE_TOKEN"] = "test-token-value"
+      granted = true
+      stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+      stub_request(:post, "https://data.hirefire.io/metrics/lease").to_return do |_request|
+        {status: 200, headers: {"HireFire-Lease-Granted" => granted.to_s, "HireFire-Lease-TTL" => "5"},
+         body: {job_queues: [{"name" => "worker", "strategy" => "jqs", "adapter" => "bunny", "queues" => [queue.name]}]}.to_json}
+      end
+      before = open_sessions
+      original_tick = HireFire::Dispatcher::TICK
+      HireFire::Dispatcher.send(:remove_const, :TICK)
+      HireFire::Dispatcher.const_set(:TICK, 0.01)
+
+      HireFire.configuration.dispatcher.start
+      wait_for { open_sessions == before + 1 }
+      granted = false
+      Timecop.travel(Time.now + 6)
+      wait_for { open_sessions == before }
+
+      assert HireFire.configuration.dispatcher.running?
+    ensure
+      Timecop.return
+      HireFire.configuration.stop_dispatcher(flush: false)
+      HireFire::Dispatcher.send(:remove_const, :TICK)
+      HireFire::Dispatcher.const_set(:TICK, original_tick)
+    end
+  end
+
+  def test_the_connection_that_plan_samples_reuse_closes_when_the_dispatcher_stops
+    with_connection(queue: :reuse_stop) do |_connection, _channel, queue|
+      ENV["HIREFIRE_TOKEN"] = "test-token-value"
+      stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+      stub_request(:post, "https://data.hirefire.io/metrics/lease").to_return(
+        status: 200, headers: {"HireFire-Lease-Granted" => "true", "HireFire-Lease-TTL" => "5"},
+        body: {job_queues: [{"name" => "worker", "strategy" => "jqs", "adapter" => "bunny", "queues" => [queue.name]}]}.to_json
+      )
+      before = open_sessions
+
+      HireFire.configuration.dispatcher.start
+      wait_for { open_sessions == before + 1 }
+      HireFire.configuration.dispatcher.stop
+
+      wait_for { open_sessions == before }
+    end
+  end
+
+  def test_release_without_a_reused_connection_does_nothing
+    HireFire::Macro::Bunny.release
+    HireFire::Macro::Bunny.release
+  end
+
   private
 
   def missing_queue_name
@@ -520,6 +587,19 @@ class HireFire::Macro::BunnyTest < Minitest::Test
       sleep 0.02
     end
     assert_equal expected, seen
+  end
+
+  def open_sessions
+    ObjectSpace.each_object(::Bunny::Session).count(&:open?)
+  end
+
+  def wait_for(seconds = 3)
+    (seconds / 0.005).to_i.times do
+      return if yield
+
+      sleep(0.005)
+    end
+    flunk "the condition was not met within #{seconds} seconds"
   end
 
   def with_connection(options = {})

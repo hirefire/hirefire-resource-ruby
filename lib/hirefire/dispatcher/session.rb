@@ -114,6 +114,8 @@ module HireFire
           guard { sample }
           pause
         end
+      ensure
+        guard { Plan.release_macros }
       end
 
       def cycle

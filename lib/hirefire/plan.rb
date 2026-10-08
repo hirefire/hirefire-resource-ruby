@@ -111,13 +111,11 @@ module HireFire
     end
 
     def reinit_macros_after_fork
-      ADAPTERS.each do |name, macro|
-        macro.reinit_after_fork
-      rescue => e
-        Log.safe(logger, :error,
-          "[HireFire] reinit_after_fork for #{name.inspect} raised " +
-          Log.format_error(e))
-      end
+      each_macro("reinit_after_fork", &:reinit_after_fork)
+    end
+
+    def release_macros
+      each_macro("release", &:release)
     end
 
     def execute(entry, live = nil)
@@ -164,6 +162,14 @@ module HireFire
     end
 
     private
+
+    def each_macro(hook)
+      ADAPTERS.each do |name, macro|
+        yield macro
+      rescue => e
+        Log.safe(logger, :error, "[HireFire] #{hook} for #{name.inspect} raised " + Log.format_error(e))
+      end
+    end
 
     def sample_working?(macro, strategy, options)
       return false unless macro.respond_to?(:job_queue_working)

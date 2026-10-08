@@ -978,6 +978,111 @@ class HireFire::Macro::SidekiqTest < Minitest::Test
     )
   end
 
+  def test_the_running_count_reads_the_hash_form_of_a_work_entry
+    Timecop.freeze(Time.at(Time.now.to_i)) do
+      now = Time.now.to_i
+      Sidekiq::Workers.any_instance.stubs(:each).multiple_yields(
+        ["process", "thread-1", {"queue" => "default", "run_at" => now - 60}],
+        ["process", "thread-2", {"queue" => "default", "run_at" => now}],
+        ["process", "thread-3", {"queue" => "default", "run_at" => now + 60}],
+        ["process", "thread-4", {"queue" => "mailer", "run_at" => now - 60}]
+      )
+
+      assert_equal 2, HireFire::Macro::Sidekiq.job_queue_working(:default)
+      assert_equal 3, HireFire::Macro::Sidekiq.job_queue_working(:default, :mailer)
+    end
+  end
+
+  def test_a_job_that_started_at_this_moment_counts_as_running
+    Timecop.freeze(Time.at(Time.now.to_i)) do
+      enqueue_working(queue: "default", run_at: Time.now.to_i)
+
+      assert_equal 1, HireFire::Macro::Sidekiq.job_queue_working(:default)
+    end
+  end
+
+  def test_job_queue_latency_is_the_age_of_the_oldest_job_in_a_queue
+    plant_queue_job("default", enqueued_at: Time.now.to_f - 300)
+    plant_queue_job("default", enqueued_at: Time.now.to_f - 30)
+
+    assert_in_delta 300, enqueued_only_latency(:default), LATENCY_DELTA
+  end
+
+  def test_job_queue_latency_treats_a_timestamp_beyond_the_float_range_as_zero
+    plant_raw_queue_payload("ahead", '{"queue":"ahead","enqueued_at":1e999}')
+    plant_raw_queue_payload("behind", '{"queue":"behind","enqueued_at":-1e999}')
+
+    plant_queue_job("default", enqueued_at: Time.now.to_f - 120)
+
+    assert_equal 0.0, enqueued_only_latency(:ahead)
+    assert_equal 0.0, enqueued_only_latency(:behind)
+    assert_in_delta 120, enqueued_only_latency(:ahead, :default), LATENCY_DELTA
+    assert_in_delta 120, enqueued_only_latency(:default, :behind), LATENCY_DELTA
+  end
+
+  def test_a_malformed_timestamp_in_one_queue_does_not_hide_the_latency_of_another
+    plant_queue_job("default", enqueued_at: Time.now.to_f - 120)
+    plant_queue_job("broken", enqueued_at: "not-a-time")
+
+    assert_in_delta 120, enqueued_only_latency(:default, :broken), LATENCY_DELTA
+    assert_in_delta 120, enqueued_only_latency(:broken, :default), LATENCY_DELTA
+  end
+
+  def test_the_running_jobs_read_stops_at_its_member_budget
+    3.times { enqueue_working(queue: "default") }
+
+    stub_due_cache_const(:WORKING_MEMBER_BUDGET, 4) do
+      assert_equal 3, HireFire::Macro::Sidekiq.job_queue_working(:default)
+    end
+    stub_due_cache_const(:WORKING_MEMBER_BUDGET, 3) do
+      error = assert_raises(HireFire::Errors::SampleIncompleteError) { HireFire::Macro::Sidekiq.job_queue_working(:default) }
+      assert_equal "Sidekiq working map exceeded budget", error.message
+    end
+    assert_equal 20_000, HireFire::Macro::Sidekiq::DueCache::WORKING_MEMBER_BUDGET
+  end
+
+  def test_the_running_jobs_read_stops_at_its_time_budget
+    enqueue_working(queue: "default")
+    HireFire::Clock.stubs(:monotonic).returns(5.0)
+
+    stub_due_cache_const(:WALK_TIME_BUDGET, 0.0) do
+      assert_raises(HireFire::Errors::SampleIncompleteError) { HireFire::Macro::Sidekiq.job_queue_working(:default) }
+    end
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_working(:default)
+    assert_equal 2.0, HireFire::Macro::Sidekiq::DueCache::WALK_TIME_BUDGET
+  end
+
+  def test_the_member_budget_counts_the_members_seen_and_the_last_one_is_not_read
+    4.times { enqueue_scheduled(at: Time.now.to_i - 60) }
+    enqueue_scheduled(queue: "mailer", at: Time.now.to_i - 50)
+    5.times { enqueue_scheduled(at: Time.now.to_i - 40) }
+
+    stub_due_cache_const(:WALK_MEMBER_BUDGET, 5) do
+      assert_equal 10, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+    end
+    assert_equal 50_000, HireFire::Macro::Sidekiq::DueCache::WALK_MEMBER_BUDGET
+  end
+
+  def test_a_walk_stops_when_the_time_spent_equals_its_time_budget
+    enqueue_scheduled(queue: "mailer", at: Time.now.to_i - 60)
+    enqueue_scheduled(at: Time.now.to_i - 50)
+    HireFire::Clock.stubs(:monotonic).returns(5.0)
+
+    stub_due_cache_const(:WALK_TIME_BUDGET, 0.0) do
+      assert_equal 2, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+    end
+    assert_equal 1, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+  end
+
+  def test_members_that_left_the_set_during_a_walk_over_its_budget_are_not_counted
+    10.times { enqueue_scheduled(at: Time.now.to_i - 60) }
+    HireFire::Macro::Sidekiq::DueCache.stubs(:due_count).returns(2)
+
+    stub_due_cache_const(:WALK_MEMBER_BUDGET, 5) do
+      assert_equal 4, HireFire::Macro::Sidekiq.job_queue_size(:default, skip_retries: true, skip_working: true)
+    end
+  end
+
   def test_a_named_due_walk_over_its_budget_counts_every_member_it_did_not_read
     20.times { enqueue_scheduled(at: Time.now.to_i - 60) }
     3.times { enqueue_scheduled(queue: "mailer", at: Time.now.to_i - 10) }

@@ -239,6 +239,30 @@ class HireFire::Macro::SolidQueueTest < Minitest::Test
     assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size(:default, :mailer)
   end
 
+  def test_job_queue_size_counts_scheduled_jobs_that_became_due_in_their_own_queue
+    Timecop.freeze(5.minutes.ago) do
+      BasicJob.set(wait_until: 3.minutes.from_now).perform_later
+      2.times { BasicJob.set(queue: :mailer, wait_until: 2.minutes.from_now).perform_later }
+    end
+    BasicJob.perform_later
+
+    assert_equal 3, ::SolidQueue::ScheduledExecution.count
+    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size(:default)
+    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size(:mailer)
+    assert_equal 4, HireFire::Macro::SolidQueue.job_queue_size
+    assert_in_delta 180, HireFire::Macro::SolidQueue.job_queue_latency(:mailer), LATENCY_DELTA
+    assert_in_delta 120, HireFire::Macro::SolidQueue.job_queue_latency(:default), LATENCY_DELTA
+  end
+
+  def test_a_queue_name_without_a_wildcard_is_matched_exactly
+    BasicJob.set(queue: :mail).perform_later
+    2.times { BasicJob.set(queue: :mailer).perform_later }
+
+    assert_equal 1, HireFire::Macro::SolidQueue.job_queue_size(:mail)
+    assert_equal 2, HireFire::Macro::SolidQueue.job_queue_size(:mailer)
+    assert_equal 3, HireFire::Macro::SolidQueue.job_queue_size(:"mail*")
+  end
+
   def test_job_queue_size_with_finished_jobs
     insert_finished_job(BasicJob)
     insert_finished_job(BasicJob, queue: :mailer)

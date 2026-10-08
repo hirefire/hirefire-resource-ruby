@@ -38,9 +38,10 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   end
 
   def test_job_queue_latency_unsupported_raises_error
-    assert_raises HireFire::Errors::JobQueueLatencyUnsupportedError do
+    error = assert_raises HireFire::Errors::JobQueueLatencyUnsupportedError do
       HireFire::Macro::Bunny.job_queue_latency(:default)
     end
+    assert_equal "HireFire::Macro::Bunny currently does not support job queue latency measurements.", error.message
   end
 
   def test_job_queue_size_empty_ready_queue_is_zero
@@ -232,6 +233,125 @@ class HireFire::Macro::BunnyTest < Minitest::Test
       HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: AMQP_URL, reuse_connection: true)
     end
   ensure
+    HireFire::Macro::Bunny.reinit_after_fork
+  end
+
+  def test_a_sample_without_reuse_closes_the_connection_it_opened
+    with_connection(queue: :owned_close) do |_connection, channel, queue|
+      publish_confirmed(channel, queue)
+      before = open_sessions
+
+      2.times { assert_size 1, queue.name, amqp_url: AMQP_URL }
+
+      assert_equal before, open_sessions
+    end
+  end
+
+  def test_a_given_connection_is_used_even_when_reuse_is_asked_for
+    given = ::Bunny.new(AMQP_URL).tap(&:start)
+
+    with_connection(queue: :given_reuse) do |_connection, channel, queue|
+      publish_confirmed(channel, queue)
+      before = open_sessions
+
+      assert_size 1, queue.name, connection: given, reuse_connection: true, amqp_url: "amqp://guest:guest@127.0.0.1:1"
+
+      assert_equal before, open_sessions
+      assert given.open?
+    end
+  ensure
+    given&.close
+    HireFire::Macro::Bunny.reinit_after_fork
+  end
+
+  def test_a_failed_sample_on_the_reused_connection_closes_it_and_the_next_sample_opens_another
+    with_connection(queue: :reuse_fail) do |_connection, channel, queue|
+      publish_confirmed(channel, queue)
+      before = open_sessions
+      assert_size 1, queue.name, amqp_url: AMQP_URL, reuse_connection: true
+      assert_equal before + 1, open_sessions
+
+      ::Bunny::Channel.any_instance.stubs(:queue).raises(::Bunny::AccessRefused.new("ACCESS_REFUSED", nil, nil))
+      assert_raises(::Bunny::AccessRefused) do
+        HireFire::Macro::Bunny.job_queue_size(queue.name, amqp_url: AMQP_URL, reuse_connection: true)
+      end
+      ::Bunny::Channel.any_instance.unstub(:queue)
+
+      assert_equal before, open_sessions
+      assert_size 1, queue.name, amqp_url: AMQP_URL, reuse_connection: true
+      assert_equal before + 1, open_sessions
+    end
+  ensure
+    HireFire::Macro::Bunny.release
+  end
+
+  def test_a_failed_sample_on_a_given_connection_leaves_the_reused_connection_open
+    given = ::Bunny.new(AMQP_URL).tap(&:start)
+
+    with_connection(queue: :reuse_kept) do |_connection, channel, queue|
+      publish_confirmed(channel, queue)
+      assert_size 1, queue.name, amqp_url: AMQP_URL, reuse_connection: true
+      before = open_sessions
+
+      ::Bunny::Channel.any_instance.stubs(:queue).raises(::Bunny::AccessRefused.new("ACCESS_REFUSED", nil, nil))
+      assert_raises(::Bunny::AccessRefused) { HireFire::Macro::Bunny.job_queue_size(queue.name, connection: given) }
+      assert_raises(::Bunny::AccessRefused) { HireFire::Macro::Bunny.job_queue_size(queue.name, amqp_url: AMQP_URL) }
+      ::Bunny::Channel.any_instance.unstub(:queue)
+
+      assert_equal before, open_sessions
+    end
+  ensure
+    given&.close
+    HireFire::Macro::Bunny.release
+  end
+
+  def test_a_connection_that_fails_to_start_is_closed_and_its_error_is_raised
+    session = mock("session")
+    session.stubs(:start).raises(::Bunny::Exception.new("start boom"))
+    session.expects(:close).once
+    ::Bunny.stubs(:new).returns(session)
+
+    error = assert_raises(::Bunny::Exception) { HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: AMQP_URL) }
+
+    assert_equal "start boom", error.message
+  end
+
+  def test_the_reused_connection_is_replaced_when_the_url_changes_and_the_old_one_is_closed
+    first = reusable_session
+    second = reusable_session
+    ::Bunny.expects(:new).with("amqp://one.example", anything).once.returns(first)
+    ::Bunny.expects(:new).with("amqp://two.example", anything).once.returns(second)
+    first.expects(:close).once
+
+    2.times { HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: "amqp://one.example", reuse_connection: true) }
+    2.times { HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: "amqp://two.example", reuse_connection: true) }
+  ensure
+    second&.stubs(:close)
+    HireFire::Macro::Bunny.reinit_after_fork
+  end
+
+  def test_a_reused_connection_that_is_no_longer_open_is_closed_and_replaced
+    first = reusable_session(open: false)
+    second = reusable_session
+    ::Bunny.expects(:new).twice.returns(first, second)
+    first.expects(:close).once
+
+    2.times { HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: AMQP_URL, reuse_connection: true) }
+  ensure
+    second&.stubs(:close)
+    HireFire::Macro::Bunny.reinit_after_fork
+  end
+
+  def test_a_reused_connection_whose_state_cannot_be_read_is_replaced
+    first = reusable_session
+    first.stubs(:open?).raises(::Bunny::Exception.new("state boom"))
+    second = reusable_session
+    ::Bunny.expects(:new).twice.returns(first, second)
+    first.expects(:close).once
+
+    2.times { HireFire::Macro::Bunny.job_queue_size(:default, amqp_url: AMQP_URL, reuse_connection: true) }
+  ensure
+    second&.stubs(:close)
     HireFire::Macro::Bunny.reinit_after_fork
   end
 
@@ -511,6 +631,16 @@ class HireFire::Macro::BunnyTest < Minitest::Test
   end
 
   private
+
+  def reusable_session(open: true)
+    queue = stub(message_count: 0)
+    channel = stub(queue: queue, close: nil)
+    session = mock("session")
+    session.stubs(:start)
+    session.stubs(:open?).returns(open)
+    session.stubs(:create_channel).returns(channel)
+    session
+  end
 
   def missing_queue_name
     "missing_#{rand(1_000_000_000)}"

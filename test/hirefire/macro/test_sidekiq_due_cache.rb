@@ -17,9 +17,11 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
   module ZrangeLog
     CALLS = []
+    RANGES = []
 
     def zrange(key, start, *rest)
       CALLS << [key, start]
+      RANGES << [key, start, rest.first]
       super
     end
   end
@@ -40,6 +42,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     end
     @round = Cache.begin_sample!
     ZrangeLog::CALLS.clear
+    ZrangeLog::RANGES.clear
   end
 
   def teardown
@@ -127,6 +130,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_equal 3, Macro.job_queue_size(:default, :mailer, **SCHEDULE_SIZE)
     assert_equal 0, Macro.job_queue_size(:other, **SCHEDULE_SIZE)
     assert_in_delta 50, Macro.job_queue_latency(:mailer, **SCHEDULE), LATENCY_DELTA
+    assert_in_delta 100, Macro.job_queue_latency(:default, :mailer, **SCHEDULE), LATENCY_DELTA
     assert_equal finished, reads("schedule")
   end
 
@@ -311,7 +315,7 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
     assert_in_delta 100, Macro.job_queue_latency(**SCHEDULE), LATENCY_DELTA
     assert_in_delta 250, Macro.job_queue_latency, LATENCY_DELTA
 
-    assert_equal [["schedule", 0], ["retry", 0], ["schedule", 0]].sort, ZrangeLog::CALLS.sort
+    assert_equal [["schedule", 0, 0], ["retry", 0, 0], ["schedule", 0, 0]].sort, ZrangeLog::RANGES.sort
   end
 
   def test_no_queue_names_and_no_due_job_is_a_latency_of_zero
@@ -396,6 +400,20 @@ class HireFire::Macro::SidekiqDueCacheTest < Minitest::Test
 
     assert_equal [5, 5, 5, 5], counts.map(&:value)
     assert_equal [0, 5], reads("schedule")
+  end
+
+  def test_a_set_whose_first_member_is_not_due_has_no_latency
+    plant("schedule", queue: "default", age: -60)
+
+    assert_equal 0.0, Cache.latency("schedule", Set.new)
+  end
+
+  def test_a_new_round_reads_the_running_jobs_again
+    Sidekiq::Workers.any_instance.expects(:each).twice
+
+    Macro.job_queue_working(:default)
+    Cache.begin_sample!
+    Macro.job_queue_working(:default)
   end
 
   def test_the_running_jobs_are_read_once_in_a_round

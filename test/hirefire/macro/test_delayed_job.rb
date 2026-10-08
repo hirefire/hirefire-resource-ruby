@@ -231,8 +231,17 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
   def test_raises_when_no_mapper_is_detected
     ::Delayed::Job.stubs(:ancestors).returns([Object])
 
-    assert_raises HireFire::Macro::Delayed::Job::MapperNotDetectedError do
+    error = assert_raises HireFire::Macro::Delayed::Job::MapperNotDetectedError do
       HireFire::Macro::Delayed::Job.job_queue_size
+    end
+    assert_equal "Unable to detect the appropriate mapper.", error.message
+  end
+
+  def test_job_queue_latency_of_a_job_that_is_due_at_this_moment_is_zero
+    Timecop.freeze(Time.at(Time.now.to_i)) do
+      BasicJob.delay(queue: :default, run_at: Time.now).perform
+
+      assert_equal 0.0, HireFire::Macro::Delayed::Job.job_queue_latency(:default)
     end
   end
 

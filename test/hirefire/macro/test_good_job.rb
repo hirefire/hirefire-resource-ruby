@@ -305,6 +305,33 @@ class HireFire::Macro::GoodJobTest < Minitest::Test
     assert_equal 0, HireFire::Macro::GoodJob.job_queue_latency
   end
 
+  def test_a_discarded_job_that_was_never_marked_finished_does_not_count_as_waiting
+    skip "GoodJob #{::GoodJob::VERSION} does not support error events" unless error_event_supported?
+    discarded_id = Timecop.freeze(2.minutes.ago) { BasicJob.perform_later.job_id }
+    Timecop.freeze(1.minute.ago) { BasicJob.perform_later }
+    good_job_class.where(active_job_id: discarded_id).update_all(performed_at: nil, finished_at: nil, error_event: 5)
+
+    assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
+    assert_in_delta 60, HireFire::Macro::GoodJob.job_queue_latency, LATENCY_DELTA
+  end
+
+  if ::GoodJob::VERSION.to_i < 4
+    def test_a_schema_without_the_error_event_column_is_read_without_it
+      Timecop.freeze(1.minute.ago) { BasicJob.perform_later }
+
+      good_job_class.transaction do
+        good_job_class.connection.execute("ALTER TABLE good_jobs DROP COLUMN error_event")
+        good_job_class.reset_column_information
+
+        assert_equal 1, HireFire::Macro::GoodJob.job_queue_size
+        assert_in_delta 60, HireFire::Macro::GoodJob.job_queue_latency, LATENCY_DELTA
+        raise ActiveRecord::Rollback
+      end
+    ensure
+      good_job_class.reset_column_information
+    end
+  end
+
   def test_error_event_support_follows_schema_not_version
     real_columns = good_job_class.column_names
     good_job_class.stubs(:column_names).returns(real_columns - ["error_event"])

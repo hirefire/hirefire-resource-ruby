@@ -19,9 +19,10 @@ class HireFire::Macro::ResqueTest < Minitest::Test
   end
 
   def test_job_queue_latency_unsupported
-    assert_raises(HireFire::Errors::JobQueueLatencyUnsupportedError) do
+    error = assert_raises(HireFire::Errors::JobQueueLatencyUnsupportedError) do
       HireFire::Macro::Resque.job_queue_latency
     end
+    assert_equal "HireFire::Macro::Resque currently does not support job queue latency measurements.", error.message
   end
 
   def test_supports_plan_strategy_size_only
@@ -378,6 +379,37 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     end
   end
 
+  def test_the_named_delayed_walk_counts_up_to_one_job_below_its_budget_and_raises_at_it
+    timestamp = Time.now.to_i - 10
+    Resque.redis.zadd("delayed_queue_schedule", timestamp, timestamp)
+    payload = Resque.encode("class" => "BasicJob", "args" => [], "queue" => "default")
+    Resque.redis.rpush("delayed:#{timestamp}", [payload] * 4)
+
+    stub_resque_const(:WALK_JOB_BUDGET, 5) do
+      assert_equal 4, HireFire::Macro::Resque.job_queue_size(:default, skip_working: true)
+    end
+    stub_resque_const(:WALK_JOB_BUDGET, 4) do
+      error = assert_raises(HireFire::Errors::SampleIncompleteError) do
+        HireFire::Macro::Resque.job_queue_size(:default, skip_working: true)
+      end
+      assert_equal "Resque delayed walk exceeded budget", error.message
+    end
+    assert_equal 50_000, HireFire::Macro::Resque::WALK_JOB_BUDGET
+    assert_equal 2.0, HireFire::Macro::Resque::WALK_TIME_BUDGET
+  end
+
+  def test_the_worker_walk_counts_up_to_one_job_below_its_budget_and_raises_at_it
+    4.times { enqueue_to_working_with_queue :default, BasicJob }
+
+    stub_resque_const(:WALK_JOB_BUDGET, 5) do
+      assert_equal 4, HireFire::Macro::Resque.job_queue_working(:default)
+    end
+    stub_resque_const(:WALK_JOB_BUDGET, 4) do
+      error = assert_raises(HireFire::Errors::SampleIncompleteError) { HireFire::Macro::Resque.job_queue_working(:default) }
+      assert_equal "Resque worker walk exceeded budget", error.message
+    end
+  end
+
   def test_delayed_size_without_queue_names_is_exact_past_the_job_budget
     timestamp = Time.now.to_i - 10
     Resque.redis.zadd("delayed_queue_schedule", timestamp, timestamp)
@@ -395,9 +427,10 @@ class HireFire::Macro::ResqueTest < Minitest::Test
     Resque.redis.rpush("delayed:#{timestamp}", Resque.encode("class" => "BasicJob", "args" => [], "queue" => "default"))
 
     stub_resque_const(:WALK_TIME_BUDGET, 0) do
-      assert_raises(HireFire::Errors::SampleIncompleteError) do
+      error = assert_raises(HireFire::Errors::SampleIncompleteError) do
         HireFire::Macro::Resque.job_queue_size(skip_working: true)
       end
+      assert_equal "Resque delayed walk exceeded budget", error.message
     end
   end
 

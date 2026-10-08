@@ -17,6 +17,8 @@ module HireFire
     ].freeze
 
     MAX_BODY_BYTES = 131_072
+    DEFAULT_URL = "https://data.hirefire.io"
+    LOCAL_HOSTS = ["localhost", "127.0.0.1", "::1"].freeze
 
     def self.header_integer(response, name)
       text = response[name].to_s.strip
@@ -148,10 +150,24 @@ module HireFire
     end
 
     def base_url
-      raw = ENV.fetch("HIREFIRE_DATA_URL", "https://data.hirefire.io")
-      stripped = raw.to_s.strip.sub(/\/+\z/, "")
-      stripped = "https://data.hirefire.io" if stripped.empty?
-      stripped
+      @base_url ||= begin
+        url = ENV["HIREFIRE_DATA_URL"].to_s.strip.sub(/\/+\z/, "")
+        url = DEFAULT_URL if url.empty?
+        uri = parse_http_url(url)
+        raise RequestError, "HIREFIRE_DATA_URL must be an http or https URL with a host." unless uri
+
+        if uri.scheme == "http" && !LOCAL_HOSTS.include?(uri.hostname)
+          HireFire.configuration.warn_plain_http_data_url_once(uri.hostname)
+        end
+        url
+      end
+    end
+
+    def parse_http_url(url)
+      uri = URI.parse(url)
+      uri if uri.is_a?(URI::HTTP) && uri.hostname
+    rescue URI::InvalidURIError
+      nil
     end
 
     def token

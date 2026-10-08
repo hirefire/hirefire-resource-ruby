@@ -134,6 +134,14 @@ module HireFire
       rqt_enabled?
     end
 
+    def warn_plain_http_data_url_once(host)
+      return if defined?(@plain_http_data_url_warned)
+
+      @plain_http_data_url_warned = true
+      Log.safe(logger, :warn, "[HireFire] HIREFIRE_DATA_URL uses http, so the HireFire token " \
+        "is sent to #{host} in clear text. Use an https URL.")
+    end
+
     private
 
     def coerce_name!(name)

@@ -374,6 +374,45 @@ class HireFire::ClientTest < Minitest::Test
     assert_requested request
   end
 
+  def test_a_plain_http_data_url_on_another_host_warns_once_that_the_token_is_sent_in_clear_text
+    ENV["HIREFIRE_DATA_URL"] = "http://collector.example.com:8080"
+    stub_request(:post, %r{\Ahttp://collector\.example\.com:8080/metrics/}).to_return(status: 200)
+
+    client.submit_samples("[]")
+    client.request_lease("abc123")
+    HireFire::Client.new.submit_samples("[]")
+
+    assert_equal 1, log.string.scan("HIREFIRE_DATA_URL uses http, so the HireFire token is sent to collector.example.com in clear text. Use an https URL.").size
+  ensure
+    ENV.delete("HIREFIRE_DATA_URL")
+  end
+
+  def test_a_plain_http_data_url_on_this_host_and_an_https_url_do_not_warn
+    ["http://localhost:9999", "http://127.0.0.1:9999", "http://[::1]:9999", "https://collector.example.com"].each do |url|
+      ENV["HIREFIRE_DATA_URL"] = url
+      stub_request(:post, "#{url}/metrics/ingest").to_return(status: 200)
+
+      HireFire::Client.new.submit_samples("[]")
+    end
+
+    assert_empty log.string
+  ensure
+    ENV.delete("HIREFIRE_DATA_URL")
+  end
+
+  def test_a_data_url_that_is_not_an_http_url_with_a_host_fails_the_request_with_a_reason
+    ["collector.example.com", "ftp://collector.example.com", "https://", "ht tp://collector.example.com", "//collector.example.com"].each do |url|
+      ENV["HIREFIRE_DATA_URL"] = url
+
+      error = assert_raises(HireFire::Client::RequestError, "#{url.inspect} was accepted") do
+        HireFire::Client.new.submit_samples("[]")
+      end
+      assert_equal "HIREFIRE_DATA_URL must be an http or https URL with a host.", error.message
+    end
+  ensure
+    ENV.delete("HIREFIRE_DATA_URL")
+  end
+
   def test_custom_data_url_with_a_trailing_slash_does_not_double_the_path
     ENV["HIREFIRE_DATA_URL"] = "https://custom.hirefire.io/prefix/"
     custom_client = HireFire::Client.new

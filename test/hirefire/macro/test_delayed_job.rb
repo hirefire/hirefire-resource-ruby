@@ -55,6 +55,41 @@ class HireFire::Macro::Delayed::JobTest < Minitest::Test
     assert_in_delta 60, HireFire::Macro::Delayed::Job.job_queue_latency(:default, :mailer), LATENCY_DELTA
   end
 
+  if defined?(ActiveRecord)
+    def test_job_queue_latency_reads_the_oldest_run_at_and_loads_no_job
+      BasicJob.delay(queue: :default).perform
+      statements = []
+      subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") { |*, payload| statements << payload[:sql] }
+
+      HireFire::Macro::Delayed::Job.job_queue_latency(:default)
+
+      reads = statements.grep(/delayed_jobs/)
+      assert_equal 1, reads.size
+      assert_match(/\ASELECT MIN\("delayed_jobs"\."run_at"\) FROM/, reads.first)
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber)
+    end
+  end
+
+  if defined?(Mongoid)
+    def test_job_queue_latency_reads_the_run_at_of_the_oldest_job_and_no_other_field
+      BasicJob.delay(queue: :default).perform
+      finds = []
+      subscriber = Object.new
+      subscriber.define_singleton_method(:started) { |event| finds << event.command if event.command_name == "find" }
+      subscriber.define_singleton_method(:succeeded) { |_event| }
+      subscriber.define_singleton_method(:failed) { |_event| }
+      client = ::Delayed::Job.collection.client
+      client.subscribe(Mongo::Monitoring::COMMAND, subscriber)
+
+      HireFire::Macro::Delayed::Job.job_queue_latency(:default)
+
+      assert_equal [[{"_id" => 1, "run_at" => 1}, {"run_at" => 1}, 1]], finds.map { |find| find.values_at("projection", "sort", "limit") }
+    ensure
+      client&.unsubscribe(Mongo::Monitoring::COMMAND, subscriber)
+    end
+  end
+
   def test_job_queue_latency_with_scheduled_job
     BasicJob.delay(queue: :default, run_at: 1.minute.from_now).perform
     BasicJob.delay(queue: :mailer, run_at: 1.minute.ago).perform

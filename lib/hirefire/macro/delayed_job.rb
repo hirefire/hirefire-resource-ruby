@@ -33,13 +33,8 @@ module HireFire
 
         def job_queue_latency(*queues, min_priority: nil, max_priority: nil)
           with_connection(::Delayed::Job) do
-            query = due(waiting_scope, queues, min_priority, max_priority).order(run_at: :asc)
-
-            if (job = query.first)
-              [Time.now - job.run_at, 0.0].max
-            else
-              0.0
-            end
+            oldest = oldest_run_at(due(waiting_scope, queues, min_priority, max_priority))
+            oldest ? [Time.now - oldest, 0.0].max : 0.0
           end
         end
 
@@ -87,6 +82,15 @@ module HireFire
           end
 
           query
+        end
+
+        def oldest_run_at(query)
+          case mapper
+          when :active_record
+            query.minimum(:run_at)
+          when :mongoid
+            query.order(run_at: :asc).only(:run_at).first&.run_at
+          end
         end
 
         def unfailed_scope

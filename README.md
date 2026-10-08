@@ -26,7 +26,7 @@ This gem integrates Ruby applications running on [Heroku] with [HireFire]'s auto
 
 Ruby 3.1+ is required and tested for the library core, Rack, Rails 7, Sinatra, Hanami 2, Sidekiq 7, Bunny, and Resque 2. Rails 8, Sidekiq 8, and Resque 3 require Ruby 3.2+. Hanami 3 requires Ruby 3.3+. Solid Queue, Good Job, Delayed Job, Que, and Queue Classic are tested with Rails 8 and follow that Ruby 3.2+ floor.
 
-The test suite runs against these minimum versions and the current latest release of each runtime and library. Older versions may still work, but are not officially supported.
+The test suite runs against the newest release of each supported major version of each runtime and library. Older versions may still work, but are not officially supported.
 
 **Documentation:**
 

@@ -106,7 +106,7 @@ class HireFire::DispatcherTest < Minitest::Test
     Thread.stubs(:new).raises(ThreadError.new("cannot create thread"))
     refute dispatcher.start
     refute dispatcher.running?
-    assert_includes log.string, "Could not start dispatcher"
+    assert_includes log.string, "[HireFire] Could not start dispatcher: cannot create thread"
 
     Thread.unstub(:new)
     assert dispatcher.start
@@ -477,6 +477,106 @@ class HireFire::DispatcherTest < Minitest::Test
     refute bodies[1].first.key?("sample_trace")
     assert_equal [7.0, 1], bodies[1].first.dig("metrics", "rqt", "1050")
     refute_includes log.string, "Dropped metrics payload"
+  end
+
+  def test_a_trace_is_kept_in_a_payload_of_exactly_the_limit_and_stripped_one_byte_over
+    limit = HireFire::Dispatcher::PAYLOAD_SIZE_LIMIT
+    stub_lease(granted: true, trace: true)
+    bodies = []
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |request|
+      bodies << request.body
+      {status: 200}
+    end
+    configure_workers_only
+    send_with_pad = lambda do |pad|
+      HireFire::Sampler.any_instance.stubs(:round).returns({"wave_ms" => 1.0, "ops" => [], "pad" => "x" * pad})
+      run = HireFire::Dispatcher::Session.new(HireFire.configuration)
+      run.renew
+      run.sample
+      HireFire.configuration.buffer.sample("worker", "jql", 1)
+      run.report
+      bodies.last
+    end
+
+    Timecop.freeze(Time.at(1000)) do
+      base = send_with_pad.call(0).bytesize
+      exact = send_with_pad.call(limit - base)
+      over = send_with_pad.call(limit - base + 1)
+
+      assert_equal limit, exact.bytesize
+      assert_includes exact, "sample_trace"
+      refute_includes over, "sample_trace"
+      assert_equal %([{"name":"worker","metrics":{"jql":{"1000":1}}}]), over
+    end
+    refute_includes log.string, "Dropped metrics payload"
+  end
+
+  def test_a_trace_that_was_stripped_is_not_sent_with_a_later_payload
+    stub_lease(granted: true, trace: true)
+    bodies = []
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |request|
+      bodies << request.body
+      {status: 200}
+    end
+    configure_workers_only
+    HireFire::Sampler.any_instance.stubs(:round).returns({"wave_ms" => 1.0, "ops" => [], "pad" => "x" * HireFire::Dispatcher::PAYLOAD_SIZE_LIMIT})
+
+    Timecop.freeze(Time.at(1000)) do
+      job_queue_pass
+      HireFire.configuration.buffer.sample("worker", "jql", 1)
+      session.report
+    end
+    Timecop.freeze(Time.at(1002)) do
+      HireFire.configuration.buffer.sample("worker", "jql", 2)
+      session.report
+    end
+
+    assert_equal [%([{"name":"worker","metrics":{"jql":{"1000":1}}}]), %([{"name":"worker","metrics":{"jql":{"1002":2}}}])], bodies
+  end
+
+  def test_a_trace_sent_with_a_payload_the_server_rejects_as_too_large_is_not_sent_again
+    stub_lease(granted: true, trace: true)
+    bodies = []
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |request|
+      bodies << request.body
+      {status: (bodies.size == 1) ? 413 : 200}
+    end
+    configure_workers_only
+
+    Timecop.freeze(Time.at(1000)) do
+      job_queue_pass
+      session.report
+    end
+    Timecop.freeze(Time.at(1002)) do
+      HireFire.configuration.buffer.sample("worker", "jql", 2)
+      session.report
+    end
+
+    assert_includes bodies[0], "sample_trace"
+    refute_includes bodies[1], "sample_trace"
+  end
+
+  def test_a_round_that_is_still_running_past_its_limit_is_reported_once
+    stub_lease(granted: true)
+    entered = Queue.new
+    release = Queue.new
+    HireFire.configuration.dyno(:worker) do
+      entered << true
+      release.pop
+      1
+    end
+    HireFire.configuration.dyno(:mailer) { 1 }
+    session.renew
+    sampler = Thread.new { session.sample }
+    entered.pop
+
+    Timecop.travel(Time.now + HireFire::Dispatcher::SAMPLE_ROUND_LIMIT + 1) { 3.times { session.renew } }
+    release << true
+    sampler.join
+
+    assert_equal 1, log.string.scan("A job queue sample round has run for more than 60 seconds.").size
+  ensure
+    Timecop.return
   end
 
   def test_sample_trace_absent_without_grant_trace
@@ -1233,6 +1333,96 @@ class HireFire::DispatcherTest < Minitest::Test
     assert dispatcher.start
 
     wait_until { bodies.any? { |body| body.first["metrics"]["rqt"].value?([7.0, 1]) } }
+  end
+
+  def test_what_a_forked_child_buffers_after_it_abandoned_the_state_of_its_parent_is_sent_once_it_starts
+    stub_lease
+    bodies = capture_ingest_bodies
+    dispatcher = configure_web_only
+    assert dispatcher.start
+    child_pid = Process.pid + 1
+    Process.stubs(:pid).returns(child_pid)
+    dispatcher.abandon_inherited_state!
+    bodies.clear
+    HireFire.configuration.buffer.sample("web", "rqt", 7)
+
+    assert dispatcher.start
+
+    wait_until { bodies.any? { |body| body.first["metrics"]["rqt"].value?([7.0, 1]) } }
+  end
+
+  def test_a_process_without_the_lease_runs_one_dispatch_loop_one_lease_loop_and_no_sample_loop
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    dispatcher = configure_workers_only
+    releases = 0
+    HireFire::Plan.stubs(:release_macros).with { releases += 1 }
+
+    with_tick(0.01) do
+      assert dispatcher.start
+      sleep(0.15)
+
+      assert_equal 1, loop_threads("hirefire-dispatch").size
+      assert_equal 1, loop_threads("hirefire-lease").size
+      assert_empty loop_threads("hirefire-sample")
+      assert_equal 0, releases
+      dispatcher.stop
+    end
+  end
+
+  def test_the_dispatch_loop_waits_a_tick_between_passes
+    stub_lease
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    dispatcher = configure_web_only
+    passes = 0
+    HireFire::Source::CPU.any_instance.stubs(:sample).with { passes += 1 }
+
+    with_tick(0.05) do
+      assert dispatcher.start
+      sleep(0.32)
+      dispatcher.stop
+    end
+
+    assert_includes 3..12, passes
+  end
+
+  def test_the_sample_loop_waits_a_tick_between_rounds
+    stub_lease(granted: true)
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    dispatcher = configure_workers_only
+    checks = 0
+    HireFire::Lease.any_instance.stubs(:sample_if_due).with { checks += 1 }
+
+    with_tick(0.05) do
+      assert dispatcher.start
+      sleep(0.32)
+      dispatcher.stop
+    end
+
+    assert_includes 2..12, checks
+  end
+
+  def test_a_loop_that_finishes_a_pass_after_a_stop_does_not_wait_out_a_tick
+    stub_lease
+    in_request = Queue.new
+    release = Queue.new
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |_request|
+      in_request << true
+      release.pop
+      {status: 200}
+    end
+    dispatcher = configure_web_only
+    HireFire.configuration.buffer.sample("web", "rqt", 5)
+
+    with_tick(3) do
+      assert dispatcher.start
+      in_request.pop
+      loop_thread = loop_threads("hirefire-dispatch").first
+      dispatcher.stop(flush: false)
+      release << true
+
+      assert loop_thread.join(1), "the dispatch loop waited out a tick after the stop"
+    end
   end
 
   def test_start_after_parent_stop_reinitializes_inherited_state

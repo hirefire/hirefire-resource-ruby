@@ -56,6 +56,43 @@ class HireFire::WireTest < Minitest::Test
     end
   end
 
+  def test_a_stop_with_a_final_flush_closes_the_connection
+    ENV["DYNO"] = "web.1"
+    serve_request(queued_for: 0.025)
+    wait_for_request("/metrics/ingest")
+    assert_operator @server.open_sockets, :>=, 1
+
+    HireFire.configuration.stop_dispatcher
+
+    wait_for("the server to see the connection closed") { @server.open_sockets.zero? }
+  end
+
+  def test_a_stop_without_a_final_flush_closes_the_connections_of_a_worker
+    @lease = GRANT
+    HireFire.configure { |config| config.dyno(:worker) { 42 } }
+    wait_for_request("/metrics/lease")
+    wait_for_request("/metrics/ingest")
+    assert_operator @server.open_sockets, :>=, 2
+
+    HireFire.configuration.stop_dispatcher(flush: false)
+
+    wait_for("the server to see both connections closed") { @server.open_sockets.zero? }
+  end
+
+  def test_the_final_flush_goes_out_on_the_connection_the_dispatch_loop_had
+    ENV["DYNO"] = "web.1"
+    serve_request(queued_for: 0.025)
+    wait_for_request("/metrics/ingest")
+    connections = @server.accepted
+    requests = @server.requests.size
+    serve_request(queued_for: 0.025)
+
+    HireFire.configuration.stop_dispatcher
+
+    assert_operator @server.requests.size, :>, requests
+    assert_equal connections, @server.accepted
+  end
+
   def test_an_idle_web_process_reports_the_current_second_as_empty
     ENV["DYNO"] = "web.1"
 

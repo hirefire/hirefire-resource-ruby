@@ -1,0 +1,96 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "prism"
+require_relative "../lib/results"
+require_relative "../lib/mutation/verdicts"
+
+MINIMUM = 90.0
+
+class Methods < Prism::Visitor
+  attr_reader :ranges
+
+  def initialize
+    super
+    @ranges = []
+  end
+
+  def visit_def_node(node)
+    @ranges << [node.location.start_line, node.location.end_line, node.name.to_s]
+    super
+  end
+end
+
+methods = Hash.new do |hash, file|
+  visitor = Methods.new
+  visitor.visit(Prism.parse_file(File.join(Audit::ROOT, file)).value)
+  hash[file] = visitor.ranges
+end
+enclosing = lambda do |record|
+  range = methods[record["file"]].select { |first, last, _| record["line"].between?(first, last) }.min_by { |first, last, _| last - first }
+  range ? range[2] : "(top level)"
+end
+matches = lambda do |rule, record, name|
+  first = record["original"].lines.first.to_s.strip
+  (rule[:file].nil? || record["file"] == "lib/hirefire/#{rule[:file]}.rb" || record["file"] == rule[:file]) &&
+    (rule[:method].nil? || rule[:method] == name) &&
+    (rule[:kind].nil? || Array(rule[:kind]).include?(record["kind"])) &&
+    (rule[:original].nil? || rule[:original] === first) &&
+    (rule[:replacement].nil? || rule[:replacement] === record["replacement"].lines.first.to_s.strip)
+end
+
+records = File.readlines(Audit.results("mutation/mutants.jsonl")).map { |line| JSON.parse(line) }
+survivors = records.select { |record| %w[survived uncovered].include?(record["status"]) }
+used = Hash.new(0)
+survivors.each do |record|
+  name = enclosing.call(record)
+  index = Audit::Mutation::VERDICTS.index { |rule| matches.call(rule, record, name) }
+  record["method"] = name
+  next unless index
+
+  used[index] += 1
+  record["verdict"] = Audit::Mutation::VERDICTS[index][:verdict]
+  record["reason"] = Audit::Mutation::VERDICTS[index][:reason]
+end
+
+puts "file                                              mutants caught equivalent accepted unmarked  score"
+rows = records.group_by { |record| record["file"] }.sort.map do |file, list|
+  caught = list.count { |record| %w[killed timeout].include?(record["status"]) }
+  equivalent = list.count { |record| record["verdict"] == "equivalent" }
+  accepted = list.count { |record| record["verdict"] == "accepted" }
+  unmarked = list.size - caught - equivalent - accepted
+  score = ((caught + equivalent) * 100.0 / list.size).round(1)
+  puts format("%-48s %8d %6d %10d %8d %8d %6.1f", file.delete_prefix("lib/"), list.size, caught, equivalent, accepted, unmarked, score)
+  {file: file, mutants: list.size, caught: caught, equivalent: equivalent, accepted: accepted, unmarked: unmarked, score: score}
+end
+total = rows.sum { |row| row[:mutants] }
+caught = rows.sum { |row| row[:caught] }
+equivalent = rows.sum { |row| row[:equivalent] }
+accepted = rows.sum { |row| row[:accepted] }
+unmarked = rows.sum { |row| row[:unmarked] }
+score = ((caught + equivalent) * 100.0 / total).round(1)
+puts format("%-48s %8d %6d %10d %8d %8d %6.1f", "TOTAL", total, caught, equivalent, accepted, unmarked, score)
+
+marked = survivors.select { |record| record["verdict"] }
+unless marked.empty?
+  puts "", "survivors with a verdict, by reason:"
+  marked.group_by { |record| [record["verdict"], record["reason"]] }.each do |(verdict, reason), list|
+    puts "#{verdict} (#{list.size}): #{reason}"
+    list.sort_by { |record| [record["file"], record["line"]] }.each do |record|
+      puts format("  %s:%d %s#%s %s", record["file"].delete_prefix("lib/hirefire/"), record["line"], record["kind"], record["method"], record["original"].lines.first.to_s.strip[0, 60])
+    end
+  end
+end
+(survivors - marked).sort_by { |record| [record["file"], record["line"]] }.each do |record|
+  puts format("UNMARKED %s:%d %s in %s: %s => %s", record["file"].delete_prefix("lib/hirefire/"), record["line"], record["kind"], record["method"], record["original"].lines.first.to_s.strip[0, 60].inspect, record["replacement"].lines.first.to_s.strip[0, 30].inspect)
+end
+unused = Audit::Mutation::VERDICTS.each_index.reject { |index| used.key?(index) }
+unused.each { |index| puts "UNUSED RULE #{Audit::Mutation::VERDICTS[index].inspect[0, 140]}" }
+
+File.write(Audit.results("mutation/verdicts.json"), JSON.pretty_generate(files: rows, total: {mutants: total, caught: caught, equivalent: equivalent, accepted: accepted, unmarked: unmarked, score: score}) + "\n")
+problems = []
+problems << "#{unmarked} survivors have no verdict" if unmarked.positive?
+problems << "the score #{score} is below #{MINIMUM}" if score < MINIMUM
+puts problems.empty? ? "PASS #{score} percent, and every survivor has a verdict" : "FAIL #{problems.join(", ")}"
+exit(problems.empty? ? 0 : 1)

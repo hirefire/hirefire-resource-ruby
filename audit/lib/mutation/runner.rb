@@ -77,7 +77,8 @@ module Audit
           span = [anchor] if anchor
         end
         cells = span.flat_map { |line| lines[line.to_s] || [] }.uniq
-        cells.empty? ? lines.values.flatten.uniq : cells
+        cells = lines.values.flatten.uniq if cells.empty?
+        cells.empty? ? ["default"] : cells
       end
 
       def work(queue, dir, pool)

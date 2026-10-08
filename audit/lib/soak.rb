@@ -260,7 +260,7 @@ module Audit
         log_levels: lines.map { |line| line[0] }.tally,
         top_messages: messages.tally.sort_by { |_, count| -count }.first(12).map { |message, count| "#{count}x #{message}" },
         stop_seconds: stop_seconds.round(2),
-        after_stop: {threads: final[:threads], fds: final[:fds], server_open_sockets: final[:server_open_sockets]}
+        after_stop: {threads: final[:threads], fds: final[:fds], server_open_sockets: final[:server_open_sockets], thread_names: Thread.list.map { |thread| thread.name || ((thread == Thread.main) ? "main" : "unnamed") }}
       }
     end
   end

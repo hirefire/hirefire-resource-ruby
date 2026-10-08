@@ -22,8 +22,6 @@ module HireFire
     def process_request_queue_time(env)
       request_start = present_header(env["HTTP_X_REQUEST_START"]) ||
         present_header(env["HTTP_X_QUEUE_START"])
-      return unless request_start
-
       request_queue_time = calculate_request_queue_time(request_start)
       return unless request_queue_time
 

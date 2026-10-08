@@ -38,8 +38,7 @@ module HireFire
           line = read(CGROUP_V2_USAGE)&.lines&.find { |l| l.start_with?("usage_usec") }
           return unless line
 
-          parts = line.split
-          usec = number(parts[1]) if parts.length > 1
+          usec = number(line.split[1])
           usec / 1_000_000.0 unless usec.nil?
         end
 
@@ -49,12 +48,9 @@ module HireFire
         end
 
         def proc_namespace_seconds
-          paths = Dir.glob(PROC_STAT_GLOB)
-          return if paths.empty?
-
           ticks = 0
           counted = false
-          paths.each do |path|
+          Dir.glob(PROC_STAT_GLOB).each do |path|
             content = read(path) or next
             t = stat_ticks(content) or next
             ticks += t
@@ -69,8 +65,6 @@ module HireFire
           return unless close
 
           fields = content[(close + 1)..].split
-          return if fields.length < 13
-
           utime = Integer(fields[11], 10, exception: false)
           stime = Integer(fields[12], 10, exception: false)
           return if utime.nil? || stime.nil?
@@ -103,11 +97,7 @@ module HireFire
           value = read(CGROUP_V2_QUOTA)
           return unless value
 
-          quota, period = value.split
-          return if quota.nil? || quota == "max"
-
-          quota = number(quota)
-          period = number(period)
+          quota, period = value.split.map { |part| number(part) }
           return if quota.nil? || period.nil? || quota <= 0 || period <= 0
 
           quota / period
@@ -124,8 +114,7 @@ module HireFire
         def heroku_entitlement
           return unless ENV["DYNO"]
 
-          limit = read(CEDAR_MEMORY_LIMIT)
-          CEDAR_SHARED_ENTITLEMENTS[limit.to_i] if limit
+          CEDAR_SHARED_ENTITLEMENTS[read(CEDAR_MEMORY_LIMIT).to_i]
         end
 
         def render_entitlement
@@ -140,7 +129,7 @@ module HireFire
         end
 
         def read(path)
-          File.read(path).strip if File.readable?(path)
+          File.read(path).strip
         rescue SystemCallError
           nil
         end

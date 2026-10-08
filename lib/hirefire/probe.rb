@@ -24,10 +24,9 @@ module HireFire
       entry = {} unless entry.is_a?(Hash)
       queues = entry["queues"]
       options = entry["options"]
-      strategy = entry["strategy"]
       @ops << {
         "adapter" => entry["adapter"],
-        "strategy" => strategy.nil? ? "" : strategy.to_s,
+        "strategy" => entry["strategy"].to_s,
         "queues" => queues.is_a?(Array) ? queues : [],
         "options" => options.is_a?(Hash) ? options : {},
         "ms" => ms.to_f.round(3)

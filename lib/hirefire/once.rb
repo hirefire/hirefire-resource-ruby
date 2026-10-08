@@ -11,8 +11,6 @@ module HireFire
     end
 
     def log(level, kind, key = nil)
-      return if @seen.dig(kind, key)
-
       @mutex.synchronize do
         seen = (@seen[kind] ||= {})
         return if seen[key]

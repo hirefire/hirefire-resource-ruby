@@ -53,7 +53,8 @@ class HireFire::Plan::HooksTest < Minitest::Test
     assert_equal({max_scheduled: 0}, @host.plan_options("jqs", {"max_scheduled" => 0}))
     assert_equal({max_scheduled: 10}, @host.plan_options("jqs", {"max_scheduled" => "10"}))
     assert_equal({max_scheduled: 7}, @host.plan_options("jqs", {"max_scheduled" => "+7"}))
-    [-1, "-1", "x", "1x", 50.9, 10.0, "", nil, [1]].each do |value|
+    assert_equal({max_scheduled: 0}, @host.plan_options("jqs", {"max_scheduled" => "0"}))
+    [-1, "-1", "x", "1x", 50.9, 10.0, "", nil, [1], " 12 ", "1_000", "0x10"].each do |value|
       assert_equal({}, @host.plan_options("jqs", {"max_scheduled" => value}), "#{value.inspect} was accepted")
     end
   end

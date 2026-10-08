@@ -79,7 +79,7 @@ module HireFire
       def adapter_problem
         return :unknown_adapter unless @macro
         return :unloaded_adapter unless @macro.library_loaded?
-        return :unsupported_strategy unless METHODS.key?(@strategy) && @macro.supports_plan_strategy?(@strategy)
+        return :unsupported_strategy unless @macro.supports_plan_strategy?(@strategy)
         return :queues_required if @macro.queues_required? && valid_queues.empty?
 
         listed = @raw["queues"]

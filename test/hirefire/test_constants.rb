@@ -4,6 +4,7 @@ require "test_helper"
 
 class HireFire::ConstantsTest < Minitest::Test
   def test_the_limits_and_defaults_have_the_values_the_specification_gives
+    usage = HireFire::Source::CPU::Usage
     assert_equal(
       {
         "Buffer::SAMPLE_COUNT_LIMIT" => 1_000_000,
@@ -28,7 +29,14 @@ class HireFire::ConstantsTest < Minitest::Test
         "Middleware::REQUEST_QUEUE_TIME_LIMIT" => 60_000,
         "Once::LIMIT" => 256,
         "Plan::MAX_QUEUES" => 64,
-        "Plan::MAX_QUEUE_NAME_BYTES" => 128
+        "Plan::MAX_QUEUE_NAME_BYTES" => 128,
+        "Source::CPU::Usage paths" => [
+          "/sys/fs/cgroup/cpu.stat", "/sys/fs/cgroup/cpuacct/cpuacct.usage", "/sys/fs/cgroup/cpu.max",
+          "/sys/fs/cgroup/cpu/cpu.cfs_quota_us", "/sys/fs/cgroup/cpu/cpu.cfs_period_us",
+          "/sys/fs/cgroup/memory/memory.limit_in_bytes", "/proc/[0-9]*/stat"
+        ],
+        "Source::CPU::Usage::CEDAR_SHARED_ENTITLEMENTS" => {536_870_912 => 1.0, 1_073_741_824 => 2.0},
+        "Strategy names" => %w[rqt jql jqs cpu wrk]
       },
       {
         "Buffer::SAMPLE_COUNT_LIMIT" => HireFire::Buffer::SAMPLE_COUNT_LIMIT,
@@ -53,7 +61,13 @@ class HireFire::ConstantsTest < Minitest::Test
         "Middleware::REQUEST_QUEUE_TIME_LIMIT" => HireFire::Middleware::REQUEST_QUEUE_TIME_LIMIT,
         "Once::LIMIT" => HireFire::Once::LIMIT,
         "Plan::MAX_QUEUES" => HireFire::Plan::MAX_QUEUES,
-        "Plan::MAX_QUEUE_NAME_BYTES" => HireFire::Plan::MAX_QUEUE_NAME_BYTES
+        "Plan::MAX_QUEUE_NAME_BYTES" => HireFire::Plan::MAX_QUEUE_NAME_BYTES,
+        "Source::CPU::Usage paths" => [
+          usage::CGROUP_V2_USAGE, usage::CGROUP_V1_USAGE, usage::CGROUP_V2_QUOTA, usage::CGROUP_V1_QUOTA, usage::CGROUP_V1_PERIOD,
+          usage::CEDAR_MEMORY_LIMIT, usage::PROC_STAT_GLOB
+        ],
+        "Source::CPU::Usage::CEDAR_SHARED_ENTITLEMENTS" => usage::CEDAR_SHARED_ENTITLEMENTS,
+        "Strategy names" => [HireFire::Strategy::RQT, HireFire::Strategy::JQL, HireFire::Strategy::JQS, HireFire::Strategy::CPU, HireFire::Strategy::WRK]
       }
     )
   end

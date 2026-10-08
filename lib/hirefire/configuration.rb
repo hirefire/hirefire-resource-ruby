@@ -93,7 +93,7 @@ module HireFire
     def http_source
       name = http_name
       if name.nil?
-        warn_rqt_unresolved_once if token && (@http_active || HireFire::Identity.platform_http_role?)
+        warn_rqt_unresolved_once
         return nil
       end
 

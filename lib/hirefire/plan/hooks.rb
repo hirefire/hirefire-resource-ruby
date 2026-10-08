@@ -48,10 +48,7 @@ module HireFire
 
         options.each_with_object({}) do |(key, value), out|
           key = key.to_s
-          type = fields[key]
-          next unless type
-
-          coerced = coerce_plan_value(type, value)
+          coerced = coerce_plan_value(fields[key], value)
           out[key.to_sym] = coerced unless coerced.nil?
         end
       end

@@ -118,6 +118,17 @@ class HireFire::Source::CPUTest < Minitest::Test
     assert_equal({1002 => 50.0}, buffer.flush.dig("clock", "cpu"))
   end
 
+  def test_utilization_is_cpu_seconds_per_second_of_wall_time
+    HireFire::Source::CPU::Usage.stubs(:reading).returns([0.0, :cgroup_v2], [1.0, :cgroup_v2])
+    HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
+
+    collector = HireFire::Source::CPU.new("clock", HireFire.configuration.buffer)
+    Timecop.freeze(Time.at(1000)) { collector.sample }
+    Timecop.freeze(Time.at(1002)) { collector.sample }
+
+    assert_equal({1002 => 50.0}, buffer.flush.dig("clock", "cpu"))
+  end
+
   def test_skips_sample_when_usage_unavailable
     HireFire::Source::CPU::Usage.stubs(:reading).returns([nil, nil])
     HireFire::Source::CPU::Usage.stubs(:available_cpus).returns(1.0)
@@ -544,6 +555,45 @@ class HireFire::Source::CPU::UsageTest < Minitest::Test
 
   def test_stat_ticks_returns_nil_for_a_truncated_line
     assert_nil Usage.stat_ticks("123 (ruby) S 0 1")
+  end
+
+  def test_cgroup_usage_is_read_in_seconds
+    Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns("usage_usec 3000000\nuser_usec 1")
+    assert_equal [3.0, :cgroup_v2], Usage.reading
+
+    Usage.stubs(:read).with(Usage::CGROUP_V2_USAGE).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_USAGE).returns("3000000000")
+    assert_equal [3.0, :cgroup_v1], Usage.reading
+  end
+
+  def test_stat_ticks_needs_both_the_user_and_the_system_time
+    assert_nil Usage.stat_ticks("1 (ruby) S 0 1 1 0 -1 0 0 0 0 0 abc 250 0 0 20 0 1 0 9 0 0")
+    assert_nil Usage.stat_ticks("1 (ruby) S 0 1 1 0 -1 0 0 0 0 0 500 def 0 0 20 0 1 0 9 0 0")
+    assert_nil Usage.stat_ticks("1 (ruby) S 0 1 1 0 -1 0 0 0 0 0 500")
+    assert_equal 750, Usage.stat_ticks("1 (ruby) S 0 1 1 0 -1 0 0 0 0 0 500 250")
+  end
+
+  def test_a_cgroup_quota_of_one_unit_and_a_period_of_one_unit_are_read
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("1 2")
+    assert_equal 0.5, Usage.available_cpus
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("2 1")
+    assert_equal 2.0, Usage.available_cpus
+
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns("1")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns("2")
+    assert_equal 0.5, Usage.available_cpus
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns("2")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns("1")
+    assert_equal 2.0, Usage.available_cpus
+  end
+
+  def test_a_v2_quota_without_a_period_falls_through
+    Usage.stubs(:read).with(Usage::CGROUP_V2_QUOTA).returns("50000")
+    Usage.stubs(:read).with(Usage::CGROUP_V1_QUOTA).returns(nil)
+    Usage.stubs(:read).with(Usage::CGROUP_V1_PERIOD).returns(nil)
+
+    assert_equal Etc.nprocessors, Usage.available_cpus
   end
 
   def test_stat_ticks_returns_nil_for_non_numeric_fields

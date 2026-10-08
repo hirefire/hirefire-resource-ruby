@@ -9,7 +9,7 @@ module HireFire
     end
 
     def coerce(value)
-      (value.is_a?(Integer) || value.is_a?(Float)) ? value : value.to_f
+      value.is_a?(Integer) ? value : value.to_f
     end
 
     def format(value)

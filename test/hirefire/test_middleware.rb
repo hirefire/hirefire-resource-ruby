@@ -154,9 +154,31 @@ class HireFire::MiddlewareTest < Minitest::Test
       ENV["DYNO"] = "web.1"
       app = ->(_env) { [200, {}, ["ok"]] }
       middleware = HireFire::Middleware.new(app)
+      HireFire.configuration.logger = Logger.new(log)
       middleware.call({"HTTP_X_REQUEST_START" => value})
       assert_empty HireFire.configuration.buffer.flush, "expected no sample for #{value.inspect}"
+      refute_includes log.string, "Middleware error", "expected no error for #{value.inspect}"
     end
+  end
+
+  def test_a_start_at_exactly_a_unit_threshold_reads_as_the_smaller_unit
+    ENV["HIREFIRE_TOKEN"] = "test-token"
+    ENV["DYNO"] = "web.1"
+    HireFire.configuration.dispatcher.stubs(:start)
+
+    %w[100000000000 100000000000000 100000000000000000].each do |value|
+      @middleware.call(Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => value))
+
+      assert_empty HireFire.configuration.buffer.flush, "expected #{value} to read as a time long past"
+    end
+  end
+
+  def test_the_middleware_marks_the_request_it_measured
+    env = Rack::MockRequest.env_for("/", "HTTP_X_REQUEST_START" => "1700000000000")
+
+    @middleware.call(env)
+
+    assert_equal true, env["hirefire.measured"]
   end
 
   def test_does_not_start_dispatcher_without_token

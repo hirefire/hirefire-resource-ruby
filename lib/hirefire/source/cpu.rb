@@ -24,7 +24,7 @@ module HireFire
         @last_time = time
         @last_source = source
 
-        return if usage.nil? || previous_usage.nil? || source != previous_source
+        return if usage.nil? || source != previous_source
 
         elapsed_delta = time - previous_time
         usage_delta = usage - previous_usage

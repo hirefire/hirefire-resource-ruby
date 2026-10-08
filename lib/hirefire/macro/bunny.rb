@@ -23,6 +23,8 @@ module HireFire
         automatically_recover: false
       }.freeze
 
+      @connection_mutex = Mutex.new
+
       def library_loaded?
         !!defined?(::Bunny)
       end
@@ -41,7 +43,7 @@ module HireFire
       end
 
       def release
-        connection_mutex.synchronize { close_reused_connection }
+        @connection_mutex.synchronize { close_reused_connection }
       end
 
       def queues_required?
@@ -129,7 +131,7 @@ module HireFire
 
       def reused_connection(amqp_url)
         url = resolve_amqp_url(amqp_url)
-        connection_mutex.synchronize do
+        @connection_mutex.synchronize do
           if @reused_connection && @reused_url == url && connection_open?(@reused_connection)
             return @reused_connection
           end
@@ -142,7 +144,7 @@ module HireFire
       end
 
       def discard_reused_connection(connection)
-        connection_mutex.synchronize do
+        @connection_mutex.synchronize do
           close_reused_connection if @reused_connection.equal?(connection)
         end
       end
@@ -157,10 +159,6 @@ module HireFire
         connection.respond_to?(:open?) && connection.open?
       rescue ::Bunny::Exception
         false
-      end
-
-      def connection_mutex
-        @connection_mutex ||= Mutex.new
       end
     end
   end

@@ -519,11 +519,12 @@ class HireFire::DispatcherTest < Minitest::Test
       {status: 200}
     end
     configure_workers_only
-    HireFire::Sampler.any_instance.stubs(:round).returns({"wave_ms" => 1.0, "ops" => [], "pad" => "x" * HireFire::Dispatcher::PAYLOAD_SIZE_LIMIT})
+    HireFire::Sampler.any_instance.stubs(:round).returns({"wave_ms" => 1.0, "ops" => [], "pad" => "x" * (HireFire::Dispatcher::PAYLOAD_SIZE_LIMIT - 1_500)})
 
     Timecop.freeze(Time.at(1000)) do
       job_queue_pass
       HireFire.configuration.buffer.sample("worker", "jql", 1)
+      HireFire.configuration.buffer.sample("p" * 2_000, "jql", 1)
       session.report
     end
     Timecop.freeze(Time.at(1002)) do
@@ -531,7 +532,10 @@ class HireFire::DispatcherTest < Minitest::Test
       session.report
     end
 
-    assert_equal [%([{"name":"worker","metrics":{"jql":{"1000":1}}}]), %([{"name":"worker","metrics":{"jql":{"1002":2}}}])], bodies
+    assert_equal 2, bodies.size
+    refute_includes bodies[0], "sample_trace"
+    assert_includes bodies[0], "p" * 2_000
+    assert_equal %([{"name":"worker","metrics":{"jql":{"1002":2}}}]), bodies[1]
   end
 
   def test_a_trace_sent_with_a_payload_the_server_rejects_as_too_large_is_not_sent_again

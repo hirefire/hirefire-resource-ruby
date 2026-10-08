@@ -5,6 +5,7 @@ require "test_helper"
 class HireFire::ConstantsTest < Minitest::Test
   def test_the_limits_and_defaults_have_the_values_the_specification_gives
     usage = HireFire::Source::CPU::Usage
+    due_cache = HireFire::Macro::Sidekiq::DueCache
     assert_equal(
       {
         "Buffer::SAMPLE_COUNT_LIMIT" => 1_000_000,
@@ -36,7 +37,11 @@ class HireFire::ConstantsTest < Minitest::Test
           "/sys/fs/cgroup/memory/memory.limit_in_bytes", "/proc/[0-9]*/stat"
         ],
         "Source::CPU::Usage::CEDAR_SHARED_ENTITLEMENTS" => {536_870_912 => 1.0, 1_073_741_824 => 2.0},
-        "Strategy names" => %w[rqt jql jqs cpu wrk]
+        "Strategy names" => %w[rqt jql jqs cpu wrk],
+        "Macro::Bunny::SAMPLE_CONNECTION_OPTIONS" => {connection_timeout: 5, continuation_timeout: 5_000, read_timeout: 5, write_timeout: 5, automatically_recover: false},
+        "Macro::Resque budgets" => [1_000, 50_000, 2.0],
+        "Macro::Sidekiq budgets" => [1_000, 50_000, 2.0, 20_000, 10_000],
+        "Macro::SolidQueue::REGISTERED_QUEUE_TTL" => 60.0
       },
       {
         "Buffer::SAMPLE_COUNT_LIMIT" => HireFire::Buffer::SAMPLE_COUNT_LIMIT,
@@ -67,7 +72,11 @@ class HireFire::ConstantsTest < Minitest::Test
           usage::CEDAR_MEMORY_LIMIT, usage::PROC_STAT_GLOB
         ],
         "Source::CPU::Usage::CEDAR_SHARED_ENTITLEMENTS" => usage::CEDAR_SHARED_ENTITLEMENTS,
-        "Strategy names" => [HireFire::Strategy::RQT, HireFire::Strategy::JQL, HireFire::Strategy::JQS, HireFire::Strategy::CPU, HireFire::Strategy::WRK]
+        "Strategy names" => [HireFire::Strategy::RQT, HireFire::Strategy::JQL, HireFire::Strategy::JQS, HireFire::Strategy::CPU, HireFire::Strategy::WRK],
+        "Macro::Bunny::SAMPLE_CONNECTION_OPTIONS" => HireFire::Macro::Bunny::SAMPLE_CONNECTION_OPTIONS,
+        "Macro::Resque budgets" => [HireFire::Macro::Resque::WALK_BATCH, HireFire::Macro::Resque::WALK_JOB_BUDGET, HireFire::Macro::Resque::WALK_TIME_BUDGET],
+        "Macro::Sidekiq budgets" => [due_cache::BATCH, due_cache::WALK_MEMBER_BUDGET, due_cache::WALK_TIME_BUDGET, due_cache::WORKING_MEMBER_BUDGET, HireFire::Macro::Sidekiq::JobQueueSize::SERVER_WALK_MEMBER_BUDGET],
+        "Macro::SolidQueue::REGISTERED_QUEUE_TTL" => HireFire::Macro::SolidQueue::REGISTERED_QUEUE_TTL
       }
     )
   end

@@ -306,6 +306,21 @@ class HireFireTest < Minitest::Test
     assert_equal "started", answer
   end
 
+  def test_a_forked_child_does_not_keep_waiting_for_the_children_its_parent_waited_for
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["DYNO"] = "web.1"
+    Process.stubs(:kill).raises(Errno::EPERM)
+    HireFire::Dispatcher.any_instance.stubs(:start)
+
+    with_tick(0.01) do
+      HireFire.after_fork_in_parent(4_000_000)
+      assert_equal 1, Thread.list.count { |thread| thread.name == "hirefire-handoff" }
+
+      HireFire.after_fork_in_child
+      wait_until { Thread.list.none? { |thread| thread.name == "hirefire-handoff" } }
+    end
+  end
+
   def test_after_fork_in_parent_stops_without_flush
     ENV["DYNO"] = "web.1"
     flush_args = []
@@ -346,13 +361,12 @@ class HireFireTest < Minitest::Test
     config = HireFire.configuration
     config.logger = Logger.new(log)
     config.define_singleton_method(:stop_dispatcher) do |flush: true|
-      raise "stop failed"
+      raise "kaboom"
     end
 
     HireFire.after_fork_in_parent(Process.pid)
 
-    assert_includes log.string, "After-fork parent stop failed"
-    assert_includes log.string, "stop failed"
+    assert_includes log.string, "[HireFire] After-fork parent stop failed: kaboom"
   ensure
     HireFire.instance_variable_set(:@configuration, nil)
   end

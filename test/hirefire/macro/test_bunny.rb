@@ -215,6 +215,21 @@ class HireFire::Macro::BunnyTest < Minitest::Test
     HireFire::Macro::Bunny.reinit_after_fork
   end
 
+  def test_a_fork_reset_works_while_another_thread_holds_the_connection_lock
+    holder = Thread.new { HireFire::Macro::Bunny.instance_variable_get(:@connection_mutex).synchronize { sleep } }
+    sleep(0.01) until holder.status == "sleep"
+
+    HireFire::Macro::Bunny.reinit_after_fork
+
+    with_connection(queue: :fork_lock) do |_connection, channel, queue|
+      publish_confirmed(channel, queue)
+      Timeout.timeout(5) { assert_size 1, queue.name, amqp_url: AMQP_URL, reuse_connection: true }
+    end
+  ensure
+    holder&.kill
+    HireFire::Macro::Bunny.release
+  end
+
   def test_reuse_connection_opens_once_across_calls
     HireFire::Macro::Bunny.reinit_after_fork
     fake = mock("bunny-reuse")

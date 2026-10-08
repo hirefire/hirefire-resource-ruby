@@ -208,6 +208,31 @@ class HireFire::IdentityTest < Minitest::Test
     refute HireFire::Identity.platform_http_role?
   end
 
+  def test_one_off_is_true_for_the_heroku_run_and_release_dynos
+    %w[run.4821 release.7310 RUN.12 run-a1b2c3d4-xyz12].each do |dyno|
+      ENV["DYNO"] = dyno
+      assert HireFire::Identity.one_off?, "#{dyno} was not seen as a one-off dyno"
+    end
+  end
+
+  def test_one_off_is_false_for_formation_dynos_and_without_a_dyno
+    assert_equal %w[run release], HireFire::Identity::ONE_OFF_DYNOS
+    refute HireFire::Identity.one_off?
+    %w[web.1 worker.2 scheduler.5512 runner.1 released.1].each do |dyno|
+      ENV["DYNO"] = dyno
+      refute HireFire::Identity.one_off?, "#{dyno} was seen as a one-off dyno"
+    end
+  end
+
+  def test_one_off_reads_the_dyno_and_not_the_explicit_service_name
+    ENV["HIREFIRE_SERVICE_NAME"] = "run"
+    refute HireFire::Identity.one_off?
+
+    ENV["HIREFIRE_SERVICE_NAME"] = "web"
+    ENV["DYNO"] = "release.7310"
+    assert HireFire::Identity.one_off?
+  end
+
   def test_heroku_conflict_false_when_only_dyno_present
     ENV["DYNO"] = "web.1"
     refute HireFire::Identity.heroku_conflict?

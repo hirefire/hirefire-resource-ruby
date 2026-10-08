@@ -116,6 +116,36 @@ class HireFireTest < Minitest::Test
     HireFire::Dispatcher.const_set(:TICK, original_tick)
   end
 
+  def test_configure_does_not_start_the_dispatcher_in_a_one_off_dyno
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    HireFire::Dispatcher.any_instance.expects(:start).never
+
+    %w[run.4821 release.7310 RUN.1].each do |dyno|
+      ENV["DYNO"] = dyno
+      HireFire.configure { |config| config.dyno(dyno) { 1 } }
+      HireFire.boot
+    end
+  end
+
+  def test_configure_does_not_start_in_a_one_off_dyno_that_carries_an_app_wide_service_name
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["HIREFIRE_SERVICE_NAME"] = "web"
+    ENV["DYNO"] = "run.4821"
+    HireFire::Dispatcher.any_instance.expects(:start).never
+
+    HireFire.boot
+  end
+
+  def test_configure_starts_the_dispatcher_in_every_other_dyno
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    HireFire::Dispatcher.any_instance.expects(:start).times(4)
+
+    %w[web.1 worker.3 scheduler.5512 runner.1].each do |dyno|
+      ENV["DYNO"] = dyno
+      HireFire.boot
+    end
+  end
+
   def test_reset_stops_dispatcher_and_replaces_configuration
     configuration = HireFire.configuration
     configuration.dispatcher.expects(:stop).once

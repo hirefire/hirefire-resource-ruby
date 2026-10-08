@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Job metrics are pushed to HireFire instead of being read from a poll of the app.
 - CPU activity is sampled automatically on supported platforms when the process is identified.
-- `HireFire.boot` starts metric collection when a token is set. `HireFire.reset` stops the dispatcher and clears configuration.
+- `HireFire.boot` starts metric collection when a token is set, except in a Heroku one-off dyno (`heroku run`, the release phase). `HireFire.reset` stops the dispatcher and clears configuration.
 - `config.token` can set the HireFire token in code. 1.x read only `HIREFIRE_TOKEN`.
 - `HIREFIRE_SERVICE_NAME` sets the process name only on platforms that do not detect it automatically. On Heroku, `DYNO` is used.
 - `job_queue_working` reports how many jobs are currently in progress for Sidekiq, Solid Queue, Resque, Delayed Job, Que, Good Job, and Queue Classic.

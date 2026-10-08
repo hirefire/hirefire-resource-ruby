@@ -63,9 +63,45 @@ module HireFire
         HireFire.boot
       end
 
-      def test_railtie_after_initialize_auto_boots_when_token_set_before_init
+      def test_railtie_boots_and_takes_the_rails_logger_in_a_web_dyno
+        assert_equal "started with the Rails logger", railtie_boot("DYNO" => "web.1")
+      end
+
+      def test_railtie_boots_in_a_worker_dyno
+        assert_equal "started with the Rails logger", railtie_boot("DYNO" => "worker.2")
+      end
+
+      def test_railtie_boots_under_an_explicit_service_name
+        assert_equal "started with the Rails logger", railtie_boot("HIREFIRE_SERVICE_NAME" => "worker")
+      end
+
+      def test_railtie_does_not_boot_without_a_token
+        assert_equal "not started with the Rails logger", railtie_boot("DYNO" => "web.1", "HIREFIRE_TOKEN" => nil)
+      end
+
+      def test_railtie_does_not_boot_in_a_process_the_platform_does_not_identify
+        assert_equal "not started with the Rails logger", railtie_boot({})
+      end
+
+      def test_railtie_does_not_boot_in_a_one_off_dyno
+        assert_equal "not started with the Rails logger", railtie_boot("DYNO" => "run.4821")
+        assert_equal "not started with the Rails logger", railtie_boot("DYNO" => "release.7310")
+      end
+
+      def test_railtie_does_not_boot_in_a_console
+        assert_equal "not started with the Rails logger", railtie_boot({"DYNO" => "web.1"}, "module Rails; class Console; end; end")
+      end
+
+      def test_an_explicit_configure_starts_in_a_console_and_not_in_a_one_off_dyno
+        configure = "Rails.application.config.after_initialize { HireFire.configure { |config| config.dyno(:worker) { 1 } } }"
+
+        assert_equal "started with the Rails logger", railtie_boot({"DYNO" => "web.1"}, "module Rails; class Console; end; end", configure)
+        assert_equal "not started with the Rails logger", railtie_boot({"DYNO" => "run.4821"}, "", configure)
+      end
+
+      def railtie_boot(identity, before_load = "", before_initialize = "")
         Dir.mktmpdir("hirefire-railtie-boot") do |dir|
-          marker = File.join(dir, "booted")
+          marker = File.join(dir, "result")
           script = File.join(dir, "boot_app.rb")
           lib = File.expand_path("../../../lib", __dir__)
           defaults = "#{Rails::VERSION::MAJOR}.#{Rails::VERSION::MINOR}"
@@ -75,18 +111,14 @@ module HireFire
             require "bundler/setup"
             require "rails"
             require "action_controller/railtie"
+            #{before_load}
             $LOAD_PATH.unshift #{lib.inspect}
             require "hirefire-resource"
             require "logger"
 
-            ENV["HIREFIRE_TOKEN"] = "railtie-auto-boot-token"
-            ENV["DYNO"] = "web.1"
-
+            started = false
             HireFire::Dispatcher.class_eval do
-              def start
-                File.write(#{marker.inspect}, "started")
-                true
-              end
+              define_method(:start) { started = true }
             end
 
             class RailtieBootApp < Rails::Application
@@ -97,11 +129,10 @@ module HireFire
               config.hosts.clear
             end
 
+            #{before_initialize}
             RailtieBootApp.initialize!
-            booted = File.file?(#{marker.inspect}) && File.read(#{marker.inspect}) == "started"
-            assigned = HireFire.configuration.logger.equal?(::Rails.logger)
-            File.write(#{marker.inspect}, (booted && assigned) ? "started" : "failed")
-            exit((booted && assigned) ? 0 : 1)
+            logger = HireFire.configuration.logger.equal?(::Rails.logger) ? "the Rails logger" : "its own logger"
+            File.write(#{marker.inspect}, "\#{started ? "started" : "not started"} with \#{logger}")
           RUBY
 
           env = {
@@ -114,19 +145,15 @@ module HireFire
             "RUBYLIB" => ENV["RUBYLIB"],
             "RBENV_VERSION" => ENV["RBENV_VERSION"],
             "MISE_RUBY_VERSION" => ENV["MISE_RUBY_VERSION"],
-            "HIREFIRE_TOKEN" => "railtie-auto-boot-token",
-            "DYNO" => "web.1"
-          }.compact
+            "HIREFIRE_TOKEN" => "railtie-auto-boot-token"
+          }.merge(identity).compact
 
-          stdout = stderr = status = nil
-          Timeout.timeout(30) do
-            stdout, stderr, status = Open3.capture3(env, RbConfig.ruby, script)
+          stdout, stderr, status = Timeout.timeout(30) do
+            Open3.capture3(env, RbConfig.ruby, script, unsetenv_others: true)
           end
 
-          assert status.success?, "railtie auto-boot subprocess failed (#{status}):\n#{stdout}\n#{stderr}"
-          assert_equal "started", File.read(marker)
-        rescue Timeout::Error
-          flunk "railtie auto-boot subprocess timed out after 30s\n#{stdout}\n#{stderr}"
+          assert status.success?, "the Rails subprocess failed (#{status}):\n#{stdout}\n#{stderr}"
+          File.read(marker)
         end
       end
 

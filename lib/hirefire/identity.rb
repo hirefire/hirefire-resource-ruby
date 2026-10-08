@@ -4,6 +4,8 @@ module HireFire
   module Identity
     extend self
 
+    ONE_OFF_DYNOS = %w[run release].freeze
+
     def resolve
       explicit || heroku_dyno || render_service
     end
@@ -30,6 +32,11 @@ module HireFire
 
     def heroku_conflict?
       explicit && heroku_dyno && !explicit.casecmp?(heroku_dyno)
+    end
+
+    def one_off?
+      name = heroku_dyno
+      !name.nil? && ONE_OFF_DYNOS.include?(name.downcase)
     end
 
     def platform_http_role?

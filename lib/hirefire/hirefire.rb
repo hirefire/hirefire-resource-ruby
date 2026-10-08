@@ -68,6 +68,7 @@ module HireFire
 
   def start_if_token
     return unless configuration.token
+    return if Identity.one_off?
 
     configuration.dispatcher.start
   end

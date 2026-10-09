@@ -26,16 +26,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Request queue time is sampled automatically from HTTP traffic. `config.dyno(:web)` is not required.
 - Job queue size counts jobs that are waiting and due, plus jobs that are being processed. Pass `skip_working: true` to count waiting jobs only (Sidekiq, Solid Queue, Delayed Job, Que, Queue Classic, Good Job, Resque).
-- Breaking: Good Job `job_queue_size` now includes running jobs. 1.x counted waiting jobs only.
-- Breaking: job queue latency for Delayed Job, Que, and Queue Classic measures waiting jobs only, as it does for Sidekiq. 1.x also measured jobs that were already running.
+- Good Job `job_queue_size` now includes running jobs. 1.x counted waiting jobs only.
+- Job queue latency for Delayed Job, Que, and Queue Classic measures waiting jobs only, as it does for Sidekiq. 1.x also measured jobs that were already running.
 - Solid Queue blocked executions are no longer included in size or latency.
 - Resque `job_queue_size` no longer counts the job of a worker whose heartbeat has expired. 1.x counted it until Resque removed the worker.
-- Breaking: the deprecated `.queue` methods are aliases of `job_queue_size`, and the deprecated Sidekiq `.latency` is an alias of `job_queue_latency`. They accept the same arguments and options as on 1.x, so existing calls keep working. Resque `.queue` also counts delayed jobs that are due. Queue Classic `.queue` counts due jobs only, where 1.x counted every job in the queue. Sidekiq `.latency` also measures scheduled and retry jobs that are due. Bunny `.queue` no longer creates a missing queue, which counts as 0, `durable` and `x-max-priority` have no effect, and a call with no queue names raises. Delayed Job `.queue` detects the mapper, so `mapper` has no effect, and an explicit `nil` priority bound means no bound. Resque `.queue` with no queue names counts every worker's job. Resque `.queue` raises when a delayed walk exceeds its budget, and Sidekiq `.queue` with queue names raises when the running jobs cannot be read within their budget. The aliases stay for the whole 2.x line.
+- The deprecated `.queue` methods are aliases of `job_queue_size`, and the deprecated Sidekiq `.latency` is an alias of `job_queue_latency`. Existing calls keep working with the same arguments, and the aliases stay for the whole 2.x line.
+- Bunny `.queue` no longer creates a missing queue and counts it as 0. `durable` and `x-max-priority` have no effect, and a call without queue names raises.
+- Delayed Job `.queue` detects the mapper, so `mapper` has no effect, and an explicit `nil` priority bound means no bound.
+- Queue Classic `.queue` counts due jobs only. 1.x counted every job in the queue.
+- Resque `.queue` also counts delayed jobs that are due, counts the job of every worker when called without queue names, and raises when reading the delayed jobs exceeds its budget.
+- Sidekiq `.queue` with queue names raises when the running jobs cannot be read within their budget. Sidekiq `.latency` also measures scheduled and retry jobs that are due.
 - Bunny `job_queue_size` counts a queue that does not exist as 0 and logs a warning once, where it raised.
 - Sidekiq `job_queue_latency` returns a Float. 1.x truncated live-queue latency to an Integer.
 - Sidekiq `job_queue_size` without queue names ignores `max_scheduled` and counts every scheduled job that is due, unless `server: true` is set. 1.x applied the cap to that count as well.
 - On Rails, HireFire uses `Rails.logger` when `config.logger` is not set.
-- Official Ruby support is 3.1+. Official Sidekiq support is 7+. Official Solid Queue support is 1+. Official Good Job support is 3+. Official Que support is 1+. Official Rails support is 7+. Official Sinatra support is 3+. Official Hanami support is 2+.
+- Official Rails support is 7+, Sinatra support is 3+, and Hanami support is 2+. 1.x named no versions.
 - Process names may be any non-empty string up to 128 bytes. The 1.x letter-start charset and 63-character cap are gone. An invalid name raises `ArgumentError` (1.x raised `HireFire::Worker::InvalidDynoNameError`).
 - `config.dyno` without a sampler raises `HireFire::Errors::MissingSamplerError` except when the name is `web` (1.x raised `HireFire::Worker::MissingDynoBlockError`). Duplicate dyno names raise `DuplicateDynoError`.
 
@@ -51,15 +56,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Serving `GET /hirefire/:token/info` and `GET /hirefire` when the token matched.
 - Official support for Ruby 2.7 and 3.0.
-- Official support for Sidekiq 6, Good Job 2, Que 0, and Solid Queue 0.
+- Official support for Sidekiq 6, Good Job 2, Que 0, Solid Queue 0, and Mongoid 8 for Delayed Job.
 - `HireFire::Macro::Bunny::ConnectionError`. Bunny connection failures raise `Bunny::Exception`.
-- Internal names that 1.x left public: the constants `HireFire::Macro::Resque::SIZE_METHODS`, `HireFire::Macro::SolidQueue::SIZE_METHODS`, `HireFire::Macro::SolidQueue::LATENCY_METHODS`, and `HireFire::Macro::Que::VERSION_1_0_0`, and the Good Job helper methods `good_job_class`, `error_event_supported?`, and `discarded_enum`, which are private.
+- Internal names that 1.x left public: the classes `HireFire::Web` and `HireFire::Worker`, the error `HireFire::Configuration::LogQueueMetricsUnsupportedError`, the accessors `config.web`, `config.workers`, and `HireFire.configuration=`, the constants `HireFire::Macro::Resque::SIZE_METHODS`, `HireFire::Macro::SolidQueue::SIZE_METHODS`, `HireFire::Macro::SolidQueue::LATENCY_METHODS`, and `HireFire::Macro::Que::VERSION_1_0_0`, and the Good Job helper methods `good_job_class`, `error_event_supported?`, and `discarded_enum`, which are private.
 
 ### Fixed
 
 - Request queue time ignores samples older than 60 seconds.
 - A request that passes `HireFire::Middleware` twice is measured once. On Rails this happened when an application mounted the middleware that HireFire already inserts.
-- Named Sidekiq scheduled and retry samples stop at a time/job budget instead of walking the whole set, and count the jobs they did not read as waiting, so the result is never too low. Named Resque delayed samples that cannot finish within the budget are dropped instead of hanging. A Resque sample without queue names is dropped only when it takes longer than two seconds.
+- Named Sidekiq scheduled and retry samples stop at a time/job budget instead of walking the whole set, and count the jobs they did not read as waiting, so the result is never too low.
+- Named Resque delayed samples that cannot finish within the budget are dropped instead of hanging. A Resque sample without queue names is dropped only when it takes longer than two seconds.
 - Bunny samples fail within five seconds when RabbitMQ does not complete the handshake.
 - Bunny treats an empty `AMQP_URL`, `RABBITMQ_URL`, `RABBITMQ_BIGWIG_URL`, or `CLOUDAMQP_URL` as not set and reads the next one.
 - Sidekiq job queue latency ignores malformed timestamps instead of treating them as the Unix epoch, and treats a future timestamp as zero.

@@ -19,6 +19,31 @@ class HireFireTest < Minitest::Test
     assert_equal config, HireFire.configuration
   end
 
+  def test_two_threads_that_ask_for_the_configuration_at_once_get_the_same_one
+    HireFire.instance_variable_set(:@configuration, nil)
+    calls = 0
+    entered = Queue.new
+    release = Queue.new
+    create = HireFire::Configuration.method(:new)
+    HireFire::Configuration.define_singleton_method(:new) do
+      if (calls += 1) == 1
+        entered << true
+        release.pop
+      end
+      create.call
+    end
+
+    first = Thread.new { HireFire.configuration }
+    entered.pop
+    second = Thread.new { HireFire.configuration }
+    sleep(0.05)
+    release << true
+
+    assert_same first.value, second.value
+  ensure
+    HireFire::Configuration.singleton_class.send(:remove_method, :new)
+  end
+
   def test_configure_yields_configuration_backwards_compatible
     config = HireFire::Resource.configure { |config| config }
     assert_equal config, HireFire::Resource.configuration

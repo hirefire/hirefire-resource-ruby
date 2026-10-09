@@ -14,7 +14,7 @@ module HireFire
   end
 
   def configuration
-    @configuration ||= Configuration.new
+    @configuration || CONFIGURATION_LOCK.synchronize { @configuration ||= Configuration.new }
   end
 
   def reset
@@ -80,6 +80,9 @@ module HireFire
 
   HANDOFF_LOCK = Mutex.new
   private_constant :HANDOFF_LOCK
+
+  CONFIGURATION_LOCK = Mutex.new
+  private_constant :CONFIGURATION_LOCK
 
   private
 

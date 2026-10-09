@@ -25,10 +25,12 @@ module HireFire
       return false if healthy?
 
       @mutex.synchronize do
+        forked = @pid && @pid != Process.pid
+        @stopping = false if forked
         return false if @stopping || healthy?
 
         @session&.halt
-        reset_after_fork if @pid && @pid != Process.pid
+        reset_after_fork if forked
         @session = Session.new(@configuration).start
         @pid = Process.pid
       end

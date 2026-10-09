@@ -331,6 +331,40 @@ class HireFireTest < Minitest::Test
     assert_equal "started", answer
   end
 
+  def test_a_web_child_forked_while_its_parent_is_stopping_can_start_its_own_dispatcher
+    skip "Process.fork unavailable" unless Process.respond_to?(:fork)
+    ENV["HIREFIRE_TOKEN"] = "test-token-value"
+    ENV["DYNO"] = "web.1"
+    in_request = Queue.new
+    release = Queue.new
+    stub_request(:post, "https://data.hirefire.io/metrics/lease")
+      .to_return(status: 200, headers: {"HireFire-Lease-Granted" => "false"})
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |_request|
+      in_request << true
+      release.pop
+      {status: 200}
+    end
+    HireFire.boot
+    in_request.pop
+    stopper = Thread.new { HireFire.configuration.stop_dispatcher }
+    sleep(0.1)
+
+    read_io, write_io = IO.pipe
+    pid = Process.fork do
+      read_io.close
+      write_io.write(HireFire.configuration.dispatcher.running? ? "started" : "refused")
+      write_io.close
+      exit!(0)
+    end
+    write_io.close
+    answer = read_io.read
+    Process.wait(pid)
+    5.times { release << true }
+    stopper.join
+
+    assert_equal "started", answer
+  end
+
   def test_a_forked_child_does_not_keep_waiting_for_the_children_its_parent_waited_for
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
     ENV["DYNO"] = "web.1"

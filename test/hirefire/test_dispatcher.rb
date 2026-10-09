@@ -560,6 +560,36 @@ class HireFire::DispatcherTest < Minitest::Test
     refute_includes bodies[1], "sample_trace"
   end
 
+  def test_the_trace_of_a_round_that_ends_during_a_dispatch_is_sent_with_the_next_payload
+    stub_lease(granted: true, trace: true)
+    bodies = []
+    in_request = Queue.new
+    release = Queue.new
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |request|
+      bodies << request.body
+      if bodies.size == 1
+        in_request << true
+        release.pop
+      end
+      {status: 200}
+    end
+    configure_workers_only
+    now = HireFire::Clock.monotonic
+
+    job_queue_pass
+    dispatch = Thread.new { session.report }
+    in_request.pop
+    HireFire::Clock.stubs(:monotonic).returns(now + 100)
+    job_queue_pass
+    release << true
+    dispatch.join
+    HireFire::Clock.stubs(:monotonic).returns(now + 200)
+    session.report
+
+    assert_includes bodies[0], "sample_trace"
+    assert_includes bodies[1], "sample_trace"
+  end
+
   def test_a_round_that_is_still_running_past_its_limit_is_reported_once
     stub_lease(granted: true)
     entered = Queue.new

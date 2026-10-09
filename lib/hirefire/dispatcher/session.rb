@@ -75,7 +75,8 @@ module HireFire
       def sample
         @lease.sample_if_due do
           @round_started_at = Clock.monotonic
-          @pending_sample_trace = @sampler.round(@lease.job_queues, method(:sampling?))
+          trace = @sampler.round(@lease.job_queues, method(:sampling?))
+          @mutex.synchronize { @pending_sample_trace = trace }
         ensure
           @round_started_at = nil
         end
@@ -186,13 +187,14 @@ module HireFire
         return unless final || @live
 
         data = buffer.flush
-        payload, watermark = build_payload(data)
+        trace = @pending_sample_trace
+        payload, watermark = build_payload(data, trace)
         return if payload.empty?
 
         body = encode(payload)
-        return drop_oversized_payload(body, watermark) if body.bytesize > PAYLOAD_SIZE_LIMIT
+        return drop_oversized_payload(body, watermark, trace) if body.bytesize > PAYLOAD_SIZE_LIMIT
 
-        submit(body, watermark)
+        submit(body, watermark, trace)
       rescue => e
         repopulate_rqt(data) if data && (@live || @handoff)
         @dispatch_failures.failed(e)
@@ -205,16 +207,16 @@ module HireFire
         JSON.generate(Payload.without_trace(payload))
       end
 
-      def submit(body, watermark)
+      def submit(body, watermark, trace)
         Log.safe(logger, :info, "[HireFire] Dispatching metrics: #{body}") if Log.verbose?
         response = @client.submit_samples(body)
         apply_dispatch_frequency(response)
 
         if response.too_large?
-          drop_oversized_payload(body, watermark, server: true)
+          drop_oversized_payload(body, watermark, trace, server: true)
         else
           @last_rqt_second = watermark
-          @pending_sample_trace = nil
+          clear_trace(trace)
           @payload_drops.recovered
         end
         @dispatch_failures.recovered
@@ -232,17 +234,21 @@ module HireFire
         @dispatch_frequency = value.clamp(DEFAULT_DISPATCH_FREQUENCY, MAX_DISPATCH_FREQUENCY) if value
       end
 
-      def drop_oversized_payload(body, watermark, server: false)
-        @pending_sample_trace = nil
+      def drop_oversized_payload(body, watermark, trace, server: false)
+        clear_trace(trace)
         @last_rqt_second = watermark
         source = server ? "server rejected (413)" : "exceeds the #{PAYLOAD_SIZE_LIMIT}-byte limit"
         @payload_drops.record("Dropped metrics payload: #{body.bytesize} bytes " \
           "#{source}. Resuming from the current second.")
       end
 
-      def build_payload(data)
+      def clear_trace(sent)
+        @mutex.synchronize { @pending_sample_trace = nil if @pending_sample_trace.equal?(sent) }
+      end
+
+      def build_payload(data, trace)
         liveness = configuration.http_name if configuration.rqt_enabled?
-        trace = @pending_sample_trace if @lease.trace?
+        trace = nil unless @lease.trace?
 
         Payload.build(data, liveness: liveness, since: @last_rqt_second, trace: trace) do |name, strategy|
           @once.log(:error, :out_of_range, [name, strategy]) do

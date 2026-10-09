@@ -15,6 +15,8 @@ module HireFire
         @wake = Thread::ConditionVariable.new
         @live = true
         @handoff = false
+        @ended = false
+        @abandoned = false
         @dispatch_thread = nil
         @lease_thread = nil
         @sample_thread = nil
@@ -59,6 +61,14 @@ module HireFire
         @client.close
       end
 
+      def abandon
+        ended = @mutex.synchronize do
+          @abandoned = true
+          @ended
+        end
+        close if ended
+      end
+
       def report
         guard { configuration.active_cpu_sources.each { |source| guard { source.sample } } }
         dispatch_if_due
@@ -101,7 +111,11 @@ module HireFire
           report
         end
       ensure
-        guard { @client.close } unless @handoff
+        owned = @mutex.synchronize do
+          @ended = true
+          !@handoff || @abandoned
+        end
+        guard { @client.close } if owned
       end
 
       def lease_loop

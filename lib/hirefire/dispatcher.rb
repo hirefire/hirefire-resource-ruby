@@ -59,6 +59,7 @@ module HireFire
           session.flush
           session.close
         else
+          session.abandon
           Log.safe(logger, :warn, "[HireFire] The dispatch loop did not stop within " \
             "#{JOIN_TIMEOUT} seconds. The final flush is skipped.")
         end

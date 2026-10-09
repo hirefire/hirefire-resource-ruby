@@ -2250,6 +2250,32 @@ class HireFire::DispatcherTest < Minitest::Test
     gate << true
   end
 
+  def test_a_stop_that_skipped_the_final_flush_leaves_no_connection_open_once_the_request_ends
+    entered = Queue.new
+    gate = Queue.new
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return do |_request|
+      entered << true
+      gate.pop
+      {status: 200}
+    end
+    closes = 0
+    HireFire::Client.any_instance.stubs(:close).with { closes += 1 }
+    dispatcher = configure_web_only
+
+    with_dispatcher_const(:JOIN_TIMEOUT, 0.05) do
+      assert dispatcher.start
+      Timeout.timeout(2) { entered.pop }
+      assert dispatcher.stop
+      assert_equal 0, closes
+      gate << true
+
+      wait_until { closes == 1 }
+      assert_equal 1, closes
+    end
+  ensure
+    gate << true
+  end
+
   def test_stop_without_flush_discards_the_buffer_and_posts_nothing_more
     bodies = capture_ingest_bodies
     dispatcher = configure_web_only

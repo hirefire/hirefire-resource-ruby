@@ -88,7 +88,10 @@ module HireFire
       private
 
       def spawn(name, &body)
-        Thread.new(&body).tap { |thread| thread.name = name }
+        Thread.new(&body).tap do |thread|
+          thread.name = name
+          thread.thread_variable_set(:fork_safe, true)
+        end
       end
 
       def dispatch_loop

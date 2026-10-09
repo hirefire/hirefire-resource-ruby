@@ -1374,6 +1374,23 @@ class HireFire::DispatcherTest < Minitest::Test
     end
   end
 
+  def test_every_loop_thread_is_marked_fork_safe_so_that_a_preloading_server_does_not_warn_about_it
+    stub_lease(granted: true)
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    dispatcher = configure_workers_only
+
+    with_tick(0.01) do
+      assert dispatcher.start
+      names = %w[hirefire-dispatch hirefire-lease hirefire-sample]
+      wait_until { names.all? { |name| loop_threads(name).any? } }
+
+      names.each do |name|
+        assert loop_threads(name).all? { |thread| thread.thread_variable_get(:fork_safe) }, name
+      end
+      dispatcher.stop
+    end
+  end
+
   def test_the_dispatch_loop_waits_a_tick_between_passes
     stub_lease
     stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)

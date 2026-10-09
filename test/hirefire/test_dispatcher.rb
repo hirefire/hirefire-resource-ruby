@@ -13,6 +13,18 @@ class HireFire::DispatcherTest < Minitest::Test
     ENV["HIREFIRE_TOKEN"] = "test-token-value"
     WebMock.reset_executed_requests!
     HireFire.configuration.logger = Logger.new(log)
+    @prefork_wait = HireFire::Dispatcher::PREFORK_WAIT
+    set_prefork_wait(0)
+  end
+
+  def teardown
+    set_prefork_wait(@prefork_wait)
+    super
+  end
+
+  def set_prefork_wait(seconds)
+    HireFire::Dispatcher.send(:remove_const, :PREFORK_WAIT)
+    HireFire::Dispatcher.const_set(:PREFORK_WAIT, seconds)
   end
 
   def session
@@ -1417,6 +1429,67 @@ class HireFire::DispatcherTest < Minitest::Test
       names.each do |name|
         assert loop_threads(name).all? { |thread| thread.thread_variable_get(:fork_safe) }, name
       end
+      dispatcher.stop
+    end
+  end
+
+  def test_a_web_process_that_has_not_served_a_request_sends_nothing_before_its_prefork_wait_ends
+    lease = stub_lease
+    ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    dispatcher = configure_web_and_workers
+
+    with_dispatcher_const(:PREFORK_WAIT, 0.3) do
+      assert dispatcher.start
+      sleep(0.1)
+      assert_not_requested lease
+      assert_not_requested ingest
+
+      wait_until { WebMock::RequestRegistry.instance.times_executed(ingest.request_pattern) > 0 }
+      assert_requested ingest, at_least_times: 1
+      dispatcher.stop
+    end
+  end
+
+  def test_a_web_process_stopped_within_its_prefork_wait_has_sent_nothing
+    lease = stub_lease
+    ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    dispatcher = configure_web_and_workers
+
+    with_dispatcher_const(:PREFORK_WAIT, 5) do
+      assert dispatcher.start
+      seconds = seconds_to { assert dispatcher.stop(flush: false) }
+
+      assert_operator seconds, :<, 1
+      wait_until { loop_threads("hirefire-dispatch").empty? }
+      assert_not_requested lease
+      assert_not_requested ingest
+    end
+  end
+
+  def test_a_web_process_that_has_served_a_request_does_not_wait_before_its_first_pass
+    stub_lease
+    ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    dispatcher = configure_web_only
+    HireFire.configuration.mark_http_active!
+
+    with_dispatcher_const(:PREFORK_WAIT, 5) do
+      assert dispatcher.start
+      wait_until { WebMock::RequestRegistry.instance.times_executed(ingest.request_pattern) > 0 }
+      assert_requested ingest, at_least_times: 1
+      dispatcher.stop
+    end
+  end
+
+  def test_a_process_that_is_not_a_web_process_does_not_wait_before_its_first_pass
+    stub_lease
+    ingest = stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    dispatcher = configure_workers_only
+    ENV["DYNO"] = "worker.1"
+
+    with_dispatcher_const(:PREFORK_WAIT, 5) do
+      assert dispatcher.start
+      wait_until { WebMock::RequestRegistry.instance.times_executed(ingest.request_pattern) > 0 }
+      assert_requested ingest, at_least_times: 1
       dispatcher.stop
     end
   end

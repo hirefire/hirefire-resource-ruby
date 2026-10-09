@@ -12,6 +12,7 @@ module HireFire
     SAMPLE_ROUND_LIMIT = 60
     JOIN_TIMEOUT = 5
     TICK = 1
+    PREFORK_WAIT = 1
 
     def initialize(configuration)
       @configuration = configuration

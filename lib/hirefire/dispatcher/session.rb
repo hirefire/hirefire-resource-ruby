@@ -109,6 +109,7 @@ module HireFire
       end
 
       def dispatch_loop
+        pause(PREFORK_WAIT) if configuration.prefork_web_handoff?
         cycle do
           ensure_lease_loop
           report
@@ -146,8 +147,8 @@ module HireFire
         end
       end
 
-      def pause
-        @mutex.synchronize { @wake.wait(@mutex, TICK) if @live }
+      def pause(seconds = TICK)
+        @mutex.synchronize { @wake.wait(@mutex, seconds) if @live }
       end
 
       def guard

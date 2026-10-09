@@ -64,14 +64,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Request queue time ignores samples older than 60 seconds.
 - A request that passes `HireFire::Middleware` twice is measured once. On Rails this happened when an application mounted the middleware that HireFire already inserts.
-- Named Sidekiq scheduled and retry samples stop at a time/job budget instead of walking the whole set, and count the jobs they did not read as waiting, so the result is never too low.
-- Named Resque delayed samples that cannot finish within the budget are dropped instead of hanging. A Resque sample without queue names is dropped only when it takes longer than two seconds.
+- Named Sidekiq scheduled and retry samples stop after 50,000 jobs or two seconds instead of reading every due job, and count the due jobs they did not read as waiting, so the result is never too low.
+- Named Resque delayed samples stop after 50,000 jobs or two seconds and are dropped, where 1.x read every due delayed job however long that took. A Resque sample without queue names is dropped only when it takes longer than two seconds.
 - Bunny samples fail within five seconds when RabbitMQ does not complete the handshake.
 - Bunny treats an empty `AMQP_URL`, `RABBITMQ_URL`, `RABBITMQ_BIGWIG_URL`, or `CLOUDAMQP_URL` as not set and reads the next one.
-- Sidekiq job queue latency ignores malformed timestamps instead of treating them as the Unix epoch, and treats a future timestamp as zero.
+- Sidekiq job queue latency reads `enqueued_at` in seconds (Sidekiq 7) and in milliseconds (Sidekiq 8) on either version. 1.x on Sidekiq 8 reported a latency of decades for a job that Sidekiq 7 had enqueued.
+- Sidekiq job queue latency counts a malformed timestamp or payload as zero instead of failing the sample, and treats a future timestamp as zero.
 - Sidekiq `server: true` counts scheduled jobs that become due in the current second, and skips corrupt schedule or retry members instead of aborting the sample.
 - Sidekiq `server: true` reads at most 10,000 scheduled and 10,000 retry jobs per sample and counts the due jobs beyond that as waiting. 1.x read both sets to the end while Redis served no other client.
-- Good Job latency orders by the earlier of scheduled and created time so immediate jobs are not sorted last.
+- Good Job latency reads the oldest job by its scheduled time, or by its created time when it has none, so immediate jobs are not sorted last.
 - Good Job 3.0 to 3.15 no longer queries a discard column that those versions do not have.
 - Resque all-queues size uses Resque's queue list instead of scanning Redis with `KEYS`.
 - Sidekiq `server: true` all-queues listing uses Sidekiq's queue set instead of scanning Redis with `KEYS`.

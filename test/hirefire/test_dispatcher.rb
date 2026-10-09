@@ -2276,6 +2276,38 @@ class HireFire::DispatcherTest < Minitest::Test
     gate << true
   end
 
+  def test_a_new_session_does_not_sample_while_a_round_of_the_stopped_session_is_still_running
+    stub_lease(granted: true)
+    stub_request(:post, "https://data.hirefire.io/metrics/ingest").to_return(status: 200)
+    entered = Queue.new
+    release = Queue.new
+    rounds = 0
+    HireFire.configuration.dyno(:worker) do
+      rounds += 1
+      entered << true
+      release.pop
+      1
+    end
+    dispatcher = HireFire.configuration.dispatcher
+
+    with_tick(0.01) do
+      assert dispatcher.start
+      Timeout.timeout(2) { entered.pop }
+      assert dispatcher.stop
+      assert dispatcher.start
+      sleep(0.2)
+      assert_equal 1, rounds
+
+      release << true
+      Timeout.timeout(2) { entered.pop }
+      assert_equal 2, rounds
+      release << true
+      dispatcher.stop
+    end
+  ensure
+    5.times { release << true }
+  end
+
   def test_stop_without_flush_discards_the_buffer_and_posts_nothing_more
     bodies = capture_ingest_bodies
     dispatcher = configure_web_only

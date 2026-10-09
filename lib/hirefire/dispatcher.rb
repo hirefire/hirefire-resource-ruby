@@ -17,6 +17,7 @@ module HireFire
       @configuration = configuration
       @mutex = Mutex.new
       @session = nil
+      @retired = nil
       @pid = nil
       @stopping = false
     end
@@ -31,7 +32,9 @@ module HireFire
 
         @session&.halt
         reset_after_fork if forked
-        @session = Session.new(@configuration).start
+        retired = (@session || @retired)&.sample_thread
+        @session = Session.new(@configuration, after: retired).start
+        @retired = nil
         @pid = Process.pid
       end
 
@@ -48,6 +51,7 @@ module HireFire
         return false unless @session&.live?
 
         @stopping = true
+        @retired = @session
         @session.tap { @session = nil }
       end
 
@@ -80,6 +84,7 @@ module HireFire
       @mutex.synchronize do
         @session&.halt
         @session = nil
+        @retired = nil
         @pid = nil
         @stopping = false
       end

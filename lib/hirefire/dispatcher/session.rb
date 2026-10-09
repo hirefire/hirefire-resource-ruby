@@ -7,8 +7,11 @@ require_relative "failure_log"
 module HireFire
   class Dispatcher
     class Session
-      def initialize(configuration)
+      attr_reader :sample_thread
+
+      def initialize(configuration, after: nil)
         @configuration = configuration
+        @predecessor = after
         @client = Client.new(configuration)
         @lease = Lease.new(configuration)
         @mutex = Mutex.new
@@ -154,7 +157,7 @@ module HireFire
       end
 
       def ensure_lease_loop
-        return if @lease_thread&.alive? || !enter_race?
+        return if @lease_thread&.alive? || @predecessor&.alive? || !enter_race?
 
         @lease_thread = spawn("hirefire-lease") { lease_loop }
       end
